@@ -1,0 +1,13 @@
+<?php
+// config.local.php.example
+// Copy this to config.local.php and fill in your real credentials.
+// config.local.php is listed in .gitignore and will NEVER be committed.
+
+$nuConfig['dbHost']     = 'localhost';
+$nuConfig['dbName']     = 'your_real_db_name';
+$nuConfig['dbUser']     = 'your_real_db_user';
+$nuConfig['dbPassword'] = 'your_real_strong_password';
+$nuConfig['baseUrl']    = '/nb5u/';
+
+// Disable secure cookie on local HTTP dev only:
+// $nuConfig['sessionCookieSecure'] = false;
