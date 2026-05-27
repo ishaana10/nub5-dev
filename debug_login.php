@@ -1,150 +1,120 @@
 <?php
-// ============================================================
-// DEBUG LOGIN - TEMPORARY DIAGNOSTIC FILE
-// Access: https://ict-fj.com/nbv5u/m/debug_login.php
-// DELETE THIS FILE after fixing login!
-// ============================================================
 ini_set('display_errors', '1');
-ini_set('log_errors', '1');
 error_reporting(E_ALL);
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// Simulate exactly what index.php does - load config first which starts session
+require_once __DIR__ . '/config.php';
 
-$results = [];
-$results[] = '✅ PHP VERSION: ' . PHP_VERSION;
-$results[] = '✅ SESSION STATUS: ' . session_status() . ' (2=active)';
-$results[] = '✅ SESSION ID: ' . session_id();
-$results[] = '✅ SESSION SAVE PATH: ' . session_save_path();
-$results[] = '✅ SESSION DATA: ' . json_encode($_SESSION);
+$r = [];
+$r[] = '=== ENVIRONMENT ===';
+$r[] = 'PHP: ' . PHP_VERSION;
+$r[] = 'session_name(): ' . session_name();
+$r[] = 'session_status(): ' . session_status() . ' (2=active)';
+$r[] = 'session_id(): ' . session_id();
+$r[] = 'session_save_path(): ' . session_save_path();
+$r[] = 'headers_sent(): ' . (headers_sent($hf, $hl) ? "YES - in $hf line $hl" : 'NO');
+$r[] = '';
 
-// --- Test config load ---
-try {
-    require_once __DIR__ . '/config.php';
-    $results[] = '✅ config.php loaded OK';
-    $results[] = '   dbHost: ' . ($nuConfig['dbHost'] ?? 'NOT SET');
-    $results[] = '   dbName: ' . ($nuConfig['dbName'] ?? 'NOT SET');
-    $results[] = '   dbUser: ' . ($nuConfig['dbUser'] ?? 'NOT SET');
-} catch (Throwable $e) {
-    $results[] = '❌ config.php FAILED: ' . $e->getMessage();
-}
-
-// --- Test raw PDO connection ---
-try {
-    $dsn = sprintf(
-        'mysql:host=%s;port=%d;dbname=%s;charset=%s',
-        $nuConfig['dbHost']    ?? 'localhost',
-        $nuConfig['dbPort']    ?? 3306,
-        $nuConfig['dbName']    ?? '',
-        $nuConfig['dbCharset'] ?? 'utf8mb4'
-    );
-    $pdo = new PDO($dsn, $nuConfig['dbUser'] ?? '', $nuConfig['dbPassword'] ?? '', [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-    ]);
-    $results[] = '✅ PDO DB CONNECTION OK';
-} catch (Throwable $e) {
-    $results[] = '❌ PDO DB CONNECTION FAILED: ' . $e->getMessage();
-    $pdo = null;
-}
-
-// --- Test nu_users table ---
-if ($pdo) {
-    try {
-        $stmt = $pdo->query("SELECT COUNT(*) as cnt FROM nu_users");
-        $row  = $stmt->fetch(PDO::FETCH_ASSOC);
-        $results[] = '✅ nu_users table EXISTS, rows: ' . $row['cnt'];
-    } catch (Throwable $e) {
-        $results[] = '❌ nu_users table ERROR: ' . $e->getMessage();
-    }
-
-    // --- Test globeadmin user lookup ---
-    try {
-        $stmt = $pdo->prepare("SELECT usr_id, usr_username, usr_password, usr_active, usr_failed_attempts FROM nu_users WHERE usr_username = :u LIMIT 1");
-        $stmt->execute([':u' => 'globeadmin']);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($user) {
-            $results[] = '✅ USER FOUND: usr_id=' . $user['usr_id'] . ' usr_active=' . $user['usr_active'] . ' failed_attempts=' . $user['usr_failed_attempts'];
-            $results[] = '   password hash: ' . substr($user['usr_password'], 0, 20) . '...';
-
-            // Test password_verify
-            $testPass = 'password';
-            $verified = password_verify($testPass, $user['usr_password']);
-            $results[] = ($verified ? '✅' : '❌') . ' password_verify("password", hash) = ' . ($verified ? 'TRUE' : 'FALSE');
-
-            if (!$verified) {
-                // Try to show what hash format is stored
-                $results[] = '   Hash starts with: ' . substr($user['usr_password'], 0, 7);
-                $results[] = '   (should be $2y$12 for bcrypt)';
-            }
-        } else {
-            $results[] = '❌ USER "globeadmin" NOT FOUND in nu_users';
-        }
-    } catch (Throwable $e) {
-        $results[] = '❌ USER LOOKUP ERROR: ' . $e->getMessage();
+$r[] = '=== COOKIES BROWSER SENT ===';
+if (empty($_COOKIE)) {
+    $r[] = '(none) - browser sent NO cookies';
+} else {
+    foreach ($_COOKIE as $k => $v) {
+        $r[] = "  $k = " . substr($v, 0, 40);
     }
 }
+$r[] = '';
 
-// --- Test Database.php class load ---
+$r[] = '=== SESSION DATA ON THIS REQUEST ===';
+if (empty($_SESSION)) {
+    $r[] = '(empty) - no session data';
+} else {
+    foreach ($_SESSION as $k => $v) {
+        $r[] = "  $k = " . (is_array($v) ? json_encode($v) : $v);
+    }
+}
+$r[] = '';
+
+// --- Simulate a login and check what session_regenerate_id does ---
+if (isset($_POST['test_login'])) {
+    $r[] = '=== SIMULATING login() ===';
+
+    require_once __DIR__ . '/core/Database.php';
+    require_once __DIR__ . '/core/Auth.php';
+
+    $auth   = NuAuth::getInstance();
+    $result = $auth->login('globeadmin', 'password');
+
+    $r[] = 'login() result: ' . json_encode($result);
+    $r[] = 'session_id() AFTER login: ' . session_id();
+    $r[] = 'SESSION after login: ' . json_encode($_SESSION);
+    $r[] = 'session_name() AFTER login: ' . session_name();
+    $r[] = '';
+    $r[] = '>>> NOW CHECK: does cookie "' . session_name() . '" appear in your browser?';
+    $r[] = '>>> Open DevTools > Application > Cookies and look for: ' . session_name();
+    $r[] = '>>> If you see PHPSESSID instead - that is the bug.';
+}
+
+// --- Check what checkAuth returns right now ---
+$r[] = '=== CHECKING checkAuth() NOW ===';
 try {
     require_once __DIR__ . '/core/Database.php';
-    $results[] = '✅ core/Database.php loaded OK';
-    $db = NuDatabase::getInstance();
-    $results[] = '✅ NuDatabase::getInstance() OK';
-} catch (Throwable $e) {
-    $results[] = '❌ core/Database.php FAILED: ' . $e->getMessage();
-}
-
-// --- Test Auth.php class load ---
-try {
     require_once __DIR__ . '/core/Auth.php';
-    $results[] = '✅ core/Auth.php loaded OK';
+    $auth      = NuAuth::getInstance();
+    $loggedIn  = $auth->checkAuth();
+    $r[] = 'checkAuth() = ' . ($loggedIn ? 'TRUE - you ARE logged in' : 'FALSE - not logged in');
+    $r[] = 'SESSION: ' . json_encode($_SESSION);
 } catch (Throwable $e) {
-    $results[] = '❌ core/Auth.php FAILED: ' . $e->getMessage();
+    $r[] = 'ERROR: ' . $e->getMessage();
 }
 
-// --- Simulate a full login attempt ---
-if (isset($_POST['test_login'])) {
-    $results[] = '';
-    $results[] = '=== LOGIN ATTEMPT ===';
-    try {
-        $auth   = NuAuth::getInstance();
-        $result = $auth->login('globeadmin', 'password');
-        $results[] = 'login() returned: ' . json_encode($result);
-        $results[] = 'SESSION after login: ' . json_encode($_SESSION);
-    } catch (Throwable $e) {
-        $results[] = '❌ login() THREW EXCEPTION: ' . $e->getMessage();
-        $results[] = '   File: ' . $e->getFile() . ' Line: ' . $e->getLine();
-        $results[] = '   Trace: ' . $e->getTraceAsString();
-    }
-}
 ?>
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Debug Login</title>
+<title>Debug Login v2</title>
 <style>
-body { font-family: monospace; background:#111; color:#0f0; padding:20px; }
-pre { white-space:pre-wrap; word-break:break-all; }
-.err { color:#f55; }
-.ok  { color:#0f0; }
-form { margin-top:20px; }
-button { padding:10px 20px; background:#4f8cff; color:#fff; border:0; cursor:pointer; font-size:16px; }
-h2 { color:#fff; }
+body{font-family:monospace;background:#111;color:#eee;padding:20px;font-size:14px;}
+.ok{color:#4caf50;} .err{color:#f44;} .warn{color:#ff0;} .info{color:#4af;}
+pre{white-space:pre-wrap;line-height:1.7;}
+button{padding:12px 24px;background:#4f8cff;color:#fff;border:0;cursor:pointer;font-size:15px;margin:5px;border-radius:4px;}
+h2{color:#fff;}
 </style>
 </head>
 <body>
-<h2>🔍 NuBuilder Login Debugger</h2>
-<pre><?php foreach ($results as $r) {
-    $cls = strpos($r, '❌') !== false ? 'err' : 'ok';
-    echo '<span class="' . $cls . '">' . htmlspecialchars($r, ENT_QUOTES, 'UTF-8') . '</span>' . "\n";
-} ?></pre>
+<h2>&#128269; NuBuilder Login Debugger v2</h2>
+<pre><?php
+foreach ($r as $line) {
+    if (strpos($line, 'ERROR') !== false || strpos($line, '(empty)') !== false || strpos($line, '(none)') !== false) {
+        echo '<span class="err">' . htmlspecialchars($line, ENT_QUOTES, 'UTF-8') . '</span>' . "\n";
+    } elseif (strpos($line, '>>>') !== false || strpos($line, 'FALSE') !== false) {
+        echo '<span class="warn">' . htmlspecialchars($line, ENT_QUOTES, 'UTF-8') . '</span>' . "\n";
+    } elseif (strpos($line, 'TRUE') !== false || strpos($line, 'OK') !== false) {
+        echo '<span class="ok">' . htmlspecialchars($line, ENT_QUOTES, 'UTF-8') . '</span>' . "\n";
+    } elseif (strpos($line, '===') !== false) {
+        echo '<span class="info">' . htmlspecialchars($line, ENT_QUOTES, 'UTF-8') . '</span>' . "\n";
+    } else {
+        echo htmlspecialchars($line, ENT_QUOTES, 'UTF-8') . "\n";
+    }
+}
+?></pre>
 
 <form method="post">
-    <button type="submit" name="test_login" value="1">▶ Run Full Login Attempt (globeadmin / password)</button>
+    <button type="submit" name="test_login" value="1">&#9654; Simulate login() then check cookies</button>
 </form>
 
-<p style="color:#888;margin-top:30px;">⚠ DELETE debug_login.php after fixing!</p>
+<hr style="border-color:#333;margin:20px 0">
+<h3 style="color:#fff">&#128269; Manual Cookie Check Instructions</h3>
+<ol style="color:#ccc;line-height:2">
+    <li>Click the button above</li>
+    <li>Open browser DevTools (F12)</li>
+    <li>Go to <b>Application</b> tab &rarr; <b>Cookies</b> &rarr; click your site URL</li>
+    <li>Look for cookie named <b>nu5sess</b></li>
+    <li>If you see <b>PHPSESSID</b> instead of <b>nu5sess</b> &mdash; paste that here</li>
+    <li>Also check if the cookie has <b>Secure</b> flag &mdash; if site is HTTP not HTTPS, secure cookies won't be sent back</li>
+</ol>
+
+<p style="color:#888;">&#9888; DELETE debug_login.php after fixing!</p>
 </body>
 </html>
