@@ -1,10 +1,43 @@
-const CACHE_NAME = 'nubuilder-v1';
+const CACHE_NAME = 'nubuilder-v2';
 const urlsToCache = [
-  './',
-  './index.php',
   './assets/css/nubuilder-next.css',
   './assets/js/nubuilder-next.js'
 ];
+
+// Paths that must NEVER be cached or intercepted by the SW
+const AUTH_PATHS = [
+  'index.php',
+  'auth.php',
+  'debug_login.php',
+  'debug_session.php'
+];
+
+function isAuthRequest(request) {
+  // Never intercept non-GET requests (login POST etc.)
+  if (request.method !== 'GET') return true;
+
+  try {
+    var url = new URL(request.url);
+    var pathname = url.pathname;
+
+    // Block any auth-related path
+    for (var i = 0; i < AUTH_PATHS.length; i++) {
+      if (pathname.endsWith(AUTH_PATHS[i])) return true;
+    }
+
+    // Block if query string contains auth keywords
+    var search = url.search;
+    if (search.indexOf('login') !== -1 ||
+        search.indexOf('logout') !== -1 ||
+        search.indexOf('action=logout') !== -1) {
+      return true;
+    }
+  } catch (e) {
+    return true; // If URL parse fails, don't intercept
+  }
+
+  return false;
+}
 
 self.addEventListener('install', function(event) {
   event.waitUntil(
@@ -23,13 +56,53 @@ self.addEventListener('install', function(event) {
       console.error('Service worker install cache error:', err);
     })
   );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', function(event) {
+  event.waitUntil(
+    caches.keys().then(function(keys) {
+      return Promise.all(
+        keys
+          .filter(function(key) { return key !== CACHE_NAME; })
+          .map(function(key) {
+            console.log('SW: deleting old cache', key);
+            return caches.delete(key);
+          })
+      );
+    })
+  );
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', function(event) {
+  // Let auth requests and all POSTs go straight to the network — no SW involvement
+  if (isAuthRequest(event.request)) {
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then(function(response) {
-      if (response) return response;
-      return fetch(event.request);
+    caches.match(event.request).then(function(cached) {
+      if (cached) return cached;
+      return fetch(event.request).then(function(response) {
+        // Only cache valid, same-origin GET responses for static assets
+        if (!response || response.status !== 200 || response.type !== 'basic') {
+          return response;
+        }
+        var url = event.request.url;
+        var isStatic = url.indexOf('.css') !== -1 ||
+                       url.indexOf('.js') !== -1 ||
+                       url.indexOf('.woff') !== -1 ||
+                       url.indexOf('.png') !== -1 ||
+                       url.indexOf('.ico') !== -1;
+        if (isStatic) {
+          var copy = response.clone();
+          caches.open(CACHE_NAME).then(function(cache) {
+            cache.put(event.request, copy);
+          });
+        }
+        return response;
+      });
     })
   );
 });
