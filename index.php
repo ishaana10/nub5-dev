@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 // config.php handles session_name('nu5sess') + session_start() in the right order
-// DO NOT call session_start() here - it must happen after session_name() in config.php
+// DO NOT call session_start() here
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 $bootError   = '';
@@ -36,6 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
             session_destroy();
         }
     }
+    session_write_close();
     header('Location: index.php');
     exit;
 }
@@ -52,6 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
         try {
             $result = $auth->login($username, $password);
             if (!empty($result['success'])) {
+                // Flush session to disk BEFORE redirect so GET request can read it
+                session_write_close();
                 header('Location: index.php');
                 exit;
             }
@@ -80,7 +83,7 @@ if (is_array($currentUser)) {
     $userDisplay = $currentUser['usr_name'] ?? $currentUser['usr_username'] ?? 'User';
 }
 
-// ─── Asset helper ────────────────────────────────────────────────────────────────
+// ─── Asset helper ─────────────────────────────────────────────────────────────
 function nu_asset($path) {
     $full = __DIR__ . '/' . ltrim($path, '/');
     $v    = is_file($full) ? filemtime($full) : time();
