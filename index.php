@@ -22,16 +22,16 @@ try {
     $bootError = 'Application failed to start. Please contact the administrator.';
 }
 
-// ─── Logout ───────────────────────────────────────────────────────────────────
+// ─── Logout ────────────────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
     if ($auth) { $auth->logout(); }
     else { $_SESSION = []; session_destroy(); }
-    session_write_close();
+    // Let PHP flush session naturally; no session_write_close() before redirect
     header('Location: index.php');
     exit;
 }
 
-// ─── Login ────────────────────────────────────────────────────────────────────
+// ─── Login ─────────────────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     $username = trim((string)($_POST['username'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
@@ -43,7 +43,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
         try {
             $result = $auth->login($username, $password);
             if (!empty($result['success'])) {
-                session_write_close();
+                // CRITICAL: Do NOT call session_write_close() here.
+                // PHP will write the session file automatically on exit/redirect.
+                // Calling session_write_close() before header() on some hosts causes
+                // the session cookie to not be re-sent, breaking the redirect auth check.
                 header('Location: index.php');
                 exit;
             }
@@ -55,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     }
 }
 
-// ─── Auth Check ───────────────────────────────────────────────────────────────
+// ─── Auth Check ─────────────────────────────────────────────────────────────────────────────
 if ($auth) {
     try {
         $isLoggedIn  = (bool)$auth->checkAuth();

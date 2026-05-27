@@ -112,6 +112,10 @@ class NuAuth {
             return false;
         }
         $_SESSION['nu_last_activity'] = time();
+        // Write and close session immediately after updating activity timestamp.
+        // This prevents the session file being held open/locked during page render,
+        // and ensures the updated timestamp is persisted to disk.
+        session_write_close();
         return true;
     }
 
@@ -121,7 +125,9 @@ class NuAuth {
 
     // --- Current User ---
     public function getCurrentUser() {
-        if (!$this->checkAuth()) return null;
+        // Note: session may be closed after checkAuth(); we read from $_SESSION
+        // which remains populated in memory even after session_write_close().
+        if (empty($_SESSION['nu_user_id'])) return null;
         $user = $this->db->fetchOne(
             "SELECT usr_id, usr_username, usr_name, usr_email, usr_role, usr_active FROM nu_users WHERE usr_id = :id LIMIT 1",
             [':id' => $_SESSION['nu_user_id']]
@@ -204,6 +210,10 @@ class NuAuth {
         $_SESSION['nu_role']          = $user['usr_role'];
         $_SESSION['nu_last_activity'] = time();
         $_SESSION['nu_csrf']          = bin2hex(random_bytes(32));
+        // Explicitly write the session to disk NOW, before the redirect.
+        // This guarantees the session file exists and is fully written
+        // before the browser follows the Location header to the next GET.
+        session_write_close();
     }
 
     private function incrementAttempts($userId) {
