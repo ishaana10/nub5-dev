@@ -1,24 +1,12 @@
 RewriteEngine On
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ index.php [QSA,L]
-
-# Protect sensitive files
-<FilesMatch "^\.">
-    Order allow,deny
-    Deny from all
-</FilesMatch>
 
 # Disable directory browsing
 Options -Indexes
 
-# PHP settings
-php_value upload_max_filesize 10M
-php_value post_max_size 10M
+# Protect hidden/dot files (e.g. .env, .htaccess)
+RewriteRule "(^|/)\.." - [F,L]
 
-# Disable caching for development
-<FilesMatch "\.(js|css|php)$">
-    Header set Cache-Control "no-cache, no-store, must-revalidate"
-    Header set Pragma "no-cache"
-    Header set Expires "0"
-</FilesMatch>
+# Front controller - send all non-file/dir requests to index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]

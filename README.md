@@ -46,9 +46,9 @@ nubuilder-next/
 
 ## Requirements
 
-- PHP 7.4+ (PDO + MySQLi)
+- PHP 7.4 (host default — see Deployment Notes before upgrading)
 - MySQL 5.7+ or MariaDB 10.3+
-- Apache/Nginx with mod_rewrite or equivalent
+- Apache with mod_rewrite enabled
 - Modern browser (Chrome, Firefox, Safari, Edge)
 
 ## Quick Start
@@ -68,6 +68,31 @@ mysql -u root -p < install.sql
 # Ensure these directories are writable:
 chmod 755 uploads/ logs/
 ```
+
+## Deployment Notes
+
+> **Hosting:** A2Hosting via cPanel — ict-fj.com/nbv5/
+
+| Setting | Value |
+|---------|-------|
+| PHP Version | 7.4 (host default) |
+| Web Server | Apache (LiteSpeed/EasyApache) |
+| Database | MySQL 5.7+ |
+
+### PHP Version Upgrade (Status: Blocked)
+
+- PHP 8.1 upgrade was attempted on **27 May 2026** using per-folder `.htaccess` `AddHandler`
+- All PHP files in `/nbv5/` returned **403 Forbidden** when `AddHandler application/x-httpd-ea-php81` was added
+- `php_value` directives in `.htaccess` cause **500 Internal Server Error** on this host — do not use them
+- No parent `/public_html/.htaccess` found; issue is likely a **ModSecurity rule or host-level restriction** on PHP handler overrides
+- **Next step:** Contact A2Hosting support to either whitelist PHP 8.1 for `/public_html/nbv5/` or obtain the correct per-folder handler string for this account
+- Host supports up to PHP 8.5 — upgrade is possible once host-side restriction is resolved
+
+### .htaccess Rules
+
+- Do **not** add `php_value` directives — not supported on this host configuration
+- Do **not** add `AddHandler` PHP version overrides without confirming with A2Hosting support first
+- Hidden file protection uses `RewriteRule` (not `FilesMatch Order/Deny`) for Apache 2.4 compatibility
 
 ## Key Features
 
