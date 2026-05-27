@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nubuilder-v2';
+const CACHE_NAME = 'nubuilder-v3';
 const urlsToCache = [
   './assets/css/nubuilder-next.css',
   './assets/js/nubuilder-next.js'
@@ -33,7 +33,7 @@ function isAuthRequest(request) {
       return true;
     }
   } catch (e) {
-    return true; // If URL parse fails, don't intercept
+    return true;
   }
 
   return false;
@@ -76,7 +76,6 @@ self.addEventListener('activate', function(event) {
 });
 
 self.addEventListener('fetch', function(event) {
-  // Let auth requests and all POSTs go straight to the network — no SW involvement
   if (isAuthRequest(event.request)) {
     return;
   }
@@ -85,7 +84,6 @@ self.addEventListener('fetch', function(event) {
     caches.match(event.request).then(function(cached) {
       if (cached) return cached;
       return fetch(event.request).then(function(response) {
-        // Only cache valid, same-origin GET responses for static assets
         if (!response || response.status !== 200 || response.type !== 'basic') {
           return response;
         }

@@ -22,16 +22,15 @@ try {
     $bootError = 'Application failed to start. Please contact the administrator.';
 }
 
-// ─── Logout ────────────────────────────────────────────────────────────────────────────────
+// ─── Logout ────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
     if ($auth) { $auth->logout(); }
     else { $_SESSION = []; session_destroy(); }
-    // Let PHP flush session naturally; no session_write_close() before redirect
     header('Location: index.php');
     exit;
 }
 
-// ─── Login ─────────────────────────────────────────────────────────────────────────────────
+// ─── Login ─────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     $username = trim((string)($_POST['username'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
@@ -43,10 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
         try {
             $result = $auth->login($username, $password);
             if (!empty($result['success'])) {
-                // CRITICAL: Do NOT call session_write_close() here.
-                // PHP will write the session file automatically on exit/redirect.
-                // Calling session_write_close() before header() on some hosts causes
-                // the session cookie to not be re-sent, breaking the redirect auth check.
+                // createSession() already called session_write_close() internally.
+                // Do NOT call session_write_close() again here — just redirect.
                 header('Location: index.php');
                 exit;
             }
@@ -58,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     }
 }
 
-// ─── Auth Check ─────────────────────────────────────────────────────────────────────────────
+// ─── Auth Check ────────────────────────────────────────────────────────────
 if ($auth) {
     try {
         $isLoggedIn  = (bool)$auth->checkAuth();
@@ -181,9 +178,11 @@ function nu_asset($path) {
          onclick="document.getElementById('sidebar').classList.remove('open');this.classList.remove('open')"></div>
 </div>
 <?php endif; ?>
-<?php if ($isLoggedIn): ?>
+
+<!-- JS always loads regardless of auth state so SW-cached pages never lose NuApp context -->
 <script src="<?= nu_asset('assets/js/nubuilder-next.js') ?>"></script>
 <script src="<?= nu_asset('assets/js/select2.min.js') ?>"></script>
+<?php if ($isLoggedIn): ?>
 <script>
 (function(){
     try { var t=localStorage.getItem('nu-theme'); if(t) document.documentElement.setAttribute('data-theme',t); } catch(e){}
