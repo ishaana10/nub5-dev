@@ -1,55 +1,61 @@
 <?php
-// nuBuilder Next - Plugin Hook System
-// Allows plugins to intercept and extend core behavior
+// nuBuilder Next - Plugin Manager (PHP 7.4 compatible)
 
 class NuPluginManager {
-    private $db;
-    private $hooks = [];
     private $plugins = [];
+    private $hooks   = [];
 
-    public function __construct() {
-        $this->db = NuDatabase::getInstance();
-        $this->loadActivePlugins();
-    }
-
-    private function loadActivePlugins() {
-        $plugins = $this->db->fetchAll("SELECT * FROM nu_plugins WHERE plugin_active = 1");
-        foreach ($plugins as $p) {
-            $this->plugins[$p['plugin_code']] = $p;
-            $hooks = json_decode($p['plugin_hooks'], true) ?? [];
-            foreach ($hooks as $hook => $callback) {
-                if (!isset($this->hooks[$hook])) $this->hooks[$hook] = [];
-                $this->hooks[$hook][] = [
-                    'plugin' => $p['plugin_code'],
-                    'callback' => $callback,
-                    'path' => $p['plugin_path']
-                ];
-            }
+    /**
+     * Register a plugin by directory name.
+     * @return bool
+     */
+    public function register($pluginName) {
+        $pluginDir  = __DIR__ . '/../plugins/' . $pluginName;
+        $pluginFile = $pluginDir . '/plugin.php';
+        if (!file_exists($pluginFile)) {
+            error_log("[PluginManager] Plugin file not found: {$pluginFile}");
+            return false;
         }
+        require_once $pluginFile;
+        $className = 'Plugin_' . $pluginName;
+        if (!class_exists($className)) {
+            error_log("[PluginManager] Plugin class {$className} not found in {$pluginFile}");
+            return false;
+        }
+        $instance = new $className();
+        if (method_exists($instance, 'register')) {
+            $instance->register($this);
+        }
+        $this->plugins[$pluginName] = $instance;
+        return true;
     }
 
-    public function trigger($hook, $data = []) {
-        if (!isset($this->hooks[$hook])) return $data;
+    /**
+     * Add a hook callback.
+     */
+    public function addHook($hookName, $callback) {
+        if (!isset($this->hooks[$hookName])) {
+            $this->hooks[$hookName] = [];
+        }
+        $this->hooks[$hookName][] = $callback;
+    }
 
-        foreach ($this->hooks[$hook] as $handler) {
-            $pluginFile = __DIR__ . '/../plugins/' . $handler['plugin'] . '/' . $handler['plugin'] . '.php';
-            if (file_exists($pluginFile)) {
-                require_once $pluginFile;
-                $callback = $handler['callback'];
-                if (function_exists($callback)) {
-                    $data = $callback($data);
-                }
-            }
+    /**
+     * Fire all callbacks for a hook, passing $data through.
+     * @return mixed
+     */
+    public function fireHook($hookName, $data = null) {
+        if (empty($this->hooks[$hookName])) return $data;
+        foreach ($this->hooks[$hookName] as $cb) {
+            $data = call_user_func($cb, $data);
         }
         return $data;
     }
 
-    public function hasHook($hook) {
-        return isset($this->hooks[$hook]) && !empty($this->hooks[$hook]);
-    }
-
-    public function getActivePlugins() {
-        return $this->plugins;
+    /**
+     * @return array
+     */
+    public function getRegisteredPlugins() {
+        return array_keys($this->plugins);
     }
 }
-?>

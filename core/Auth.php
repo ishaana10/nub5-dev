@@ -12,9 +12,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/Audit.php';
 
 class NuAuth {
-    private NuDatabase $db;
-    private array $config;
-    private static ?NuAuth $instance = null;
+    private $db;
+    private $config;
+    private static $instance = null;
 
     public function __construct() {
         global $nuConfig;
@@ -22,15 +22,18 @@ class NuAuth {
         $this->db     = NuDatabase::getInstance();
     }
 
-    public static function getInstance(): self {
+    /**
+     * @return NuAuth
+     */
+    public static function getInstance() {
         if (self::$instance === null) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    // ─── Login ───────────────────────────────────────────────────────────────────
-    public function login(string $username, string $password, string $otp = ''): array {
+    // --- Login ---
+    public function login($username, $password, $otp = '') {
         $username = trim($username);
         if ($username === '' || $password === '') {
             return $this->fail('Username and password are required.');
@@ -43,11 +46,11 @@ class NuAuth {
 
         if (!$user) {
             // Constant-time fake verify to prevent user enumeration
-            password_verify($password, '\$2y\$12\$invalidhashpadding...............');
+            password_verify($password, '$2y$12$invalidhashpadding...............');
             return $this->fail('Invalid credentials.');
         }
 
-        // ── Lockout check ─────────────────────────────────────────────────────
+        // Lockout check
         $maxAttempts    = (int)($this->config['maxLoginAttempts'] ?? 5);
         $lockoutSeconds = (int)($this->config['lockoutDuration']  ?? 900);
 
@@ -60,13 +63,13 @@ class NuAuth {
             $this->resetAttempts((int)$user['usr_id']);
         }
 
-        // ── Password verify ───────────────────────────────────────────────────
+        // Password verify
         if (!password_verify($password, $user['usr_password'])) {
             $this->incrementAttempts((int)$user['usr_id']);
             return $this->fail('Invalid credentials.');
         }
 
-        // ── Password rehash if algorithm changed ──────────────────────────────
+        // Password rehash if algorithm changed
         if (password_needs_rehash($user['usr_password'], PASSWORD_BCRYPT, ['cost' => 12])) {
             $newHash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
             $this->db->query(
@@ -75,14 +78,14 @@ class NuAuth {
             );
         }
 
-        // ── 2FA ───────────────────────────────────────────────────────────────
+        // 2FA
         if (!empty($this->config['enable2FA']) && !empty($user['usr_2fa_secret'])) {
             if ($otp === '' || !$this->verifyTOTP($user['usr_2fa_secret'], $otp)) {
                 return ['success' => false, 'message' => 'Invalid or missing 2FA code.', 'requires2FA' => true];
             }
         }
 
-        // ── Success ───────────────────────────────────────────────────────────
+        // Success
         $this->resetAttempts((int)$user['usr_id']);
         $this->createSession($user);
         $this->logAudit('login', 'nu_users', (int)$user['usr_id']);
@@ -90,8 +93,8 @@ class NuAuth {
         return ['success' => true, 'user' => $this->sanitizeUser($user)];
     }
 
-    // ─── Logout ──────────────────────────────────────────────────────────────────
-    public function logout(): bool {
+    // --- Logout ---
+    public function logout() {
         if (!empty($_SESSION['nu_user_id'])) {
             $this->logAudit('logout', 'nu_users', (int)$_SESSION['nu_user_id']);
         }
@@ -105,8 +108,8 @@ class NuAuth {
         return true;
     }
 
-    // ─── Session Check ───────────────────────────────────────────────────────────
-    public function checkAuth(): bool {
+    // --- Session Check ---
+    public function checkAuth() {
         if (empty($_SESSION['nu_user_id'])) return false;
         $timeout = (int)($this->config['sessionTimeout'] ?? 3600);
         if (time() - (int)($_SESSION['nu_last_activity'] ?? 0) > $timeout) {
@@ -117,12 +120,12 @@ class NuAuth {
         return true;
     }
 
-    public function isLoggedIn(): bool {
+    public function isLoggedIn() {
         return $this->checkAuth();
     }
 
-    // ─── Current User ────────────────────────────────────────────────────────────
-    public function getCurrentUser(): ?array {
+    // --- Current User ---
+    public function getCurrentUser() {
         if (!$this->checkAuth()) return null;
         $user = $this->db->fetchOne(
             "SELECT usr_id, usr_username, usr_name, usr_email, usr_role, usr_active FROM nu_users WHERE usr_id = :id LIMIT 1",
@@ -131,20 +134,20 @@ class NuAuth {
         return $user ?: null;
     }
 
-    // ─── CSRF ────────────────────────────────────────────────────────────────────
-    public function getCsrfToken(): string {
+    // --- CSRF ---
+    public function getCsrfToken() {
         if (empty($_SESSION['nu_csrf'])) {
             $_SESSION['nu_csrf'] = bin2hex(random_bytes(32));
         }
         return $_SESSION['nu_csrf'];
     }
 
-    public function verifyCsrf(string $token): bool {
+    public function verifyCsrf($token) {
         return isset($_SESSION['nu_csrf']) && hash_equals($_SESSION['nu_csrf'], $token);
     }
 
-    // ─── Permissions ─────────────────────────────────────────────────────────────
-    public function hasPermission(string $permission): bool {
+    // --- Permissions ---
+    public function hasPermission($permission) {
         $user = $this->getCurrentUser();
         if (!$user) return false;
         if ($user['usr_role'] === 'globeadmin' || $user['usr_role'] === 'admin') return true;
@@ -159,7 +162,7 @@ class NuAuth {
         return in_array($permission, array_column($perms, 'perm_code'), true);
     }
 
-    public function requireAuth(): void {
+    public function requireAuth() {
         if (!$this->checkAuth()) {
             if ($this->isApiRequest()) {
                 http_response_code(401);
@@ -172,7 +175,7 @@ class NuAuth {
         }
     }
 
-    public function requirePermission(string $permission): void {
+    public function requirePermission($permission) {
         $this->requireAuth();
         if (!$this->hasPermission($permission)) {
             if ($this->isApiRequest()) {
@@ -186,8 +189,8 @@ class NuAuth {
         }
     }
 
-    // ─── Private Helpers ─────────────────────────────────────────────────────────
-    private function createSession(array $user): void {
+    // --- Private Helpers ---
+    private function createSession($user) {
         session_regenerate_id(true);
         $_SESSION['nu_user_id']       = $user['usr_id'];
         $_SESSION['nu_username']      = $user['usr_username'];
@@ -196,21 +199,21 @@ class NuAuth {
         $_SESSION['nu_csrf']          = bin2hex(random_bytes(32));
     }
 
-    private function incrementAttempts(int $userId): void {
+    private function incrementAttempts($userId) {
         $this->db->query(
             "UPDATE nu_users SET usr_failed_attempts = usr_failed_attempts + 1, usr_last_attempt = NOW() WHERE usr_id = :id",
             [':id' => $userId]
         );
     }
 
-    private function resetAttempts(int $userId): void {
+    private function resetAttempts($userId) {
         $this->db->query(
             "UPDATE nu_users SET usr_failed_attempts = 0, usr_last_attempt = NULL WHERE usr_id = :id",
             [':id' => $userId]
         );
     }
 
-    private function logAudit(string $action, string $table, int $recordId): void {
+    private function logAudit($action, $table, $recordId) {
         if (empty($this->config['enableAuditTrail'])) return;
         try {
             $audit = new NuAudit();
@@ -220,25 +223,27 @@ class NuAuth {
         }
     }
 
-    private function sanitizeUser(array $user): array {
+    private function sanitizeUser($user) {
         unset($user['usr_password'], $user['usr_2fa_secret'], $user['usr_failed_attempts'], $user['usr_last_attempt']);
         return $user;
     }
 
-    private function isApiRequest(): bool {
+    // PHP 7.4 compatible: replaced str_starts_with() and str_contains() with strpos()
+    private function isApiRequest() {
+        $uri = $_SERVER['REQUEST_URI'] ?? '';
         return (
             !empty($_SERVER['HTTP_X_REQUESTED_WITH']) ||
-            str_starts_with($_SERVER['REQUEST_URI'] ?? '', '/api/') ||
-            str_contains($_SERVER['REQUEST_URI'] ?? '', '/api/')
+            strpos($uri, '/api/') === 0 ||
+            strpos($uri, '/api/') !== false
         );
     }
 
-    private function fail(string $message): array {
+    private function fail($message) {
         return ['success' => false, 'message' => $message];
     }
 
-    // ─── TOTP 2FA ─────────────────────────────────────────────────────────────────
-    private function verifyTOTP(string $secret, string $otp): bool {
+    // --- TOTP 2FA ---
+    private function verifyTOTP($secret, $otp) {
         $timeSlice = (int)floor(time() / 30);
         for ($i = -1; $i <= 1; $i++) {
             if (hash_equals($this->generateTOTP($secret, $timeSlice + $i), $otp)) return true;
@@ -246,19 +251,20 @@ class NuAuth {
         return false;
     }
 
-    private function generateTOTP(string $secret, int $timeSlice): string {
+    // PHP 7.4 compatible: replaced $hm[-1] with substr($hm, -1) and 1_000_000 with 1000000
+    private function generateTOTP($secret, $timeSlice) {
         $secret = $this->base32Decode($secret);
         $time   = pack('N*', 0) . pack('N*', $timeSlice);
         $hm     = hash_hmac('sha1', $time, $secret, true);
-        $offset = ord($hm[-1]) & 0x0F;
+        $offset = ord(substr($hm, -1)) & 0x0F;
         $code   = ((ord($hm[$offset])   & 0x7F) << 24) |
                   ((ord($hm[$offset+1]) & 0xFF) << 16) |
                   ((ord($hm[$offset+2]) & 0xFF) <<  8) |
                    (ord($hm[$offset+3]) & 0xFF);
-        return str_pad((string)($code % 1_000_000), 6, '0', STR_PAD_LEFT);
+        return str_pad((string)($code % 1000000), 6, '0', STR_PAD_LEFT);
     }
 
-    private function base32Decode(string $input): string {
+    private function base32Decode($input) {
         $map    = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
         $input  = strtoupper(str_replace('=', '', $input));
         $output = '';
@@ -278,7 +284,7 @@ class NuAuth {
     }
 
     private function __clone() {}
-    public function __wakeup(): void { throw new RuntimeException('Cannot unserialize NuAuth.'); }
+    public function __wakeup() { throw new RuntimeException('Cannot unserialize NuAuth.'); }
 }
 
 // Backward-compatible alias

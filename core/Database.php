@@ -6,8 +6,8 @@ declare(strict_types=1);
  * Also aliased as Database for backward compatibility.
  */
 class NuDatabase {
-    private static ?NuDatabase $instance = null;
-    private PDO $pdo;
+    private static $instance = null;
+    private $pdo;
 
     private function __construct() {
         global $nuConfig;
@@ -36,63 +36,69 @@ class NuDatabase {
         }
     }
 
-    public static function getInstance(): self {
+    /**
+     * @return NuDatabase
+     */
+    public static function getInstance() {
         if (self::$instance === null) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    public function getPdo(): PDO {
+    public function getPdo() {
         return $this->pdo;
     }
 
     /** Execute a prepared statement and return the PDOStatement */
-    public function query(string $sql, array $params = []): PDOStatement {
+    public function query($sql, $params = []) {
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         return $stmt;
     }
 
-    public function fetchAll(string $sql, array $params = []): array {
+    public function fetchAll($sql, $params = []) {
         return $this->query($sql, $params)->fetchAll();
     }
 
-    public function fetchOne(string $sql, array $params = []): array|false {
+    /**
+     * @return array|false
+     */
+    public function fetchOne($sql, $params = []) {
         return $this->query($sql, $params)->fetch();
     }
 
     /** Safe insert - returns last insert ID */
-    public function insert(string $table, array $data): string {
+    public function insert($table, $data) {
         if (empty($data)) throw new InvalidArgumentException('Insert data cannot be empty.');
-        $cols = implode(', ', array_map(fn($k) => "`$k`", array_keys($data)));
+        $cols = implode(', ', array_map(function($k) { return "`$k`"; }, array_keys($data)));
         $placeholders = ':' . implode(', :', array_keys($data));
         $this->query("INSERT INTO `{$table}` ({$cols}) VALUES ({$placeholders})", $data);
         return $this->pdo->lastInsertId();
     }
 
     /** Safe update */
-    public function update(string $table, array $data, string $where, array $whereParams = []): bool {
+    public function update($table, $data, $where, $whereParams = []) {
         if (empty($data)) throw new InvalidArgumentException('Update data cannot be empty.');
-        $set = implode(', ', array_map(fn($k) => "`{$k}` = :{$k}", array_keys($data)));
+        $set = implode(', ', array_map(function($k) { return "`{$k}` = :{$k}"; }, array_keys($data)));
         $this->query("UPDATE `{$table}` SET {$set} WHERE {$where}", array_merge($data, $whereParams));
         return true;
     }
 
     /** Safe delete */
-    public function delete(string $table, string $where, array $whereParams = []): bool {
+    public function delete($table, $where, $whereParams = []) {
         $this->query("DELETE FROM `{$table}` WHERE {$where}", $whereParams);
         return true;
     }
 
-    public function beginTransaction(): bool { return $this->pdo->beginTransaction(); }
-    public function commit(): bool          { return $this->pdo->commit(); }
-    public function rollback(): bool        { return $this->pdo->rollBack(); }
-    public function lastInsertId(): string  { return $this->pdo->lastInsertId(); }
+    public function beginTransaction() { return $this->pdo->beginTransaction(); }
+    public function commit()           { return $this->pdo->commit(); }
+    public function rollback()         { return $this->pdo->rollBack(); }
+    public function lastInsertId()     { return $this->pdo->lastInsertId(); }
 
     /** Prevent cloning/unserialization */
     private function __clone() {}
-    public function __wakeup(): void { throw new RuntimeException('Cannot unserialize singleton.'); }
+    public function __wakeup() { throw new RuntimeException('Cannot unserialize singleton.'); }
 }
 
 // Backward-compatible alias so any file using `new Database()` or `Database::getInstance()` still works
