@@ -1,9 +1,6 @@
 <?php
 declare(strict_types=1);
 
-// config.php handles session_name('nu5sess') + session_start() in the right order
-// DO NOT call session_start() here
-
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 $bootError   = '';
 $loginError  = '';
@@ -11,13 +8,12 @@ $isLoggedIn  = false;
 $currentUser = null;
 $auth        = null;
 
-// PHP 7.4 compatible - no 'mixed' type hint, no ENT_SUBSTITUTE
 function h($v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 }
 
 try {
-    require_once __DIR__ . '/config.php';      // starts session with correct name
+    require_once __DIR__ . '/config.php';
     require_once __DIR__ . '/core/Database.php';
     require_once __DIR__ . '/core/Auth.php';
     $auth = NuAuth::getInstance();
@@ -25,6 +21,14 @@ try {
     error_log('[index.php boot] ' . $e->getMessage());
     $bootError = 'Application failed to start. Please contact the administrator.';
 }
+
+// LOG every request so we can trace the redirect cycle
+error_log('[NB5 index] METHOD=' . $_SERVER['REQUEST_METHOD']
+    . ' session_id=' . session_id()
+    . ' session_status=' . session_status()
+    . ' nu_user_id=' . ($_SESSION['nu_user_id'] ?? 'EMPTY')
+    . ' POST_keys=' . implode(',', array_keys($_POST))
+);
 
 // ─── Logout ───────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
@@ -52,9 +56,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     } else {
         try {
             $result = $auth->login($username, $password);
+            error_log('[NB5 index] login() result=' . json_encode($result)
+                . ' session_id=' . session_id()
+                . ' SESSION=' . json_encode($_SESSION)
+            );
             if (!empty($result['success'])) {
-                // Flush session to disk BEFORE redirect so GET request can read it
                 session_write_close();
+                error_log('[NB5 index] session_write_close done, redirecting. session_status=' . session_status());
                 header('Location: index.php');
                 exit;
             }
@@ -69,7 +77,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
 // ─── Auth Check ───────────────────────────────────────────────────────────────
 if ($auth) {
     try {
+        error_log('[NB5 index] BEFORE checkAuth: SESSION=' . json_encode($_SESSION));
         $isLoggedIn  = (bool)$auth->checkAuth();
+        error_log('[NB5 index] AFTER checkAuth: isLoggedIn=' . ($isLoggedIn ? 'true' : 'false') . ' SESSION=' . json_encode($_SESSION));
         $currentUser = $isLoggedIn ? $auth->getCurrentUser() : null;
     } catch (Throwable $e) {
         error_log('[index.php auth check] ' . $e->getMessage());
@@ -83,7 +93,6 @@ if (is_array($currentUser)) {
     $userDisplay = $currentUser['usr_name'] ?? $currentUser['usr_username'] ?? 'User';
 }
 
-// ─── Asset helper ─────────────────────────────────────────────────────────────
 function nu_asset($path) {
     $full = __DIR__ . '/' . ltrim($path, '/');
     $v    = is_file($full) ? filemtime($full) : time();
@@ -106,7 +115,6 @@ function nu_asset($path) {
 </head>
 <body>
 <?php if (!$isLoggedIn): ?>
-<!-- LOGIN -->
 <div class="nu-login">
     <div class="nu-login-card">
         <div class="nu-login-brand">
@@ -114,40 +122,29 @@ function nu_asset($path) {
             <h1><?= h($nuConfig['siteTitle'] ?? 'NuBuilder 5') ?></h1>
             <p>Modern Low-Code Platform</p>
         </div>
-
         <?php if ($bootError !== ''): ?>
             <div class="nu-login-error" style="background:rgba(255,193,7,.12);border-color:rgba(255,193,7,.4);color:#ffe9a8;display:block">
                 &#9888; <?= h($bootError) ?>
             </div>
         <?php endif; ?>
-
         <?php if ($loginError !== ''): ?>
-            <div class="nu-login-error" style="display:block">
-                <?= h($loginError) ?>
-            </div>
+            <div class="nu-login-error" style="display:block"><?= h($loginError) ?></div>
         <?php endif; ?>
-
         <form method="post" action="index.php" autocomplete="off" novalidate>
             <div class="nu-field">
                 <label for="nu_username">Username</label>
-                <input id="nu_username" name="username" type="text"
-                       class="nu-input" autocomplete="username"
-                       value="" required autofocus spellcheck="false">
+                <input id="nu_username" name="username" type="text" class="nu-input" autocomplete="username" value="" required autofocus spellcheck="false">
             </div>
             <div class="nu-field">
                 <label for="nu_password">Password</label>
-                <input id="nu_password" name="password" type="password"
-                       class="nu-input" autocomplete="current-password" required>
+                <input id="nu_password" name="password" type="password" class="nu-input" autocomplete="current-password" required>
             </div>
-            <button type="submit" name="login_submit" value="1"
-                    class="nu-btn nu-btn-primary nu-btn-block">Sign In</button>
+            <button type="submit" name="login_submit" value="1" class="nu-btn nu-btn-primary nu-btn-block">Sign In</button>
         </form>
         <p style="margin-top:16px;font-size:12px;color:var(--text-tertiary);text-align:center;">Default: globeadmin / password</p>
     </div>
 </div>
-
 <?php else: ?>
-<!-- APP SHELL -->
 <div class="nu-app">
     <aside class="nu-sidebar" id="sidebar">
         <div class="nu-sidebar-header">
@@ -155,46 +152,16 @@ function nu_asset($path) {
             <span class="nu-version">v<?= NU_VERSION ?></span>
         </div>
         <nav class="nu-nav">
-            <a href="#dashboard" class="nu-nav-item" data-module="dashboard" onclick="NuApp.loadModule('dashboard'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                <span>Dashboard</span>
-            </a>
-            <a href="#forms" class="nu-nav-item" data-module="forms" onclick="NuApp.loadModule('forms'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                <span>Forms</span>
-            </a>
-            <a href="#reports" class="nu-nav-item" data-module="reports" onclick="NuApp.loadModule('reports'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
-                <span>Reports</span>
-            </a>
-            <a href="#queries" class="nu-nav-item" data-module="queries" onclick="NuApp.loadModule('queries'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-                <span>Queries</span>
-            </a>
-            <a href="#users" class="nu-nav-item" data-module="users" onclick="NuApp.loadModule('users'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                <span>Users</span>
-            </a>
-            <a href="#files" class="nu-nav-item" data-module="files" onclick="NuApp.loadModule('files'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                <span>Files</span>
-            </a>
-            <a href="#workflow" class="nu-nav-item" data-module="workflow" onclick="NuApp.loadModule('workflow'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                <span>Workflow</span>
-            </a>
-            <a href="#calendar" class="nu-nav-item" data-module="calendar" onclick="NuApp.loadModule('calendar'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                <span>Calendar</span>
-            </a>
-            <a href="#aiassistant" class="nu-nav-item" data-module="aiassistant" onclick="NuApp.loadModule('aiassistant'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 12L2.5 12"/></svg>
-                <span>AI Assistant</span>
-            </a>
-            <a href="#integrations" class="nu-nav-item" data-module="integrations" onclick="NuApp.loadModule('integrations'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                <span>Integrations</span>
-            </a>
+            <a href="#dashboard" class="nu-nav-item" data-module="dashboard" onclick="NuApp.loadModule('dashboard'); return false;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Dashboard</span></a>
+            <a href="#forms" class="nu-nav-item" data-module="forms" onclick="NuApp.loadModule('forms'); return false;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><span>Forms</span></a>
+            <a href="#reports" class="nu-nav-item" data-module="reports" onclick="NuApp.loadModule('reports'); return false;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg><span>Reports</span></a>
+            <a href="#queries" class="nu-nav-item" data-module="queries" onclick="NuApp.loadModule('queries'); return false;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg><span>Queries</span></a>
+            <a href="#users" class="nu-nav-item" data-module="users" onclick="NuApp.loadModule('users'); return false;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Users</span></a>
+            <a href="#files" class="nu-nav-item" data-module="files" onclick="NuApp.loadModule('files'); return false;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span>Files</span></a>
+            <a href="#workflow" class="nu-nav-item" data-module="workflow" onclick="NuApp.loadModule('workflow'); return false;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Workflow</span></a>
+            <a href="#calendar" class="nu-nav-item" data-module="calendar" onclick="NuApp.loadModule('calendar'); return false;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span>Calendar</span></a>
+            <a href="#aiassistant" class="nu-nav-item" data-module="aiassistant" onclick="NuApp.loadModule('aiassistant'); return false;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10"/><path d="M12 12L2.5 12"/></svg><span>AI Assistant</span></a>
+            <a href="#integrations" class="nu-nav-item" data-module="integrations" onclick="NuApp.loadModule('integrations'); return false;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Integrations</span></a>
         </nav>
         <div class="nu-sidebar-footer">
             <div class="nu-user-info">
@@ -202,22 +169,16 @@ function nu_asset($path) {
                 <div class="nu-user-role"><?= h(is_array($currentUser) ? ($currentUser['usr_role'] ?? '') : '') ?></div>
             </div>
             <form method="post" action="index.php" style="margin:0">
-                <button type="submit" name="logout" value="1"
-                        class="nu-btn nu-btn-ghost nu-btn-sm" style="margin-top:8px;width:100%">Logout</button>
+                <button type="submit" name="logout" value="1" class="nu-btn nu-btn-ghost nu-btn-sm" style="margin-top:8px;width:100%">Logout</button>
             </form>
         </div>
     </aside>
-
     <main class="nu-main">
         <header class="nu-header">
-            <button class="nu-menu-btn" id="menuBtn"
-                    onclick="document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('open')">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-            </button>
+            <button class="nu-menu-btn" id="menuBtn" onclick="document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('open')"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
             <h2 class="nu-page-title" id="pageTitle">Dashboard</h2>
             <div class="nu-header-actions">
-                <button class="nu-btn nu-btn-ghost" title="Toggle theme"
-                        onclick="(function(){var t=document.documentElement.getAttribute('data-theme');var n=t==='light'?'dark':t==='dark'?'auto':'light';document.documentElement.setAttribute('data-theme',n);try{localStorage.setItem('nu-theme',n);}catch(e){}})()">
+                <button class="nu-btn nu-btn-ghost" title="Toggle theme" onclick="(function(){var t=document.documentElement.getAttribute('data-theme');var n=t==='light'?'dark':t==='dark'?'auto':'light';document.documentElement.setAttribute('data-theme',n);try{localStorage.setItem('nu-theme',n);}catch(e){}})()">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
                 </button>
             </div>
@@ -228,9 +189,7 @@ function nu_asset($path) {
     </main>
     <div class="nu-overlay" id="overlay" onclick="document.getElementById('sidebar').classList.remove('open');this.classList.remove('open')"></div>
 </div>
-
 <?php endif; ?>
-
 <?php if ($isLoggedIn): ?>
 <script src="<?= nu_asset('assets/js/nubuilder-next.js') ?>"></script>
 <script src="<?= nu_asset('assets/js/select2.min.js') ?>"></script>
@@ -243,10 +202,6 @@ function nu_asset($path) {
 })();
 </script>
 <?php endif; ?>
-<script>
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(function(){});
-}
-</script>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){});}</script>
 </body>
 </html>
