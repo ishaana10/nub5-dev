@@ -102,10 +102,8 @@ class NuAuth {
 
     // --- Session Check ---
     public function checkAuth() {
-        // Session is already started by config.php - do not call session_start() again.
-        // Do NOT call session_write_close() here - the session must remain open
-        // so that getCsrfToken() and other methods can read/write $_SESSION
-        // without reopening a blank session.
+        // Session already started by config.php - do NOT call session_start() again.
+        // Do NOT call session_write_close() here - must stay open for getCsrfToken() etc.
         if (empty($_SESSION['nu_user_id'])) return false;
         $timeout = (int)($this->config['sessionTimeout'] ?? 3600);
         if (time() - (int)($_SESSION['nu_last_activity'] ?? 0) > $timeout) {
@@ -188,13 +186,24 @@ class NuAuth {
     // --- Private Helpers ---
     private function createSession($user) {
         // Session is already open (started by config.php).
-        // Just populate $_SESSION and write to disk before the redirect.
+        // MUST call session_regenerate_id(true) here to:
+        // 1. Replace any stale/old session cookie the browser may have
+        //    from previous failed login attempts.
+        // 2. Prevent session fixation attacks.
+        // 3. Ensure the new session ID is written to disk BEFORE the redirect,
+        //    so when the browser follows the Location header the ID is valid.
+        // Without this, session.use_strict_mode=1 may silently reject the old
+        // cookie ID on the next request and create a blank session instead.
+        session_regenerate_id(true);
+
         $_SESSION['nu_user_id']       = $user['usr_id'];
         $_SESSION['nu_username']      = $user['usr_username'];
         $_SESSION['nu_role']          = $user['usr_role'];
         $_SESSION['nu_last_activity'] = time();
         $_SESSION['nu_csrf']          = bin2hex(random_bytes(32));
-        // Write session to disk NOW so it exists before the browser follows the redirect.
+
+        // Write session to disk NOW so the file exists before the browser
+        // follows the redirect Location header.
         session_write_close();
     }
 
@@ -213,7 +222,7 @@ class NuAuth {
     }
 
     private function logAudit($action, $table, $recordId) {
-        if (empty($this->config['enableAuditTrail'])) return;
+        if (empty($this->config['enableAuditTrail'])) return;\
         try {
             $audit = new NuAudit();
             $audit->log($action, $table, $recordId);
