@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+// cache-bust: 2026-05-28T14:53
 /**
  * NuAuth - Authentication, Session Management & Permission Engine
  * PHP 7.4 compatible
@@ -76,12 +77,8 @@ class NuAuth {
         $this->resetAttempts((int)$user['usr_id']);
         $this->createSession($user);
         $this->logAudit('login', 'nu_users', (int)$user['usr_id']);
-
-        // Force the session to disk NOW, before the redirect response is sent.
-        // This guarantees the session file exists when the browser's GET request
-        // arrives a few milliseconds after the 302. Without this, there is a
-        // window where PHP has queued the Set-Cookie + Location headers but has
-        // not yet flushed the session file (it normally writes on shutdown).
+        // Flush session to disk before the redirect so the GET request
+        // can always find the session file.
         session_write_close();
 
         return ['success' => true, 'user' => $this->sanitizeUser($user)];
@@ -195,11 +192,8 @@ class NuAuth {
 
     // --- Private Helpers ---
     private function createSession($user) {
-        // Use delete_old_session=false to avoid the session-regeneration race:
-        // With true, PHP deletes the old file immediately. If the browser's
-        // GET request (after the 302) arrives before the new file is flushed,
-        // it opens the deleted old ID and gets an empty session.
-        // With false, the old file stays readable until it expires via GC.
+        // delete_old_session=false avoids the race where the browser GET
+        // arrives before the new session file is flushed to disk.
         session_regenerate_id(false);
 
         $_SESSION['nu_user_id']       = $user['usr_id'];
@@ -207,8 +201,6 @@ class NuAuth {
         $_SESSION['nu_role']          = $user['usr_role'];
         $_SESSION['nu_last_activity'] = time();
         $_SESSION['nu_csrf']          = bin2hex(random_bytes(32));
-        // session_write_close() is called in login() AFTER logAudit(),
-        // guaranteeing the file is on disk before the redirect is sent.
     }
 
     private function incrementAttempts($userId) {

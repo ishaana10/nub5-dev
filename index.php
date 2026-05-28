@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
-ob_start(); // Buffer all output - prevents 'headers already sent' from any whitespace or warnings
-// config.php handles session_name('nu5sess') + session_start() - DO NOT call session_start() here
+ob_start();
+// cache-bust: 2026-05-28T14:53
 
 function h($v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
@@ -21,16 +21,42 @@ try {
     $auth = NuAuth::getInstance();
 } catch (Throwable $e) {
     error_log('[index.php boot] ' . $e->getMessage());
-    $bootError = 'Application failed to start. Please contact the administrator.';
+    $bootError = 'Application failed to start: ' . $e->getMessage();
 }
 
-// Build absolute base URL for redirects (avoids relative redirect issues on shared hosts)
 $_scheme   = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $_host     = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $_self     = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\');
 $_baseHref = $_scheme . '://' . $_host . $_self . '/';
 
-// ─── Logout ──────────────────────────────────────────────────────────────────────
+// ─── DEBUG BLOCK (remove after fix confirmed) ────────────────────────────────
+$_nu_debug = isset($_GET['nu_debug']);
+if ($_nu_debug) {
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "=== index.php INLINE DEBUG ===", PHP_EOL;
+    echo "bootError    : ", $bootError ?: '(none)', PHP_EOL;
+    echo "session_id   : ", session_id(), PHP_EOL;
+    echo "session_status: ", session_status(), " (2=active)", PHP_EOL;
+    echo "_SESSION     : ", json_encode($_SESSION), PHP_EOL;
+    echo "cookie nu5sess: ", $_COOKIE['nu5sess'] ?? '(none)', PHP_EOL;
+    echo "REQUEST_METHOD: ", $_SERVER['REQUEST_METHOD'], PHP_EOL;
+    if ($auth) {
+        $chk = $auth->checkAuth();
+        echo "checkAuth()  : ", ($chk ? 'TRUE' : 'FALSE'), PHP_EOL;
+        echo "_SESSION after checkAuth: ", json_encode($_SESSION), PHP_EOL;
+    } else {
+        echo "auth         : NULL (boot failed)", PHP_EOL;
+    }
+    echo "nuConfig keys: ", implode(', ', array_keys($nuConfig)), PHP_EOL;
+    echo "dbName       : ", $nuConfig['dbName'] ?? '?', PHP_EOL;
+    echo "baseUrl      : ", $nuConfig['baseUrl'] ?? '?', PHP_EOL;
+    echo "sessionCookieSecure: ", var_export($nuConfig['sessionCookieSecure'] ?? null, true), PHP_EOL;
+    ob_end_clean();
+    exit;
+}
+// ─── END DEBUG BLOCK ─────────────────────────────────────────────────────────
+
+// ─── Logout ──────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
     if ($auth) { $auth->logout(); }
     else { $_SESSION = []; session_destroy(); }
@@ -39,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
     exit;
 }
 
-// ─── Login ──────────────────────────────────────────────────────────────────────
+// ─── Login ───────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     $username = trim((string)($_POST['username'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
@@ -63,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     }
 }
 
-// ─── Auth Check ────────────────────────────────────────────────────────────────
+// ─── Auth Check ──────────────────────────────────────────────────────────────
 if ($auth) {
     try {
         $isLoggedIn  = (bool)$auth->checkAuth();
@@ -87,7 +113,7 @@ function nu_asset($path) {
     return h(ltrim($path, '/')) . '?v=' . $v;
 }
 
-$_theme = $nuConfig['theme'] ?? 'auto';
+$_theme     = $nuConfig['theme'] ?? 'auto';
 $_siteTitle = $nuConfig['siteTitle'] ?? 'NuBuilder 5';
 ?>
 <!DOCTYPE html>
@@ -189,10 +215,8 @@ $_siteTitle = $nuConfig['siteTitle'] ?? 'NuBuilder 5';
 </div>
 <?php endif; ?>
 
-<!-- jQuery must load before Select2 -->
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="<?= nu_asset('assets/js/select2.min.js') ?>"></script>
-<!-- App JS -->
 <script src="<?= nu_asset('assets/js/nubuilder-next.js') ?>"></script>
 <?php if ($isLoggedIn): ?>
 <script>
