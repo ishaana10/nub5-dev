@@ -175,9 +175,11 @@ function nu_asset($path) {
 </div>
 <?php endif; ?>
 
-<!-- JS always loads regardless of auth state -->
-<script src="<?= nu_asset('assets/js/nubuilder-next.js') ?>"></script>
+<!-- jQuery must load before Select2 -->
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="<?= nu_asset('assets/js/select2.min.js') ?>"></script>
+<!-- App JS -->
+<script src="<?= nu_asset('assets/js/nubuilder-next.js') ?>"></script>
 <?php if ($isLoggedIn): ?>
 <script>
 (function(){
