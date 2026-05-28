@@ -22,15 +22,21 @@ try {
     $bootError = 'Application failed to start. Please contact the administrator.';
 }
 
-// ─── Logout ────────────────────────────────────────────────────────────────
+// Build absolute base URL for redirects (avoids relative redirect issues on shared hosts)
+$_scheme   = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$_host     = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$_self     = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\');
+$_baseHref = $_scheme . '://' . $_host . $_self . '/';
+
+// ─── Logout ──────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
     if ($auth) { $auth->logout(); }
     else { $_SESSION = []; session_destroy(); }
-    header('Location: index.php');
+    header('Location: ' . $_baseHref . 'index.php');
     exit;
 }
 
-// ─── Login ─────────────────────────────────────────────────────────────────
+// ─── Login ──────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     $username = trim((string)($_POST['username'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
@@ -42,7 +48,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
         try {
             $result = $auth->login($username, $password);
             if (!empty($result['success'])) {
-                header('Location: index.php');
+                // Use absolute URL so shared-host proxies resolve correctly
+                header('Location: ' . $_baseHref . 'index.php');
                 exit;
             }
             $loginError = $result['message'] ?? 'Login failed.';
@@ -53,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     }
 }
 
-// ─── Auth Check ────────────────────────────────────────────────────────────
+// ─── Auth Check ────────────────────────────────────────────────────────────────
 if ($auth) {
     try {
         $isLoggedIn  = (bool)$auth->checkAuth();
