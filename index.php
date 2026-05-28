@@ -42,8 +42,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
         try {
             $result = $auth->login($username, $password);
             if (!empty($result['success'])) {
-                // createSession() already called session_write_close() internally.
-                // Do NOT call session_write_close() again here — just redirect.
                 header('Location: index.php');
                 exit;
             }
@@ -89,8 +87,6 @@ function nu_asset($path) {
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
     <link rel="stylesheet" href="<?= nu_asset('assets/css/nubuilder-next.css') ?>">
     <link rel="stylesheet" href="<?= nu_asset('assets/css/select2.min.css') ?>">
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#0b1020">
 </head>
 <body>
 <?php if (!$isLoggedIn): ?>
@@ -179,7 +175,7 @@ function nu_asset($path) {
 </div>
 <?php endif; ?>
 
-<!-- JS always loads regardless of auth state so SW-cached pages never lose NuApp context -->
+<!-- JS always loads regardless of auth state -->
 <script src="<?= nu_asset('assets/js/nubuilder-next.js') ?>"></script>
 <script src="<?= nu_asset('assets/js/select2.min.js') ?>"></script>
 <?php if ($isLoggedIn): ?>
@@ -192,6 +188,5 @@ function nu_asset($path) {
 })();
 </script>
 <?php endif; ?>
-<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){});}</script>
 </body>
 </html>
