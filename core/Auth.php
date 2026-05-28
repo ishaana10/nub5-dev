@@ -102,9 +102,10 @@ class NuAuth {
 
     // --- Session Check ---
     public function checkAuth() {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
+        // Session is already started by config.php - do not call session_start() again.
+        // Do NOT call session_write_close() here - the session must remain open
+        // so that getCsrfToken() and other methods can read/write $_SESSION
+        // without reopening a blank session.
         if (empty($_SESSION['nu_user_id'])) return false;
         $timeout = (int)($this->config['sessionTimeout'] ?? 3600);
         if (time() - (int)($_SESSION['nu_last_activity'] ?? 0) > $timeout) {
@@ -112,10 +113,6 @@ class NuAuth {
             return false;
         }
         $_SESSION['nu_last_activity'] = time();
-        // Write and close session immediately after updating activity timestamp.
-        // This prevents the session file being held open/locked during page render,
-        // and ensures the updated timestamp is persisted to disk.
-        session_write_close();
         return true;
     }
 
@@ -125,8 +122,6 @@ class NuAuth {
 
     // --- Current User ---
     public function getCurrentUser() {
-        // Note: session may be closed after checkAuth(); we read from $_SESSION
-        // which remains populated in memory even after session_write_close().
         if (empty($_SESSION['nu_user_id'])) return null;
         $user = $this->db->fetchOne(
             "SELECT usr_id, usr_username, usr_name, usr_email, usr_role, usr_active FROM nu_users WHERE usr_id = :id LIMIT 1",
@@ -137,9 +132,6 @@ class NuAuth {
 
     // --- CSRF ---
     public function getCsrfToken() {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
         if (empty($_SESSION['nu_csrf'])) {
             $_SESSION['nu_csrf'] = bin2hex(random_bytes(32));
         }
@@ -147,9 +139,6 @@ class NuAuth {
     }
 
     public function verifyCsrf($token) {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
         return isset($_SESSION['nu_csrf']) && hash_equals($_SESSION['nu_csrf'], $token);
     }
 
@@ -198,21 +187,14 @@ class NuAuth {
 
     // --- Private Helpers ---
     private function createSession($user) {
-        // NOTE: session_regenerate_id() is intentionally NOT called here.
-        // The session is already fresh (started by config.php on every request).
-        // Calling session_regenerate_id() before header('Location:') causes the
-        // new session ID cookie to be lost in the redirect on some PHP 7.4 hosts.
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
+        // Session is already open (started by config.php).
+        // Just populate $_SESSION and write to disk before the redirect.
         $_SESSION['nu_user_id']       = $user['usr_id'];
         $_SESSION['nu_username']      = $user['usr_username'];
         $_SESSION['nu_role']          = $user['usr_role'];
         $_SESSION['nu_last_activity'] = time();
         $_SESSION['nu_csrf']          = bin2hex(random_bytes(32));
-        // Explicitly write the session to disk NOW, before the redirect.
-        // This guarantees the session file exists and is fully written
-        // before the browser follows the Location header to the next GET.
+        // Write session to disk NOW so it exists before the browser follows the redirect.
         session_write_close();
     }
 
