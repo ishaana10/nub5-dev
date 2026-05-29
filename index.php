@@ -1,16 +1,12 @@
 <?php
 declare(strict_types=1);
 
-// ─── Bootstrap ────────────────────────────────────────────────────────────────
+// ─── Bootstrap ───────────────────────────────────────────────────────────────────────────────
 $bootError  = '';
 $loginError = '';
 $isLoggedIn = false;
 $currentUser = null;
 $auth = null;
-
-/*function h(mixed $v): string {
-    return htmlspecialchars((string)$v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-}*/
 
 function h($v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -26,7 +22,7 @@ try {
     $bootError = 'Application failed to start. Please contact the administrator.';
 }
 
-// ─── Logout ───────────────────────────────────────────────────────────────────
+// ─── Logout ───────────────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
     if ($auth) $auth->logout();
     else { $_SESSION = []; session_destroy(); }
@@ -34,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
     exit;
 }
 
-// ─── Login ────────────────────────────────────────────────────────────────────
+// ─── Login ───────────────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     $username = trim((string)($_POST['username'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
@@ -57,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     }
 }
 
-// ─── Auth Check ───────────────────────────────────────────────────────────────
+// ─── Auth Check ──────────────────────────────────────────────────────────────────────────
 if ($auth) {
     try {
         $isLoggedIn  = $auth->checkAuth();
@@ -74,7 +70,7 @@ if (is_array($currentUser)) {
     $userDisplay = $currentUser['usr_name'] ?? $currentUser['usr_username'] ?? 'User';
 }
 
-// ─── Asset helpers ────────────────────────────────────────────────────────────
+// ─── Asset helpers ──────────────────────────────────────────────────────────────────────
 function nu_asset(string $path): string {
     $full = __DIR__ . '/' . ltrim($path, '/');
     $v    = is_file($full) ? filemtime($full) : time();
@@ -97,7 +93,7 @@ function nu_asset(string $path): string {
 </head>
 <body>
 <?php if (!$isLoggedIn): ?>
-<!-- ═══════════════════════════════ LOGIN PAGE ════════════════════════════════ -->
+<!-- ══════════════════════════════════ LOGIN PAGE ══════════════════════════════════ -->
 <div class="nu-login">
     <div class="nu-login-card">
         <div class="nu-login-brand">
@@ -140,7 +136,7 @@ function nu_asset(string $path): string {
 </div>
 
 <?php else: ?>
-<!-- ════════════════════════════════ APP SHELL ═══════════════════════════════ -->
+<!-- ════════════════════════════════ APP SHELL ════════════════════════════════ -->
 <div class="nu-app">
 
     <!-- Sidebar -->
@@ -295,30 +291,41 @@ function nu_asset(string $path): string {
 <?php endif; ?>
 
 <?php if ($isLoggedIn): ?>
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>  <!-- 1st -->
-<script src="assets/js/select2.min.js"></script>                      <!-- 2nd -->
-<script src="assets/js/nubuilder-next.js"></script>                   <!-- 3rd -->
-
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="assets/js/select2.min.js"></script>
+<script src="assets/js/nubuilder-next.js"></script>
 <script>
-(function(){
+(function () {
     // Restore saved theme
     try {
         var t = localStorage.getItem('nu-theme');
         if (t) document.documentElement.setAttribute('data-theme', t);
-    } catch(e) {}
-    // Load module from URL hash
-    var hash = location.hash.replace('#','');
-    if (hash && window.NuApp) NuApp.loadModule(hash);
-    else if (window.NuApp) NuApp.loadModule('dashboard');
+    } catch (e) {}
+
+    // Load the correct module.
+    // nubuilder-next.js also listens on DOMContentLoaded — but scripts at the
+    // bottom of <body> execute AFTER DOMContentLoaded on a redirect (login POST),
+    // so we call loadModule here too as the reliable fallback.
+    function _boot() {
+        if (!window.NuApp) return;
+        var hash = (location.hash || '').replace('#', '');
+        NuApp.loadModule(hash || 'dashboard');
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _boot);
+    } else {
+        // DOM already ready (e.g. after login redirect) — run immediately
+        _boot();
+    }
 })();
 </script>
 <?php endif; ?>
 
 <?php if (!$isLoggedIn): ?>
 <script>
-// Register SW for PWA
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(function(){});
+    navigator.serviceWorker.register('sw.js').catch(function () {});
 }
 </script>
 <?php endif; ?>
