@@ -24,6 +24,15 @@ class NuDatabase {
         return self::$instance;
     }
 
+    /**
+     * Static bridge so code that calls NuDatabase::getConnection() (or
+     * Database::getConnection() via the class_alias below) doesn't trigger
+     * "Non-static method … should not be called statically".
+     */
+    public static function getConnection() {
+        return self::getInstance()->pdo;
+    }
+
     private function connect() {
         $host    = $this->config['dbHost']     ?? 'localhost';
         $dbName  = $this->config['dbName']     ?? '';
@@ -41,7 +50,7 @@ class NuDatabase {
         $this->pdo = new PDO($dsn, $user, $pass, $options);
     }
 
-    public function getConnection() {
+    public function getPdo() {
         return $this->pdo;
     }
 
