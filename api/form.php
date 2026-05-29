@@ -47,6 +47,11 @@ function nu_db() {
     if (isset($GLOBALS['db']) && $GLOBALS['db'] instanceof PDO) return $GLOBALS['db'];
     if (isset($GLOBALS['conn']) && $GLOBALS['conn'] instanceof PDO) return $GLOBALS['conn'];
 
+    if (class_exists('NuDatabase')) {
+        $conn = NuDatabase::getConnection();
+        if ($conn instanceof PDO) return $conn;
+    }
+
     if (class_exists('Database')) {
         if (method_exists('Database', 'getConnection')) {
             $conn = Database::getConnection();
@@ -173,11 +178,22 @@ function nu_decode_layout($form) {
     return is_array($layout) ? $layout : [];
 }
 
+function nu_get_pk($table) {
+    try {
+        $stmt = nu_q("SHOW KEYS FROM `{$table}` WHERE Key_name = 'PRIMARY'");
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return ($row && !empty($row['Column_name'])) ? $row['Column_name'] : 'id';
+    } catch (Throwable $e) {
+        return 'id';
+    }
+}
+
 function nu_get_record($table, $id) {
     $table = nu_safe_ident($table);
     if (!$table || !$id) return [];
 
-    $stmt = nu_q("SELECT * FROM `{$table}` WHERE id = ? LIMIT 1", [$id]);
+    $pk = nu_get_pk($table);
+    $stmt = nu_q("SELECT * FROM `{$table}` WHERE `{$pk}` = ? LIMIT 1", [$id]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return $row ?: [];
 }
@@ -255,10 +271,21 @@ function nu_render_options($field, $selectedValue = null) {
     return $html;
 }
 
+function nu_resolve_lookup_id_col($lookup) {
+    $idCol = nu_safe_ident($lookup['id_column'] ?? ($lookup['idcolumn'] ?? ''));
+    if ($idCol !== '') return $idCol;
+
+    // id_column was left blank in the form builder — detect real PK
+    $table = nu_safe_ident($lookup['table'] ?? '');
+    if ($table !== '') return nu_get_pk($table);
+
+    return 'id';
+}
+
 function nu_render_lookup_display($field, $value) {
     $lookup = $field['lookup'] ?? [];
     $table = nu_safe_ident($lookup['table'] ?? '');
-    $idCol = nu_safe_ident($lookup['id_column'] ?? ($lookup['idcolumn'] ?? 'id'));
+    $idCol = nu_resolve_lookup_id_col($lookup);
     $displayCol = nu_safe_ident($lookup['display_column'] ?? ($lookup['displaycolumn'] ?? 'name'));
 
     if ($table === '' || $idCol === '' || $displayCol === '' || $value === '' || $value === null) {
@@ -364,8 +391,8 @@ function nu_render_field($field, $value = '', $record = []) {
         case 'lookup':
             $lookup = $field['lookup'] ?? [];
             $table = $lookup['table'] ?? '';
-            $idCol = $lookup['id_column'] ?? ($lookup['idcolumn'] ?? 'id');
-            $displayCol = $lookup['display_column'] ?? ($lookup['displaycolumn'] ?? 'name');
+            $idCol = nu_resolve_lookup_id_col($lookup);
+            $displayCol = nu_safe_ident($lookup['display_column'] ?? ($lookup['displaycolumn'] ?? 'name'));
             $filter = $lookup['filter'] ?? '';
             $extra = $lookup['extra'] ?? '';
             $displayValue = nu_render_lookup_display($field, $value);
@@ -654,8 +681,9 @@ function nu_handle_save() {
             $params[] = $val;
         }
 
+        $pk = nu_get_pk($table);
         $params[] = $id;
-        $sql = "UPDATE `{$table}` SET " . implode(', ', $sets) . " WHERE id = ?";
+        $sql = "UPDATE `{$table}` SET " . implode(', ', $sets) . " WHERE `{$pk}` = ?";
         nu_q($sql, $params);
 
         nu_json([
