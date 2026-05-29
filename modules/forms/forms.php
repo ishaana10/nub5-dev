@@ -107,6 +107,17 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
   border-radius:8px; padding:8px 14px; font-size:12px; opacity:.85;
   box-shadow:0 4px 20px rgba(0,0,0,.15);
 }
+
+/* Save/cancel bar — always visible at bottom of builder card */
+.nb-save-bar {
+  display:flex !important;
+  justify-content:flex-end;
+  align-items:center;
+  gap:8px;
+  margin-top:20px;
+  padding-top:16px;
+  border-top:1px solid var(--border-color);
+}
 </style>
 
 <div class="nu-forms">
@@ -116,7 +127,7 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <h3 class="nu-card-title">Forms</h3>
       <?php if ($auth->hasPermission('forms','create')): ?>
-      <button class="nu-btn nu-btn-primary" onclick="openFormBuilder()">+ New Form</button>
+      <button class="nu-btn nu-btn-primary" onclick="nbFormBuilder.open()">+ New Form</button>
       <?php endif; ?>
     </div>
 
@@ -135,7 +146,7 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
         <p class="nu-form-meta" style="margin-bottom:12px;"><?= $fieldCount ?> field<?= $fieldCount !== 1 ? 's' : '' ?></p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="nu-btn nu-btn-primary nu-btn-sm" onclick="previewForm('<?= htmlspecialchars($f['form_code']) ?>')">Preview</button>
-          <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="editForm(<?= (int)$f['form_id'] ?>)">Edit</button>
+          <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nbFormBuilder.edit(<?= (int)$f['form_id'] ?>)">Edit</button>
           <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="browseForm('<?= htmlspecialchars($f['form_code']) ?>')">Browse</button>
           <button class="nu-btn nu-btn-danger nu-btn-sm" onclick="deleteForm(<?= (int)$f['form_id'] ?>,'<?= htmlspecialchars($f['form_name'],ENT_QUOTES) ?>')">Delete</button>
         </div>
@@ -146,7 +157,7 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
       <div class="nu-card" style="grid-column:1/-1;text-align:center;padding:48px;">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-tertiary);margin:0 auto 12px;"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>
         <p style="color:var(--text-tertiary);margin-bottom:12px;">No forms yet. Click "New Form" to create one.</p>
-        <button class="nu-btn nu-btn-primary" onclick="openFormBuilder()">+ New Form</button>
+        <button class="nu-btn nu-btn-primary" onclick="nbFormBuilder.open()">+ New Form</button>
       </div>
       <?php endif; ?>
     </div>
@@ -158,7 +169,7 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <h3 class="nu-card-title" id="builderTitle">New Form</h3>
-      <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nbCloseBuilder()">✕ Close</button>
+      <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nbFormBuilder.close()">✕ Close</button>
     </div>
 
     <!-- Form identity row -->
@@ -174,11 +185,11 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
     </div>
 
     <!-- Tabs -->
-    <div class="nb-tabs">
-      <button class="nb-tab active" data-panel="panelFields"    onclick="nbSwitchTab(this)">🧩 Fields</button>
-      <button class="nb-tab"        data-panel="panelBrowse"    onclick="nbSwitchTab(this)">📋 Browse</button>
-      <button class="nb-tab"        data-panel="panelEvents"    onclick="nbSwitchTab(this)">⚡ Events</button>
-      <button class="nb-tab"        data-panel="panelCode"      onclick="nbSwitchTab(this)">🎨 CSS / PHP</button>
+    <div class="nb-tabs" id="nbTabsRow">
+      <button class="nb-tab active" data-panel="panelFields"  onclick="nbFormBuilder.switchTab(this)">🧩 Fields</button>
+      <button class="nb-tab"        data-panel="panelBrowse"  onclick="nbFormBuilder.switchTab(this)">📋 Browse</button>
+      <button class="nb-tab"        data-panel="panelEvents"  onclick="nbFormBuilder.switchTab(this)">⚡ Events</button>
+      <button class="nb-tab"        data-panel="panelCode"    onclick="nbFormBuilder.switchTab(this)">🎨 CSS / PHP</button>
     </div>
 
     <!-- ── Tab: Fields ─────────────────────────────────────────── -->
@@ -191,46 +202,46 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
 
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Basic</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="text"><?= icon('type') ?> Text</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="email"><?= icon('mail') ?> Email</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="number"><?= icon('hash') ?> Number</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="phone"><?= icon('phone') ?> Phone</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="url"><?= icon('link') ?> URL</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="password"><?= icon('lock') ?> Password</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="textarea"><?= icon('align-left') ?> Textarea</div>
+            <div class="nb-tool" draggable="true" data-type="text"><?= icon('type') ?> Text</div>
+            <div class="nb-tool" draggable="true" data-type="email"><?= icon('mail') ?> Email</div>
+            <div class="nb-tool" draggable="true" data-type="number"><?= icon('hash') ?> Number</div>
+            <div class="nb-tool" draggable="true" data-type="phone"><?= icon('phone') ?> Phone</div>
+            <div class="nb-tool" draggable="true" data-type="url"><?= icon('link') ?> URL</div>
+            <div class="nb-tool" draggable="true" data-type="password"><?= icon('lock') ?> Password</div>
+            <div class="nb-tool" draggable="true" data-type="textarea"><?= icon('align-left') ?> Textarea</div>
           </div>
 
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Date &amp; Time</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="date"><?= icon('calendar') ?> Date</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="time"><?= icon('clock') ?> Time</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="datetime"><?= icon('clock') ?> Date+Time</div>
+            <div class="nb-tool" draggable="true" data-type="date"><?= icon('calendar') ?> Date</div>
+            <div class="nb-tool" draggable="true" data-type="time"><?= icon('clock') ?> Time</div>
+            <div class="nb-tool" draggable="true" data-type="datetime"><?= icon('clock') ?> Date+Time</div>
           </div>
 
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Choice</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="select"><?= icon('chevron-down') ?> Select</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="radio"><?= icon('circle') ?> Radio</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="checkbox"><?= icon('check-square') ?> Checkbox</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="checkbox_group"><?= icon('list') ?> Checkbox Group</div>
+            <div class="nb-tool" draggable="true" data-type="select"><?= icon('chevron-down') ?> Select</div>
+            <div class="nb-tool" draggable="true" data-type="radio"><?= icon('circle') ?> Radio</div>
+            <div class="nb-tool" draggable="true" data-type="checkbox"><?= icon('check-square') ?> Checkbox</div>
+            <div class="nb-tool" draggable="true" data-type="checkbox_group"><?= icon('list') ?> Checkbox Group</div>
           </div>
 
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Advanced</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="lookup"><?= icon('search') ?> Lookup</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="file"><?= icon('paperclip') ?> File Upload</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="color"><?= icon('droplet') ?> Color</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="range"><?= icon('sliders') ?> Range</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="hidden"><?= icon('eye-off') ?> Hidden</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="calculated"><?= icon('zap') ?> Calculated</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="subform"><?= icon('layers') ?> Subform</div>
+            <div class="nb-tool" draggable="true" data-type="lookup"><?= icon('search') ?> Lookup</div>
+            <div class="nb-tool" draggable="true" data-type="file"><?= icon('paperclip') ?> File Upload</div>
+            <div class="nb-tool" draggable="true" data-type="color"><?= icon('droplet') ?> Color</div>
+            <div class="nb-tool" draggable="true" data-type="range"><?= icon('sliders') ?> Range</div>
+            <div class="nb-tool" draggable="true" data-type="hidden"><?= icon('eye-off') ?> Hidden</div>
+            <div class="nb-tool" draggable="true" data-type="calculated"><?= icon('zap') ?> Calculated</div>
+            <div class="nb-tool" draggable="true" data-type="subform"><?= icon('layers') ?> Subform</div>
           </div>
 
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Layout</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="html"><?= icon('code') ?> HTML Block</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="divider"><?= icon('minus') ?> Divider</div>
-            <div class="nb-tool nu-builder-tool" draggable="true" data-type="button"><?= icon('square') ?> Button</div>
+            <div class="nb-tool" draggable="true" data-type="html"><?= icon('code') ?> HTML Block</div>
+            <div class="nb-tool" draggable="true" data-type="divider"><?= icon('minus') ?> Divider</div>
+            <div class="nb-tool" draggable="true" data-type="button"><?= icon('square') ?> Button</div>
           </div>
         </div>
 
@@ -276,7 +287,7 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
         </div>
 
         <div class="nu-field" style="grid-column:1/-1;">
-          <label>Browse SQL <span class="nu-form-meta">(overrides auto-query; use :search placeholder for search term)</span></label>
+          <label>Browse SQL <span class="nu-form-meta">(overrides auto-query; use :search for search term)</span></label>
           <textarea id="formBrowseSql" class="nu-input" rows="5" placeholder="SELECT id, name, email FROM customers WHERE active=1"></textarea>
         </div>
 
@@ -294,7 +305,7 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
 
         <div class="nu-field">
           <label>JS — On Load <span class="nu-form-meta">(runs when form opens; <code>nu</code> = nuForm object)</span></label>
-          <textarea id="formCustomJs" class="nu-input" rows="7" placeholder="// nu.setValue('status','active');\n// nu.hide('internal_notes');"></textarea>
+          <textarea id="formCustomJs" class="nu-input" rows="7" placeholder="// nu.setValue('status','active');"></textarea>
         </div>
 
         <div class="nu-field">
@@ -309,8 +320,7 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
 
         <div class="nu-field">
           <label>PHP — Before Save <span class="nu-form-meta">(server-side; <code>$record</code> array available)</span></label>
-          <textarea id="formCustomPhp" class="nu-input" rows="7" placeholder="<?php\n// $record['created_by'] = $_SESSION['user_id'];\n// $record['slug'] = strtolower(str_replace(' ','-',$record['name']));
-?>"></textarea>
+          <textarea id="formCustomPhp" class="nu-input" rows="7" placeholder="// $record['slug'] = strtolower(str_replace(' ','-',$record['name']));"></textarea>
         </div>
 
       </div>
@@ -319,20 +329,18 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
     <!-- ── Tab: CSS / PHP ──────────────────────────────────────── -->
     <div class="nb-tab-panel" id="panelCode">
       <div style="display:grid;gap:14px;">
-
         <div class="nu-field">
           <label>Custom CSS <span class="nu-form-meta">(scoped to this form)</span></label>
           <textarea id="formCustomCss" class="nu-input" rows="10" placeholder=".nu-generated-form .my-class { color: red; }"></textarea>
         </div>
-
       </div>
     </div><!-- /panelCode -->
 
-    <!-- Save / Cancel -->
-    <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border-color);">
+    <!-- ── Save / Cancel bar — always rendered, never hidden ── -->
+    <div class="nb-save-bar">
       <span id="builderSaveStatus" style="font-size:12px;color:var(--text-secondary);"></span>
-      <button class="nu-btn nu-btn-ghost" onclick="nbCloseBuilder()">Cancel</button>
-      <button class="nu-btn nu-btn-primary" onclick="saveForm()">💾 Save Form</button>
+      <button class="nu-btn nu-btn-ghost" onclick="nbFormBuilder.close()">Cancel</button>
+      <button class="nu-btn nu-btn-primary" onclick="nbFormBuilder.save()">💾 Save Form</button>
     </div>
 
   </div><!-- /formBuilderCard -->
@@ -371,442 +379,389 @@ function icon($name) {
 ?>
 
 <script>
-(function(){
+/**
+ * nbFormBuilder — global namespace, safe for innerHTML injection.
+ * All onclick="nbFormBuilder.xxx()" calls reference this object directly.
+ * No IIFE wrapping to avoid scope loss after innerHTML injection.
+ */
+window.nbFormBuilder = (function() {
 
-// ── Tab switching ─────────────────────────────────────────────
-window.nbSwitchTab = function(btn) {
-  document.querySelectorAll('.nb-tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.nb-tab-panel').forEach(p => p.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById(btn.dataset.panel).classList.add('active');
-};
+  // ── private helpers ─────────────────────────────────────────
+  function _esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+  function _val(obj, k, def) { return obj[k] !== undefined ? obj[k] : (def || ''); }
+  function _chk(obj, k) { return obj[k] ? 'checked' : ''; }
+  function _el(id) { return document.getElementById(id); }
 
-window.nbCloseBuilder = function() {
-  document.getElementById('formBuilderCard').style.display = 'none';
-};
-
-// ── Canvas helpers ────────────────────────────────────────────
-function canvasEmpty() {
-  const canvas = document.getElementById('formCanvas');
-  const empty  = document.getElementById('canvasEmpty');
-  if (!canvas || !empty) return;
-  empty.style.display = canvas.querySelectorAll('.nb-cfield').length ? 'none' : 'block';
-}
-
-// ── Build per-field property panel HTML ───────────────────────
-function fieldPropPanel(type, extra) {
-  extra = extra || {};
-  const val = (k, def) => extra[k] !== undefined ? extra[k] : (def || '');
-  const chk = (k) => extra[k] ? 'checked' : '';
-
-  const inp  = (cls, k, ph, def) =>
-    `<input type="text" class="nu-input ${cls}" value="${esc(val(k,def))}" placeholder="${ph}">`;
-  const esc  = s => String(s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-  const row  = (label, inner, full) =>
-    `<div class="nb-fp${full?' nb-fp-full':''}"><label>${label}</label>${inner}</div>`;
-  const chkLbl = (cls, k, lbl) =>
-    `<label class="nb-fp-check"><input type="checkbox" class="${cls}" ${chk(k)}> ${lbl}</label>`;
-
-  // ── Width selector ──
-  const widthSel = `<select class="nu-input nu-field-width">
-    ${['25%','33%','50%','66%','75%','100%'].map(w=>
-      `<option${val('width','100%')===w?' selected':''}>${w}</option>`).join('')}
-  </select>`;
-
-  let html = `<div class="nb-fp-grid">
-    ${row('Label',`<input type="text" class="nu-input nu-builder-label" value="${esc(val('label'))}" placeholder="Field label">`)}
-    ${row('Field Name (DB column)',`<input type="text" class="nu-input nu-builder-name" value="${esc(val('name'))}" placeholder="field_name">`)}
-    ${row('Width', widthSel)}
-    ${row('Default Value', inp('nu-field-default','default_value','default value'))}
-    ${row('Placeholder',   inp('nu-field-placeholder','placeholder','hint text'))}
-    ${row('Help Text',     inp('nu-field-help','help_text','shown under field'))}
-    ${row('CSS Class',     inp('nu-field-cssclass','css_class','my-custom-class'))}
-    ${row('Tab',           inp('nu-field-tab','tab','tab name'))}
-    ${row('Section',       inp('nu-field-section','section','section heading'))}
-    ${row('Visibility Rule', inp('nu-field-vis','visibility_rule','JS expression'))}
-    ${row('Readonly Rule',   inp('nu-field-readonly','readonly_rule','JS expression'))}
-    ${row('JS On Change',    inp('nu-field-onchange','js_onchange','JS code snippet'))}
-    <div class="nb-fp nb-fp-full" style="flex-direction:row;gap:16px;flex-wrap:wrap;align-items:center;">
-      ${chkLbl('nu-field-required','required','Required')}
-    </div>`;
-
-  // ── type-specific extras ──
-  if (type === 'textarea') {
-    html += row('Rows', `<input type="number" class="nu-input nu-field-rows" value="${val('rows',3)}" min="1" max="30">`);
+  function _canvasEmpty() {
+    var canvas = _el('formCanvas');
+    var empty  = _el('canvasEmpty');
+    if (!canvas || !empty) return;
+    empty.style.display = canvas.querySelectorAll('.nb-cfield').length ? 'none' : 'block';
   }
 
-  if (type === 'number' || type === 'range') {
-    html += row('Min', inp('nu-field-min','min',''));
-    html += row('Max', inp('nu-field-max','max',''));
-    html += row('Step', inp('nu-field-step','step',''));
+  function _inp(cls, obj, k, ph, def) {
+    return '<input type="text" class="nu-input ' + cls + '" value="' + _esc(_val(obj,k,def||'')) + '" placeholder="' + _esc(ph||'') + '">';
+  }
+  function _row(label, inner, full) {
+    return '<div class="nb-fp' + (full?' nb-fp-full':'') + '"><label>' + label + '</label>' + inner + '</div>';
+  }
+  function _chkLbl(cls, obj, k, lbl) {
+    return '<label class="nb-fp-check"><input type="checkbox" class="' + cls + '" ' + _chk(obj,k) + '> ' + lbl + '</label>';
   }
 
-  if (type === 'file') {
-    html += row('Accept', inp('nu-field-accept','accept','.pdf,.jpg,.png'));
-    html += `<div class="nb-fp">${chkLbl('nu-field-multiple-upload','multiple_upload','Allow multiple files')}</div>`;
-  }
+  // ── build per-field property panel HTML ─────────────────────
+  function _fieldPanel(type, extra) {
+    extra = extra || {};
 
-  if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
-    const srcType = val('source_type', val('sourcetype','static'));
-    const opts    = (extra.options||[]).map(o=>`${o.value||''}|${o.label||o.value||''}`).join('\n');
-    const sqlVal  = val('sql_source', val('sqlsource',''));
+    var widthSel = '<select class="nu-input nu-field-width">' +
+      ['25%','33%','50%','66%','75%','100%'].map(function(w) {
+        return '<option' + (_val(extra,'width','100%') === w ? ' selected' : '') + '>' + w + '</option>';
+      }).join('') + '</select>';
 
-    html += `<div class="nb-fp nb-fp-full">
-      <label>Option Source</label>
-      <select class="nu-input nu-select-source-type" onchange="nbToggleSelectSource(this)">
-        <option value="static"${srcType==='static'?' selected':''}>Static Options</option>
-        <option value="sql"${srcType==='sql'?' selected':''}>SQL Query</option>
-      </select>
-    </div>
-    <div class="nb-fp nb-fp-full nu-static-block"${srcType!=='static'?' style="display:none"':''}>
-      <label>Options <span style="font-weight:400;">(value|label per line)</span></label>
-      <textarea class="nu-input nu-select-static" rows="4" placeholder="active|Active\npending|Pending">${esc(opts)}</textarea>
-    </div>
-    <div class="nb-fp nb-fp-full nu-sql-block"${srcType!=='sql'?' style="display:none"':''}>
-      <label>SQL Query</label>
-      <textarea class="nu-input nu-select-sql" rows="3" placeholder="SELECT id, name FROM customers WHERE active=1">${esc(sqlVal)}</textarea>
-    </div>`;
-    if (type === 'select') {
-      html += `<div class="nb-fp">${chkLbl('nu-field-multiple','multiple','Multi-select')}</div>`;
-      html += `<div class="nb-fp">${chkLbl('nu-field-select2','select2','Use Select2')}</div>`;
+    var html = '<div class="nb-fp-grid">' +
+      _row('Label', '<input type="text" class="nu-input nu-builder-label" value="' + _esc(_val(extra,'label')) + '" placeholder="Field label">') +
+      _row('Field Name (DB column)', '<input type="text" class="nu-input nu-builder-name" value="' + _esc(_val(extra,'name')) + '" placeholder="field_name">') +
+      _row('Width', widthSel) +
+      _row('Default Value',   _inp('nu-field-default',    extra, 'default_value',  'default value')) +
+      _row('Placeholder',     _inp('nu-field-placeholder',extra, 'placeholder',    'hint text')) +
+      _row('Help Text',       _inp('nu-field-help',       extra, 'help_text',      'shown under field')) +
+      _row('CSS Class',       _inp('nu-field-cssclass',   extra, 'css_class',      'my-custom-class')) +
+      _row('Tab',             _inp('nu-field-tab',        extra, 'tab',            'tab name')) +
+      _row('Section',         _inp('nu-field-section',    extra, 'section',        'section heading')) +
+      _row('Visibility Rule', _inp('nu-field-vis',        extra, 'visibility_rule','JS expression')) +
+      _row('Readonly Rule',   _inp('nu-field-readonly',   extra, 'readonly_rule',  'JS expression')) +
+      _row('JS On Change',    _inp('nu-field-onchange',   extra, 'js_onchange',    'JS code snippet')) +
+      '<div class="nb-fp nb-fp-full" style="flex-direction:row;gap:16px;flex-wrap:wrap;align-items:center;">' +
+        _chkLbl('nu-field-required', extra, 'required', 'Required') +
+      '</div>';
+
+    if (type === 'textarea') {
+      html += _row('Rows', '<input type="number" class="nu-input nu-field-rows" value="' + _val(extra,'rows',3) + '" min="1" max="30">');
     }
-  }
-
-  if (type === 'lookup') {
-    const lk = extra.lookup || {};
-    const lkSrc = lk.table ? `${lk.table}.${lk.display_column||lk.displaycolumn||'name'}` : '';
-    html += `
-    <div class="nb-fp nb-fp-full">
-      <label>Source <span style="font-weight:400;">(table.column or table:column)</span></label>
-      <input type="text" class="nu-input nu-lookup-source" value="${esc(lkSrc)}" placeholder="customers.name">
-    </div>
-    ${row('ID Column', `<input type="text" class="nu-input nu-lookup-id" value="${esc(lk.id_column||lk.idcolumn||'id')}" placeholder="id">`)}
-    ${row('Filter SQL', `<input type="text" class="nu-input nu-lookup-filter" value="${esc(lk.filter||'')}" placeholder="active=1">`)}
-    <div class="nb-fp nb-fp-full">
-      <label>Extra Mapping <span style="font-weight:400;">(source_col:form_field, comma-sep)</span></label>
-      <input type="text" class="nu-input nu-lookup-extra" value="${esc(lk.extra||'')}" placeholder="dept_id:department,region:region_field">
-    </div>`;
-  }
-
-  if (type === 'subform') {
-    const sf  = extra.subform || {};
-    const sfv = sf.form_code ? `${sf.form_code}.${sf.fk_field||''}` : '';
-    html += `
-    <div class="nb-fp nb-fp-full">
-      <label>Config <span style="font-weight:400;">(form_code.fk_field)</span></label>
-      <input type="text" class="nu-input nu-subform-config" value="${esc(sfv)}" placeholder="order_items.order_id">
-    </div>
-    <div class="nb-fp">
-      <label>View</label>
-      <select class="nu-input nu-subform-view">
-        <option value="grid"${(sf.view||'grid')==='grid'?' selected':''}>Grid</option>
-        <option value="form"${sf.view==='form'?' selected':''}>Form</option>
-      </select>
-    </div>`;
-  }
-
-  if (type === 'calculated') {
-    html += `<div class="nb-fp nb-fp-full">
-      <label>Expression</label>
-      <input type="text" class="nu-input nu-calc-expression" value="${esc(val('calculated'))}" placeholder="getValue('qty') * getValue('price')">
-    </div>`;
-  }
-
-  if (type === 'html') {
-    html += `<div class="nb-fp nb-fp-full">
-      <label>HTML Content</label>
-      <textarea class="nu-input nu-html-content" rows="4" placeholder="<strong>Section header</strong>">${esc(val('html_content'))}</textarea>
-    </div>`;
-  }
-
-  if (type === 'button') {
-    html += row('Button Action', inp('nu-field-button-action','button_action','JS / procedure code'));
-    html += row('Legend',        inp('nu-field-legend','legend',''));
-  }
-
-  html += '</div>'; // close nb-fp-grid
-  return html;
-}
-
-// helper: toggle select source blocks
-window.nbToggleSelectSource = function(sel) {
-  const card = sel.closest('.nb-cfield-body');
-  card.querySelector('.nu-static-block').style.display = sel.value === 'static' ? '' : 'none';
-  card.querySelector('.nu-sql-block').style.display    = sel.value === 'sql'    ? '' : 'none';
-};
-
-// ── Drag-and-drop: toolbox → canvas ──────────────────────────
-let _dragTool = null;
-
-function initToolboxDrag() {
-  document.querySelectorAll('.nb-tool').forEach(tool => {
-    const fresh = tool.cloneNode(true);
-    tool.parentNode.replaceChild(fresh, tool);
-
-    fresh.addEventListener('dragstart', e => {
-      _dragTool = fresh.dataset.type;
-      fresh.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'copy';
-    });
-    fresh.addEventListener('dragend', () => fresh.classList.remove('dragging'));
-
-    // click to add
-    fresh.addEventListener('click', () => window.addFieldToCanvas(fresh.dataset.type));
-  });
-}
-
-function initCanvasDrop() {
-  const canvas = document.getElementById('formCanvas');
-  if (!canvas) return;
-
-  canvas.addEventListener('dragover', e => {
-    e.preventDefault();
-    canvas.classList.add('drag-over');
-  });
-  canvas.addEventListener('dragleave', () => canvas.classList.remove('drag-over'));
-  canvas.addEventListener('drop', e => {
-    e.preventDefault();
-    canvas.classList.remove('drag-over');
-    if (_dragTool) {
-      window.addFieldToCanvas(_dragTool);
-      _dragTool = null;
+    if (type === 'number' || type === 'range') {
+      html += _row('Min',  _inp('nu-field-min',  extra, 'min',  ''));
+      html += _row('Max',  _inp('nu-field-max',  extra, 'max',  ''));
+      html += _row('Step', _inp('nu-field-step', extra, 'step', ''));
     }
-  });
-}
-
-// ── Drag-and-drop: canvas field reorder ───────────────────────
-let _dragField = null;
-
-function makeDraggableField(el) {
-  const handle = el.querySelector('.nb-cfield-drag');
-  if (!handle) return;
-
-  el.setAttribute('draggable', 'true');
-
-  el.addEventListener('dragstart', e => {
-    _dragField = el;
-    el.classList.add('drag-source');
-    e.dataTransfer.effectAllowed = 'move';
-  });
-  el.addEventListener('dragend', () => {
-    el.classList.remove('drag-source');
-    document.querySelectorAll('.nb-cfield').forEach(f => f.style.outline = '');
-    _dragField = null;
-  });
-  el.addEventListener('dragover', e => {
-    if (!_dragField || _dragField === el) return;
-    e.preventDefault();
-    const r = el.getBoundingClientRect();
-    const after = e.clientY > r.top + r.height / 2;
-    el.style.outline = after ? '2px solid transparent' : '';
-    const canvas = document.getElementById('formCanvas');
-    if (after) canvas.insertBefore(_dragField, el.nextSibling);
-    else canvas.insertBefore(_dragField, el);
-  });
-}
-
-// ── addFieldToCanvas (override) ────────────────────────────────
-window.addFieldToCanvas = function(type, label, name, required, extraData) {
-  const canvas = document.getElementById('formCanvas');
-  if (!canvas) return;
-
-  const extra = extraData || {};
-  if (!label) label = type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g,' ') + ' Field';
-  if (!name)  name  = type + '_' + Date.now();
-  extra.label    = extra.label    || label;
-  extra.name     = extra.name     || name;
-  extra.required = extra.required || required || false;
-
-  const card = document.createElement('div');
-  card.className   = 'nb-cfield nu-builder-field';
-  card.dataset.type = type;
-
-  // Store everything in dataset for saveForm() compatibility
-  card.dataset.width          = extra.width          || '100%';
-  card.dataset.default        = extra.default_value  || '';
-  card.dataset.placeholder    = extra.placeholder    || '';
-  card.dataset.help           = extra.help_text      || '';
-  card.dataset.cssClass       = extra.css_class      || '';
-  card.dataset.sortOrder      = extra.sort_order     || '';
-  card.dataset.rows           = extra.rows           || '3';
-  card.dataset.min            = extra.min            || '';
-  card.dataset.max            = extra.max            || '';
-  card.dataset.step           = extra.step           || '';
-  card.dataset.accept         = extra.accept         || '';
-  card.dataset.multipleUpload = extra.multiple_upload ? '1' : '0';
-  card.dataset.legend         = extra.legend         || '';
-  card.dataset.select2        = extra.select2        || '0';
-  card.dataset.tab            = extra.tab            || '';
-  card.dataset.section        = extra.section        || '';
-  card.dataset.visibilityRule = extra.visibility_rule|| '';
-  card.dataset.readonlyRule   = extra.readonly_rule  || '';
-  card.dataset.css            = extra.css            || '';
-  card.dataset.onchange       = extra.js_onchange    || '';
-  card.dataset.htmlContent    = extra.html_content   || '';
-  card.dataset.buttonAction   = extra.button_action  || '';
-
-  const typeLabel = type.replace(/_/g,' ');
-
-  card.innerHTML = `
-    <div class="nb-cfield-header" onclick="nbToggleField(this)">
-      <span class="nb-cfield-drag" title="Drag to reorder" onclick="event.stopPropagation()">⠿</span>
-      <span class="nb-cfield-type-badge">${typeLabel}</span>
-      <span class="nb-cfield-label">${label}</span>
-      <div class="nb-cfield-actions">
-        <button type="button" class="nb-cfield-btn" title="Expand" onclick="event.stopPropagation();nbToggleField(this.closest('.nb-cfield').querySelector('.nb-cfield-header'))">⚙</button>
-        <button type="button" class="nb-cfield-btn del" title="Remove" onclick="event.stopPropagation();this.closest('.nb-cfield').remove();canvasEmpty();">✕</button>
-      </div>
-    </div>
-    <div class="nb-cfield-body">${fieldPropPanel(type, extra)}</div>`;
-
-  // live-update header label when input changes
-  canvas.appendChild(card);
-  canvasEmpty();
-  makeDraggableField(card);
-
-  const lInput = card.querySelector('.nu-builder-label');
-  if (lInput) {
-    lInput.addEventListener('input', () => {
-      card.querySelector('.nb-cfield-label').textContent = lInput.value || '(no label)';
-    });
-  }
-
-  // auto-open if first field
-  if (canvas.querySelectorAll('.nb-cfield').length === 1) {
-    card.querySelector('.nb-cfield-body').classList.add('open');
-  }
-};
-
-// expose canvasEmpty globally for inline onclick
-window.canvasEmpty = canvasEmpty;
-
-// ── Toggle field body open/close ──────────────────────────────
-window.nbToggleField = function(header) {
-  const body = header.closest('.nb-cfield').querySelector('.nb-cfield-body');
-  body.classList.toggle('open');
-};
-
-// ── openFormBuilder override ──────────────────────────────────
-window.openFormBuilder = function() {
-  const card = document.getElementById('formBuilderCard');
-  if (!card) return;
-
-  // Reset
-  document.getElementById('editFormId').value = '';
-  document.getElementById('builderTitle').textContent = 'New Form';
-  document.getElementById('builderFormName').value = '';
-  document.getElementById('builderFormTable').value = '';
-  document.getElementById('formCanvas').innerHTML =
-    '<div class="nb-canvas-empty" id="canvasEmpty">⬆ Drag or click a field type to add it here</div>';
-
-  const clears = ['formCustomJs','formJsBeforeSave','formJsAfterSave','formCustomPhp',
-                  'formCustomCss','formBrowseSql','formBrowseColumns',
-                  'formBrowseSearchPlaceholder','formBrowseSearchFields','formBrowseDefaultSort'];
-  clears.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const chk = document.getElementById('formBrowseSearchEnabled');
-  if (chk) chk.checked = false;
-  const ps = document.getElementById('formBrowsePageSize');
-  if (ps) ps.value = '20';
-
-  // Switch to Fields tab
-  document.querySelectorAll('.nb-tab')[0].click();
-
-  card.style.display = 'block';
-  card.scrollIntoView({ behavior:'smooth' });
-  initToolboxDrag();
-  initCanvasDrop();
-};
-
-// ── editForm override ─────────────────────────────────────────
-window.editForm = async function(id) {
-  try {
-    const json = await NuApp.apiJson(
-      'api/crud.php?table=nu_forms&id=' + encodeURIComponent(id),
-      { credentials:'same-origin' }
-    );
-    const form = json.data || json.record;
-    if (!json.success || !form) { NuApp.toast('Could not load form','error'); return; }
-
-    window.openFormBuilder(); // resets the UI first
-
-    document.getElementById('editFormId').value           = id;
-    document.getElementById('builderTitle').textContent   = 'Edit Form';
-    document.getElementById('builderFormName').value      = form.form_name  || '';
-    document.getElementById('builderFormTable').value     = form.form_table || '';
-
-    const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
-    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = parseInt(val||0)===1; };
-
-    setVal('formCustomJs',              form.form_custom_js              || '');
-    setVal('formJsBeforeSave',          form.form_js_before_save         || '');
-    setVal('formJsAfterSave',           form.form_js_after_save          || '');
-    setVal('formCustomPhp',             form.form_custom_php             || '');
-    setVal('formCustomCss',             form.form_custom_css             || '');
-    setVal('formBrowseSql',             form.browse_sql                  || '');
-    setVal('formBrowseColumns',         form.browse_columns              || '');
-    setVal('formBrowseSearchPlaceholder',form.browse_search_placeholder  || '');
-    setVal('formBrowseSearchFields',    form.browse_search_fields        || '');
-    setVal('formBrowsePageSize',        form.browse_page_size            || '20');
-    setVal('formBrowseDefaultSort',     form.browse_default_sort         || '');
-    setChk('formBrowseSearchEnabled',   form.browse_search_enabled);
-
-    // Rebuild canvas fields
-    const canvas = document.getElementById('formCanvas');
-    canvas.innerHTML = '<div class="nb-canvas-empty" id="canvasEmpty" style="display:none;"></div>';
-
-    try {
-      const layout = JSON.parse(form.form_layout || '[]');
-      if (Array.isArray(layout) && layout.length) {
-        layout.forEach(f => {
-          window.addFieldToCanvas(f.type||'text', f.label, f.name, !!f.required, f);
-        });
-      } else {
-        canvas.innerHTML = '<div class="nb-canvas-empty" id="canvasEmpty">⬆ Drag or click a field type to add it here</div>';
+    if (type === 'file') {
+      html += _row('Accept', _inp('nu-field-accept', extra, 'accept', '.pdf,.jpg,.png'));
+      html += '<div class="nb-fp">' + _chkLbl('nu-field-multiple-upload', extra, 'multiple_upload', 'Allow multiple files') + '</div>';
+    }
+    if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
+      var srcType = _val(extra, 'source_type', _val(extra,'sourcetype','static'));
+      var opts    = (extra.options||[]).map(function(o){ return (o.value||'') + '|' + (o.label||o.value||''); }).join('\n');
+      var sqlVal  = _val(extra, 'sql_source', _val(extra,'sqlsource',''));
+      html += '<div class="nb-fp nb-fp-full"><label>Option Source</label>' +
+        '<select class="nu-input nu-select-source-type" onchange="nbFormBuilder.toggleSelectSource(this)">' +
+          '<option value="static"' + (srcType==='static'?' selected':'') + '>Static Options</option>' +
+          '<option value="sql"'    + (srcType==='sql'   ?' selected':'') + '>SQL Query</option>' +
+        '</select></div>' +
+        '<div class="nb-fp nb-fp-full nu-static-block"' + (srcType!=='static'?' style="display:none"':'') + '>' +
+          '<label>Options <span style="font-weight:400;">(value|label per line)</span></label>' +
+          '<textarea class="nu-input nu-select-static" rows="4" placeholder="active|Active\npending|Pending">' + _esc(opts) + '</textarea>' +
+        '</div>' +
+        '<div class="nb-fp nb-fp-full nu-sql-block"' + (srcType!=='sql'?' style="display:none"':'') + '>' +
+          '<label>SQL Query</label>' +
+          '<textarea class="nu-input nu-select-sql" rows="3" placeholder="SELECT id, name FROM customers">' + _esc(sqlVal) + '</textarea>' +
+        '</div>';
+      if (type === 'select') {
+        html += '<div class="nb-fp">' + _chkLbl('nu-field-multiple', extra, 'multiple',  'Multi-select') + '</div>';
+        html += '<div class="nb-fp">' + _chkLbl('nu-field-select2',  extra, 'select2',   'Use Select2')  + '</div>';
       }
-    } catch(e) { console.error('layout parse error', e); }
-
-    canvasEmpty();
-    document.getElementById('formBuilderCard').scrollIntoView({ behavior:'smooth' });
-  } catch(e) {
-    console.error('editForm error', e);
-    NuApp.toast('Error: ' + e.message, 'error');
-  }
-};
-
-// ── Override saveForm to pick up new field controls ───────────
-// (saveForm already in nubuilder-next.js reads .nu-builder-field
-//  data-attributes + inner inputs — we just need to keep them in sync)
-// The existing saveForm() already reads the new fields.
-// We only need to also pass the new JS event fields.
-const _origSaveForm = window.saveForm;
-window.saveForm = async function() {
-  // Patch payload with new event fields before original save runs
-  const _origApiJson = NuApp.apiJson.bind(NuApp);
-  NuApp.apiJson = async function(url, opts) {
-    if (url.includes('crud.php?table=nu_forms') && opts && opts.method !== 'GET') {
-      try {
-        const body = JSON.parse(opts.body);
-        const jsBefore = document.getElementById('formJsBeforeSave');
-        const jsAfter  = document.getElementById('formJsAfterSave');
-        if (jsBefore) body.form_js_before_save = jsBefore.value;
-        if (jsAfter)  body.form_js_after_save  = jsAfter.value;
-        opts = Object.assign({}, opts, { body: JSON.stringify(body) });
-      } catch(e) {}
     }
-    NuApp.apiJson = _origApiJson; // restore after one call
-    return _origApiJson(url, opts);
-  };
-  return _origSaveForm();
-};
+    if (type === 'lookup') {
+      var lk    = extra.lookup || {};
+      var lkSrc = lk.table ? lk.table + '.' + (lk.display_column||lk.displaycolumn||'name') : '';
+      html += '<div class="nb-fp nb-fp-full"><label>Source (table.column)</label>' +
+        '<input type="text" class="nu-input nu-lookup-source" value="' + _esc(lkSrc) + '" placeholder="customers.name"></div>' +
+        _row('ID Column',    '<input type="text" class="nu-input nu-lookup-id"     value="' + _esc(lk.id_column||lk.idcolumn||'id') + '" placeholder="id">')    +
+        _row('Filter SQL',   '<input type="text" class="nu-input nu-lookup-filter" value="' + _esc(lk.filter||'')                  + '" placeholder="active=1">') +
+        '<div class="nb-fp nb-fp-full"><label>Extra Mapping (src:field, comma-sep)</label>' +
+        '<input type="text" class="nu-input nu-lookup-extra" value="' + _esc(lk.extra||'') + '" placeholder="dept_id:department"></div>';
+    }
+    if (type === 'subform') {
+      var sf  = extra.subform || {};
+      var sfv = sf.form_code ? sf.form_code + '.' + (sf.fk_field||'') : '';
+      html += '<div class="nb-fp nb-fp-full"><label>Config (form_code.fk_field)</label>' +
+        '<input type="text" class="nu-input nu-subform-config" value="' + _esc(sfv) + '" placeholder="order_items.order_id"></div>' +
+        '<div class="nb-fp"><label>View</label>' +
+        '<select class="nu-input nu-subform-view">' +
+          '<option value="grid"' + ((sf.view||'grid')==='grid'?' selected':'') + '>Grid</option>' +
+          '<option value="form"' + (sf.view==='form'?' selected':'')           + '>Form</option>' +
+        '</select></div>';
+    }
+    if (type === 'calculated') {
+      html += '<div class="nb-fp nb-fp-full"><label>Expression</label>' +
+        '<input type="text" class="nu-input nu-calc-expression" value="' + _esc(_val(extra,'calculated')) + '" placeholder="getValue(\'qty\') * getValue(\'price\')"></div>';
+    }
+    if (type === 'html') {
+      html += '<div class="nb-fp nb-fp-full"><label>HTML Content</label>' +
+        '<textarea class="nu-input nu-html-content" rows="4" placeholder="<strong>Section header</strong>">' + _esc(_val(extra,'html_content')) + '</textarea></div>';
+    }
+    if (type === 'button') {
+      html += _row('Button Action', _inp('nu-field-button-action', extra, 'button_action', 'JS / procedure code'));
+      html += _row('Legend',        _inp('nu-field-legend',        extra, 'legend',         ''));
+    }
 
-// ── Init on DOM ready ─────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', function() {
-  initToolboxDrag();
-  initCanvasDrop();
-});
-// also init immediately (module is injected via innerHTML)
-initToolboxDrag();
-initCanvasDrop();
+    html += '</div>'; // close nb-fp-grid
+    return html;
+  }
+
+  // ── drag: toolbox → canvas ────────────────────────────────
+  var _dragTool  = null;
+  var _dragField = null;
+
+  function _initToolbox() {
+    document.querySelectorAll('#panelFields .nb-tool').forEach(function(tool) {
+      // remove and re-add to clear stale listeners
+      var t = tool.cloneNode(true);
+      tool.parentNode.replaceChild(t, tool);
+      t.addEventListener('dragstart', function(e) {
+        _dragTool = t.dataset.type;
+        t.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'copy';
+      });
+      t.addEventListener('dragend', function() { t.classList.remove('dragging'); });
+      t.addEventListener('click',   function() { _addField(t.dataset.type); });
+    });
+  }
+
+  function _initCanvasDrop() {
+    var canvas = _el('formCanvas');
+    if (!canvas) return;
+    canvas.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      canvas.classList.add('drag-over');
+    });
+    canvas.addEventListener('dragleave', function() { canvas.classList.remove('drag-over'); });
+    canvas.addEventListener('drop', function(e) {
+      e.preventDefault();
+      canvas.classList.remove('drag-over');
+      if (_dragTool) { _addField(_dragTool); _dragTool = null; }
+    });
+  }
+
+  function _makeDraggable(el) {
+    el.setAttribute('draggable','true');
+    el.addEventListener('dragstart', function(e) {
+      _dragField = el; el.classList.add('drag-source'); e.dataTransfer.effectAllowed = 'move';
+    });
+    el.addEventListener('dragend', function() {
+      el.classList.remove('drag-source');
+      document.querySelectorAll('.nb-cfield').forEach(function(f){ f.style.outline=''; });
+      _dragField = null;
+    });
+    el.addEventListener('dragover', function(e) {
+      if (!_dragField || _dragField === el) return;
+      e.preventDefault();
+      var r = el.getBoundingClientRect();
+      var canvas = _el('formCanvas');
+      if (e.clientY > r.top + r.height/2) canvas.insertBefore(_dragField, el.nextSibling);
+      else canvas.insertBefore(_dragField, el);
+    });
+  }
+
+  // ── add field to canvas ────────────────────────────────────
+  function _addField(type, label, name, required, extraData) {
+    var canvas = _el('formCanvas');
+    if (!canvas) return;
+    var extra = extraData || {};
+    if (!label) label = type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g,' ') + ' Field';
+    if (!name)  name  = type + '_' + Date.now();
+    extra.label    = extra.label    !== undefined ? extra.label    : label;
+    extra.name     = extra.name     !== undefined ? extra.name     : name;
+    extra.required = extra.required !== undefined ? extra.required : (required || false);
+
+    var card = document.createElement('div');
+    card.className    = 'nb-cfield nu-builder-field';
+    card.dataset.type = type;
+
+    // Store flat properties for saveForm()
+    card.dataset.width          = extra.width          || '100%';
+    card.dataset.default        = extra.default_value  || '';
+    card.dataset.placeholder    = extra.placeholder    || '';
+    card.dataset.help           = extra.help_text      || '';
+    card.dataset.cssClass       = extra.css_class      || '';
+    card.dataset.sortOrder      = extra.sort_order     || '';
+    card.dataset.rows           = extra.rows           || '3';
+    card.dataset.min            = extra.min            || '';
+    card.dataset.max            = extra.max            || '';
+    card.dataset.step           = extra.step           || '';
+    card.dataset.accept         = extra.accept         || '';
+    card.dataset.multipleUpload = extra.multiple_upload ? '1' : '0';
+    card.dataset.legend         = extra.legend         || '';
+    card.dataset.select2        = extra.select2 ? '1' : '0';
+    card.dataset.tab            = extra.tab            || '';
+    card.dataset.section        = extra.section        || '';
+    card.dataset.visibilityRule = extra.visibility_rule || '';
+    card.dataset.readonlyRule   = extra.readonly_rule   || '';
+    card.dataset.css            = extra.css            || '';
+    card.dataset.onchange       = extra.js_onchange    || '';
+    card.dataset.htmlContent    = extra.html_content   || '';
+    card.dataset.buttonAction   = extra.button_action  || '';
+
+    var typeLabel = type.replace(/_/g,' ');
+    card.innerHTML = '<div class="nb-cfield-header" onclick="nbFormBuilder.toggleField(this)">' +
+      '<span class="nb-cfield-drag" title="Drag to reorder" onclick="event.stopPropagation()">&#x2807;</span>' +
+      '<span class="nb-cfield-type-badge">' + typeLabel + '</span>' +
+      '<span class="nb-cfield-label">' + _esc(extra.label) + '</span>' +
+      '<div class="nb-cfield-actions">' +
+        '<button type="button" class="nb-cfield-btn" onclick="event.stopPropagation();nbFormBuilder.toggleField(this.closest(\'.nb-cfield\').querySelector(\'.nb-cfield-header\'))">&#x2699;</button>' +
+        '<button type="button" class="nb-cfield-btn del" onclick="event.stopPropagation();this.closest(\'.nb-cfield\').remove();nbFormBuilder._canvasEmpty();">&#x2715;</button>' +
+      '</div></div>' +
+      '<div class="nb-cfield-body">' + _fieldPanel(type, extra) + '</div>';
+
+    canvas.appendChild(card);
+    _canvasEmpty();
+    _makeDraggable(card);
+
+    // live label update
+    var lInput = card.querySelector('.nu-builder-label');
+    if (lInput) {
+      lInput.addEventListener('input', function() {
+        card.querySelector('.nb-cfield-label').textContent = lInput.value || '(no label)';
+      });
+    }
+
+    // auto-expand first field
+    if (canvas.querySelectorAll('.nb-cfield').length === 1) {
+      card.querySelector('.nb-cfield-body').classList.add('open');
+    }
+  }
+
+  // ── public API ─────────────────────────────────────────────
+  return {
+    _canvasEmpty: _canvasEmpty,
+
+    switchTab: function(btn) {
+      document.querySelectorAll('#nbTabsRow .nb-tab').forEach(function(t){ t.classList.remove('active'); });
+      document.querySelectorAll('#formBuilderCard .nb-tab-panel').forEach(function(p){ p.classList.remove('active'); });
+      btn.classList.add('active');
+      var panel = document.getElementById(btn.dataset.panel);
+      if (panel) panel.classList.add('active');
+    },
+
+    toggleField: function(header) {
+      var body = header.closest('.nb-cfield').querySelector('.nb-cfield-body');
+      if (body) body.classList.toggle('open');
+    },
+
+    toggleSelectSource: function(sel) {
+      var card = sel.closest('.nb-cfield-body');
+      if (!card) return;
+      card.querySelector('.nu-static-block').style.display = sel.value === 'static' ? '' : 'none';
+      card.querySelector('.nu-sql-block').style.display    = sel.value === 'sql'    ? '' : 'none';
+    },
+
+    addField: function(type, label, name, required, extraData) {
+      _addField(type, label, name, required, extraData);
+    },
+
+    open: function() {
+      var card = _el('formBuilderCard');
+      if (!card) return;
+      _el('editFormId').value          = '';
+      _el('builderTitle').textContent  = 'New Form';
+      _el('builderFormName').value     = '';
+      _el('builderFormTable').value    = '';
+      _el('formCanvas').innerHTML = '<div class="nb-canvas-empty" id="canvasEmpty">&#x2B06; Drag or click a field type to add it here</div>';
+
+      ['formCustomJs','formJsBeforeSave','formJsAfterSave','formCustomPhp',
+       'formCustomCss','formBrowseSql','formBrowseColumns',
+       'formBrowseSearchPlaceholder','formBrowseSearchFields','formBrowseDefaultSort'
+      ].forEach(function(id){ var e=_el(id); if(e) e.value=''; });
+      var chk = _el('formBrowseSearchEnabled'); if (chk) chk.checked = false;
+      var ps  = _el('formBrowsePageSize');      if (ps)  ps.value   = '20';
+
+      // Switch to Fields tab
+      var firstTab = document.querySelector('#nbTabsRow .nb-tab');
+      if (firstTab) this.switchTab(firstTab);
+
+      card.style.display = 'block';
+      card.scrollIntoView({ behavior:'smooth' });
+      _initToolbox();
+      _initCanvasDrop();
+    },
+
+    close: function() {
+      var card = _el('formBuilderCard');
+      if (card) card.style.display = 'none';
+    },
+
+    save: function() {
+      // Delegate to global saveForm() which reads the canvas
+      if (typeof window.saveForm === 'function') window.saveForm();
+    },
+
+    edit: async function(id) {
+      try {
+        var json = await NuApp.apiJson(
+          'api/crud.php?table=nu_forms&id=' + encodeURIComponent(id),
+          { credentials:'same-origin' }
+        );
+        var form = json.data || json.record;
+        if (!json.success || !form) { NuApp.toast('Could not load form','error'); return; }
+
+        nbFormBuilder.open();
+
+        _el('editFormId').value          = id;
+        _el('builderTitle').textContent  = 'Edit Form';
+        _el('builderFormName').value     = form.form_name  || '';
+        _el('builderFormTable').value    = form.form_table || '';
+
+        function sv(id, v){ var e=_el(id); if(e) e.value = v||''; }
+        function sc(id, v){ var e=_el(id); if(e) e.checked = parseInt(v||0)===1; }
+
+        sv('formCustomJs',               form.form_custom_js);
+        sv('formJsBeforeSave',           form.form_js_before_save);
+        sv('formJsAfterSave',            form.form_js_after_save);
+        sv('formCustomPhp',              form.form_custom_php);
+        sv('formCustomCss',              form.form_custom_css);
+        sv('formBrowseSql',              form.browse_sql);
+        sv('formBrowseColumns',          form.browse_columns);
+        sv('formBrowseSearchPlaceholder',form.browse_search_placeholder);
+        sv('formBrowseSearchFields',     form.browse_search_fields);
+        sv('formBrowsePageSize',         form.browse_page_size || '20');
+        sv('formBrowseDefaultSort',      form.browse_default_sort);
+        sc('formBrowseSearchEnabled',    form.browse_search_enabled);
+
+        // rebuild canvas
+        _el('formCanvas').innerHTML = '<div class="nb-canvas-empty" id="canvasEmpty" style="display:none;"></div>';
+        try {
+          var layout = JSON.parse(form.form_layout || '[]');
+          if (Array.isArray(layout) && layout.length) {
+            layout.forEach(function(f) {
+              _addField(f.type||'text', f.label, f.name, !!f.required, f);
+            });
+          } else {
+            _el('formCanvas').innerHTML = '<div class="nb-canvas-empty" id="canvasEmpty">&#x2B06; Drag or click a field type to add it here</div>';
+          }
+        } catch(e) { console.error('layout parse error', e); }
+
+        _canvasEmpty();
+        _el('formBuilderCard').scrollIntoView({ behavior:'smooth' });
+      } catch(e) {
+        console.error('edit error', e);
+        NuApp.toast('Error: ' + e.message, 'error');
+      }
+    }
+  };
 
 })();
+
+// ── backward compat shims so nubuilder-next.js calls still work ──
+window.openFormBuilder = function() { nbFormBuilder.open(); };
+window.nbCloseBuilder  = function() { nbFormBuilder.close(); };
+window.nbSwitchTab     = function(btn) { nbFormBuilder.switchTab(btn); };
+window.nbToggleField   = function(h)   { nbFormBuilder.toggleField(h); };
+window.addFieldToCanvas = function(type, label, name, req, extra) { nbFormBuilder.addField(type, label, name, req, extra); };
+window.canvasEmpty     = function() { nbFormBuilder._canvasEmpty(); };
+window.editForm        = function(id) { nbFormBuilder.edit(id); };
+
+// ── Init toolbox/canvas once DOM is ready ─────────────────────
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function() {
+    nbFormBuilder.open && nbFormBuilder._initToolboxOnce && nbFormBuilder._initToolboxOnce();
+  });
+}
 </script>
