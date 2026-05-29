@@ -35,11 +35,8 @@ if (file_exists(__DIR__ . '/../core/Auth.php')) {
 
 /**
  * nu_db() - always uses NuDatabase singleton, never static call.
- * Bug fix: Database::getConnection() was being called statically but
- * getConnection() is an instance method on NuDatabase.
  */
 function nu_db() {
-    // Prefer the singleton we already have
     $instance = NuDatabase::getInstance();
     return $instance->getConnection();
 }
@@ -78,12 +75,29 @@ function nu_parse_where($whereRaw) {
     return [["`{$field}` = ?"], [$value]];
 }
 
+/**
+ * Dynamically resolve the primary key column for any table.
+ * Falls back to 'id' if no PRIMARY KEY is found.
+ */
+function nu_get_pk(string $table): string {
+    try {
+        $stmt = nu_db()->prepare("SHOW KEYS FROM `{$table}` WHERE Key_name = 'PRIMARY'");
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return ($row && !empty($row['Column_name'])) ? $row['Column_name'] : 'id';
+    } catch (Throwable $e) {
+        return 'id';
+    }
+}
+
 function nu_get_record($table, $id) {
-    $stmt = nu_q("SELECT * FROM `{$table}` WHERE id = ? LIMIT 1", [$id]);
+    $pk   = nu_get_pk($table);
+    $stmt = nu_q("SELECT * FROM `{$table}` WHERE `{$pk}` = ? LIMIT 1", [$id]);
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
 
 function nu_list_records($table, $whereRaw, $extraFilters, $page, $perPage) {
+    $pk     = nu_get_pk($table);
     $where  = [];
     $params = [];
     list($whereParts, $whereParams) = nu_parse_where($whereRaw);
@@ -102,7 +116,7 @@ function nu_list_records($table, $whereRaw, $extraFilters, $page, $perPage) {
     $total    = (int)nu_q("SELECT COUNT(*) FROM `{$table}`" . $whereSql, $params)->fetchColumn();
     $pages    = max(1, (int)ceil($total / $perPage));
     if ($page > $pages) { $page = $pages; $offset = ($page - 1) * $perPage; }
-    $rows = nu_q("SELECT * FROM `{$table}`" . $whereSql . " ORDER BY id DESC LIMIT {$perPage} OFFSET {$offset}", $params)->fetchAll(PDO::FETCH_ASSOC);
+    $rows = nu_q("SELECT * FROM `{$table}`" . $whereSql . " ORDER BY `{$pk}` DESC LIMIT {$perPage} OFFSET {$offset}", $params)->fetchAll(PDO::FETCH_ASSOC);
     return ['records' => $rows, 'page' => $page, 'pages' => $pages, 'total' => $total];
 }
 
@@ -120,17 +134,19 @@ function nu_create_record($table, $data) {
 function nu_update_record($table, $id, $data) {
     if (!$id) throw new Exception('ID required');
     if (!$data || !is_array($data)) throw new Exception('No data provided');
+    $pk     = nu_get_pk($table);
     $sets   = []; $params = [];
     foreach ($data as $key => $value) { $sets[] = "`" . nu_safe_column($key) . "` = ?"; $params[] = $value; }
     if (!$sets) throw new Exception('No valid fields provided');
     $params[] = $id;
-    nu_q("UPDATE `{$table}` SET " . implode(', ', $sets) . " WHERE id = ?", $params);
+    nu_q("UPDATE `{$table}` SET " . implode(', ', $sets) . " WHERE `{$pk}` = ?", $params);
     return true;
 }
 
 function nu_delete_record($table, $id) {
     if (!$id) throw new Exception('ID required');
-    nu_q("DELETE FROM `{$table}` WHERE id = ?", [$id]);
+    $pk = nu_get_pk($table);
+    nu_q("DELETE FROM `{$table}` WHERE `{$pk}` = ?", [$id]);
     return true;
 }
 

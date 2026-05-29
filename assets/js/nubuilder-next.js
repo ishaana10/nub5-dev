@@ -1257,16 +1257,25 @@ window.nuForm = {
   }
 };
 
-window.nuGetValue = function (f) { return window.nuForm.getValue(f); };
-window.nuSetValue = function (f, v) { return window.nuForm.setValue(f, v); };
-window.nuGetText = function (f) { return window.nuForm.getText(f); };
-window.nuShow = function (f) { return window.nuForm.show(f); };
-window.nuHide = function (f) { return window.nuForm.hide(f); };
-window.nuEnable = function (f) { return window.nuForm.enable(f); };
-window.nuDisable = function (f) { return window.nuForm.disable(f); };
+// ─── Shorthand globals for nuForm ────────────────────────────────────────────
+window.nuGetValue    = function (f)    { return window.nuForm.getValue(f); };
+window.nuSetValue    = function (f, v) { return window.nuForm.setValue(f, v); };
+window.nuGetText     = function (f)    { return window.nuForm.getText(f); };
+window.nuShow        = function (f)    { return window.nuForm.show(f); };
+window.nuHide        = function (f)    { return window.nuForm.hide(f); };
+window.nuEnable      = function (f)    { return window.nuForm.enable(f); };
+window.nuDisable     = function (f)    { return window.nuForm.disable(f); };
 window.nuSetProperty = function (n, v) { return window.nuForm.setProperty(n, v); };
-window.nuGetProperty = function (n) { return window.nuForm.getProperty(n); };
+window.nuGetProperty = function (n)    { return window.nuForm.getProperty(n); };
 window.nuRunPHPHidden = function (c, p) { return window.nuForm.runProcedure(c, p); };
+
+// ─── Global shims so inline onclick="" attributes work ───────────────────────
+// previewForm/browseForm/addRecord/editRecord live on NuApp but HTML buttons
+// call them as bare globals – these shims bridge that gap.
+window.previewForm = function (code)              { return NuApp.previewForm(code); };
+window.browseForm  = function (code, page, query) { return NuApp.browseForm(code, page, query); };
+window.addRecord   = function (code)              { return NuApp.addRecord(code); };
+window.editRecord  = function (code, id)          { return NuApp.editRecord(code, id); };
 
 window.openLookupModal = function (fieldName, table, idCol, displayCol, filter, extraData) {
   NuApp.apiJson(
