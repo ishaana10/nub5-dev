@@ -639,12 +639,15 @@ window.saveForm = async function () {
       const filterInput = el.querySelector('.nu-lookup-filter');
       const extraInput = el.querySelector('.nu-lookup-extra');
 
-      if (txt && txt.value.indexOf('.') > -1) {
-        const parts = txt.value.split('.');
+      // Accept both table.column and table:column formats
+      const rawVal = txt ? txt.value.trim() : '';
+      const sep = rawVal.indexOf(':') > -1 ? ':' : '.';
+      if (rawVal && rawVal.indexOf(sep) > -1) {
+        const parts = rawVal.split(sep);
         field.lookup = {
-          table: parts[0],
-          id_column: idCol ? idCol.value : 'id',
-          display_column: parts[1] || 'name',
+          table: parts[0].trim(),
+          id_column: idCol ? idCol.value.trim() || 'id' : 'id',
+          display_column: (parts[1] || 'name').trim(),
           filter: filterInput ? filterInput.value : '',
           extra: extraInput ? extraInput.value : ''
         };
@@ -1028,7 +1031,8 @@ window.addFieldToCanvas = function (type, label, name, required, extraData) {
     txt.type = 'text';
     txt.className = 'nu-input nu-lookup-source';
     txt.style.cssText = 'width:100%;margin-top:6px;font-size:12px;';
-    txt.placeholder = 'table.displaycolumn';
+    // Updated placeholder to show both accepted formats
+    txt.placeholder = 'table.column  or  table:column';
     if (extra.lookup) {
       txt.value = (extra.lookup.table || '') + '.' + (extra.lookup.display_column || extra.lookup.displaycolumn || 'name');
     }
@@ -1038,7 +1042,7 @@ window.addFieldToCanvas = function (type, label, name, required, extraData) {
     idCol.type = 'text';
     idCol.className = 'nu-input nu-lookup-id';
     idCol.style.cssText = 'width:100%;margin-top:4px;font-size:12px;';
-    idCol.placeholder = 'ID column';
+    idCol.placeholder = 'ID column (default: id)';
     idCol.value = (extra.lookup && (extra.lookup.id_column || extra.lookup.idcolumn)) || 'id';
     inputsDiv.appendChild(idCol);
 
@@ -1046,7 +1050,7 @@ window.addFieldToCanvas = function (type, label, name, required, extraData) {
     filterInput.type = 'text';
     filterInput.className = 'nu-input nu-lookup-filter';
     filterInput.style.cssText = 'width:100%;margin-top:4px;font-size:12px;';
-    filterInput.placeholder = 'Filter SQL';
+    filterInput.placeholder = 'Filter SQL (e.g. active=1)';
     filterInput.value = (extra.lookup && extra.lookup.filter) || '';
     inputsDiv.appendChild(filterInput);
 
@@ -1054,7 +1058,7 @@ window.addFieldToCanvas = function (type, label, name, required, extraData) {
     extraInput.type = 'text';
     extraInput.className = 'nu-input nu-lookup-extra';
     extraInput.style.cssText = 'width:100%;margin-top:4px;font-size:12px;';
-    extraInput.placeholder = 'lookupcol:formfield';
+    extraInput.placeholder = 'Extra mapping: lookupcol:formfield';
     extraInput.value = (extra.lookup && extra.lookup.extra) || '';
     inputsDiv.appendChild(extraInput);
   }
