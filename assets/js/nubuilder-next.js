@@ -1402,3 +1402,8 @@ window.clearLookup = function (fieldName) {
 
   if (hidden) hidden.dispatchEvent(new Event('change', { bubbles: true }));
 };
+
+window.previewForm = function (code)              { return NuApp.previewForm(code); };
+window.browseForm  = function (code, page, query) { return NuApp.browseForm(code, page, query); };
+window.addRecord   = function (code)              { return NuApp.addRecord(code); };
+window.editRecord  = function (code, id)          { return NuApp.editRecord(code, id); };
