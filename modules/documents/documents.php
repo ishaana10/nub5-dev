@@ -1,17 +1,15 @@
 <?php
-require_once '../../config.php';
-require_once '../../core/Database.php';
-require_once '../../core/Auth.php';
+declare(strict_types=1);
+require_once dirname(__DIR__, 2) . '/core/module_bootstrap.php';
 
-$auth = new NuAuth();
-if (!$auth->checkAuth()) exit('Unauthorized');
-
-$db = NuDatabase::getInstance();
-$docs = $db->fetchAll("SELECT d.*, f.file_name, f.file_original_name, f.file_mime_type, u.usr_username 
-    FROM nu_documents d 
-    LEFT JOIN nu_files f ON d.doc_file_id = f.file_id 
-    LEFT JOIN nu_users u ON d.doc_created_by = u.usr_id 
-    ORDER BY d.doc_created_at DESC");
+$db   = NuDatabase::getInstance();
+$docs = $db->fetchAll(
+    "SELECT d.*, f.file_name, f.file_original_name, f.file_mime_type, u.usr_username
+     FROM nu_documents d
+     LEFT JOIN nu_files f ON d.doc_file_id = f.file_id
+     LEFT JOIN nu_users u ON d.doc_created_by = u.usr_id
+     ORDER BY d.doc_created_at DESC"
+);
 ?>
 
 <div class="nu-documents">
@@ -52,7 +50,6 @@ $docs = $db->fetchAll("SELECT d.*, f.file_name, f.file_original_name, f.file_mim
     </div>
 </div>
 
-<!-- Upload Document Modal -->
 <div class="nu-modal-overlay" id="docModal">
     <div class="nu-modal">
         <div class="nu-modal-header">
@@ -92,7 +89,6 @@ $docs = $db->fetchAll("SELECT d.*, f.file_name, f.file_original_name, f.file_mim
     </div>
 </div>
 
-<!-- Signature Modal -->
 <div class="nu-modal-overlay" id="sigModal">
     <div class="nu-modal" style="max-width:600px;">
         <div class="nu-modal-header">
@@ -111,5 +107,3 @@ $docs = $db->fetchAll("SELECT d.*, f.file_name, f.file_original_name, f.file_mim
         </div>
     </div>
 </div>
-
-

@@ -8,7 +8,7 @@ if (!$auth->hasPermission('audit.view')) {
 }
 
 $db      = NuDatabase::getInstance();
-$page    = max(1, (int)($_GET['page'] ?? 1));
+$page    = (int)($_GET['page'] ?? 1);
 $perPage = 25;
 $offset  = ($page - 1) * $perPage;
 
@@ -27,9 +27,7 @@ $pages = (int)ceil($total / $perPage);
         <div class="nu-table-wrap">
             <table class="nu-table">
                 <thead>
-                    <tr>
-                        <th>Action</th><th>Table</th><th>Record</th><th>User</th><th>IP</th><th>Time</th>
-                    </tr>
+                    <tr><th>Action</th><th>Table</th><th>Record</th><th>User</th><th>IP</th><th>Time</th></tr>
                 </thead>
                 <tbody>
                     <?php foreach ($logs as $log): ?>
@@ -48,8 +46,7 @@ $pages = (int)ceil($total / $perPage);
         <?php if ($pages > 1): ?>
         <div style="display:flex;gap:8px;justify-content:center;padding:16px;">
             <?php for ($i = 1; $i <= $pages; $i++): ?>
-            <button class="nu-btn <?php echo $i === $page ? 'nu-btn-primary' : 'nu-btn-ghost'; ?> nu-btn-sm"
-                    onclick="NuApp.loadModule('audit?page=<?php echo $i; ?>')"><?php echo $i; ?></button>
+            <button class="nu-btn <?php echo $i === $page ? 'nu-btn-primary' : 'nu-btn-ghost'; ?> nu-btn-sm" onclick="NuApp.loadModule('audit?page=<?php echo $i; ?>')"><?php echo $i; ?></button>
             <?php endfor; ?>
         </div>
         <?php endif; ?>

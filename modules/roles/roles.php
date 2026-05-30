@@ -15,7 +15,7 @@ $permissions = $db->fetchAll("SELECT * FROM nu_permissions ORDER BY perm_categor
 <div class="nu-roles">
     <div class="nu-card">
         <div class="nu-card-header">
-            <h3 class="nu-card-title">Roles &amp; Permissions</h3>
+            <h3 class="nu-card-title">Roles & Permissions</h3>
         </div>
         <div class="nu-table-wrap">
             <table class="nu-table">

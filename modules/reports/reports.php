@@ -3,8 +3,9 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 2) . '/core/module_bootstrap.php';
 require_once dirname(__DIR__, 2) . '/core/ReportRenderer.php';
 
-$db   = NuDatabase::getInstance();
-$view = $_GET['view'] ?? 'list';
+$db         = NuDatabase::getInstance();
+$view       = $_GET['view'] ?? 'list';
+$reportCode = $_GET['code'] ?? '';
 ?>
 
 <?php if ($view === 'list'): ?>
@@ -56,7 +57,6 @@ $view = $_GET['view'] ?? 'list';
         </table>
     </div>
 
-    <!-- Report Builder -->
     <div id="reportBuilderCard" style="display:none;margin-top:24px;background:var(--bg-elevated);border:1px solid var(--border-color);border-radius:12px;padding:20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <h3 style="margin:0;">Report Builder</h3>

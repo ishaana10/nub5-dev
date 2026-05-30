@@ -244,7 +244,7 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
         </div>
 
       </div>
-    </div><!-- /panelFields -->
+    </div>
 
     <!-- ── TAB: Browse ── -->
     <div class="nb-tab-panel" id="panelBrowse">
@@ -279,7 +279,7 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
           <input type="text" id="formBrowseSearchFields" class="nu-input" placeholder="name, email">
         </div>
       </div>
-    </div><!-- /panelBrowse -->
+    </div>
 
     <!-- ── TAB: Events / JS ── -->
     <div class="nb-tab-panel" id="panelEvents">
@@ -292,4 +292,33 @@ $forms = $db->fetchAll("SELECT * FROM nu_forms WHERE form_active = 1 ORDER BY fo
           <label class="nu-label">JS Before Save</label>
           <textarea id="formJsBeforeSave" class="nu-input" rows="4" placeholder="// return false; to cancel save"></textarea>
         </div>
-        
+        <div>
+          <label class="nu-label">JS After Save</label>
+          <textarea id="formJsAfterSave" class="nu-input" rows="4" placeholder="// nu.toast('Saved!');"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TAB: PHP / CSS ── -->
+    <div class="nb-tab-panel" id="panelPhpCss">
+      <div style="display:grid;gap:12px;">
+        <div>
+          <label class="nu-label">Custom PHP <span style="font-weight:400;color:var(--text-tertiary);">(runs server-side before render)</span></label>
+          <textarea id="formCustomPhp" class="nu-input" rows="6" placeholder="// $data['status'] = 'active';"></textarea>
+        </div>
+        <div>
+          <label class="nu-label">Custom CSS</label>
+          <textarea id="formCustomCss" class="nu-input" rows="6" placeholder=".nu-generated-form { ... }"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save bar -->
+    <div class="nb-save-bar">
+      <button type="button" class="nu-btn nu-btn-ghost" onclick="nbFormBuilder.close()">Cancel</button>
+      <button type="button" class="nu-btn nu-btn-primary" onclick="saveForm()">&#x1F4BE; Save Form</button>
+    </div>
+
+  </div>
+
+</div>

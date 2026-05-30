@@ -6,7 +6,7 @@ $db = NuDatabase::getInstance();
 ?>
 
 <div class="nu-ai">
-    <div class="nu-card" style="margin-bottom:24px;">
+    <div class="nu-card" style="margin-bottom: 24px;">
         <div class="nu-card-header">
             <h3 class="nu-card-title">AI Assistant</h3>
             <span style="font-size:12px;color:var(--text-tertiary);">Powered by OpenAI / Claude</span>
@@ -23,18 +23,30 @@ $db = NuDatabase::getInstance();
             </div>
         </div>
     </div>
+
     <div class="nu-grid">
         <div class="nu-card">
-            <div class="nu-card-header"><h3 class="nu-card-title">Auto-Generate Form</h3></div>
+            <div class="nu-card-header">
+                <h3 class="nu-card-title">Auto-Generate Form</h3>
+            </div>
             <div class="nu-modal-body">
-                <div class="nu-field"><label>Describe the form you need</label><textarea class="nu-input" id="aiFormPrompt" rows="3" placeholder="A customer order form with name, email, product selection, quantity, and delivery date"></textarea></div>
+                <div class="nu-field">
+                    <label>Describe the form you need</label>
+                    <textarea class="nu-input" id="aiFormPrompt" rows="3" placeholder="A customer order form with name, email, product selection, quantity, and delivery date"></textarea>
+                </div>
                 <button class="nu-btn nu-btn-primary" onclick="generateForm()" style="margin-top:8px;">Generate Form</button>
             </div>
         </div>
+
         <div class="nu-card">
-            <div class="nu-card-header"><h3 class="nu-card-title">Auto-Generate SQL Report</h3></div>
+            <div class="nu-card-header">
+                <h3 class="nu-card-title">Auto-Generate SQL Report</h3>
+            </div>
             <div class="nu-modal-body">
-                <div class="nu-field"><label>Describe the report you need</label><textarea class="nu-input" id="aiReportPrompt" rows="3" placeholder="Show monthly sales by product category with totals and averages"></textarea></div>
+                <div class="nu-field">
+                    <label>Describe the report you need</label>
+                    <textarea class="nu-input" id="aiReportPrompt" rows="3" placeholder="Show monthly sales by product category with totals and averages"></textarea>
+                </div>
                 <button class="nu-btn nu-btn-primary" onclick="generateReport()" style="margin-top:8px;">Generate Report</button>
             </div>
         </div>

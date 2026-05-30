@@ -1,14 +1,10 @@
 <?php
-require_once '../../config.php';
-require_once '../../core/Database.php';
-require_once '../../core/Auth.php';
+declare(strict_types=1);
+require_once dirname(__DIR__, 2) . '/core/module_bootstrap.php';
 
-$auth = new NuAuth();
-if (!$auth->checkAuth()) exit('Unauthorized');
-
-$db = NuDatabase::getInstance();
+$db       = NuDatabase::getInstance();
 $webhooks = $db->fetchAll("SELECT * FROM nu_webhooks WHERE webhook_active = 1 ORDER BY webhook_created_at DESC");
-$apiKeys = $db->fetchAll("SELECT * FROM nu_api_tokens ORDER BY token_created_at DESC LIMIT 20");
+$apiKeys  = $db->fetchAll("SELECT * FROM nu_api_tokens ORDER BY token_created_at DESC LIMIT 20");
 ?>
 
 <div class="nu-integrations">
@@ -108,5 +104,3 @@ $apiKeys = $db->fetchAll("SELECT * FROM nu_api_tokens ORDER BY token_created_at 
         </div>
     </div>
 </div>
-
-

@@ -1,16 +1,12 @@
 <?php
-require_once '../../config.php';
-require_once '../../core/Database.php';
-require_once '../../core/Auth.php';
+declare(strict_types=1);
+require_once dirname(__DIR__, 2) . '/core/module_bootstrap.php';
 
-$auth = new NuAuth();
-if (!$auth->checkAuth()) exit('Unauthorized');
-
-$db = NuDatabase::getInstance();
-$tables = $db->fetchAll("SHOW TABLES");
+$db        = NuDatabase::getInstance();
+$tables    = $db->fetchAll("SHOW TABLES");
 $tableList = [];
 foreach ($tables as $t) {
-    $vals = array_values($t);
+    $vals        = array_values($t);
     $tableList[] = $vals[0];
 }
 ?>
@@ -65,5 +61,3 @@ foreach ($tables as $t) {
         </div>
     </div>
 </div>
-
-

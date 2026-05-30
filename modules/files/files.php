@@ -1,13 +1,13 @@
 <?php
-require_once '../../config.php';
-require_once '../../core/Database.php';
-require_once '../../core/Auth.php';
+declare(strict_types=1);
+require_once dirname(__DIR__, 2) . '/core/module_bootstrap.php';
 
-$auth = new NuAuth();
-if (!$auth->checkAuth()) exit('Unauthorized');
-if (!$auth->hasPermission('files.view')) exit('Access denied');
+if (!$auth->hasPermission('files.view')) {
+    http_response_code(403);
+    exit('Access denied');
+}
 
-$db = NuDatabase::getInstance();
+$db    = NuDatabase::getInstance();
 $files = $db->fetchAll("SELECT * FROM nu_files ORDER BY file_uploaded_at DESC LIMIT 50");
 ?>
 
@@ -25,13 +25,7 @@ $files = $db->fetchAll("SELECT * FROM nu_files ORDER BY file_uploaded_at DESC LI
         <div class="nu-table-wrap">
             <table class="nu-table">
                 <thead>
-                    <tr>
-                        <th>File</th>
-                        <th>Type</th>
-                        <th>Size</th>
-                        <th>Uploaded</th>
-                        <th>Actions</th>
-                    </tr>
+                    <tr><th>File</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                     <?php foreach ($files as $f): ?>
@@ -54,5 +48,3 @@ $files = $db->fetchAll("SELECT * FROM nu_files ORDER BY file_uploaded_at DESC LI
         </div>
     </div>
 </div>
-
-

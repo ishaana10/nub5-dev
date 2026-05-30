@@ -40,7 +40,6 @@ $roles = $db->fetchAll("SELECT * FROM nu_roles");
     </div>
 </div>
 
-<!-- User Modal -->
 <div class="nu-modal-overlay" id="userModal">
     <div class="nu-modal" style="width:500px;">
         <div class="nu-modal-header">
