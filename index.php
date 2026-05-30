@@ -293,6 +293,7 @@ function nu_asset(string $path): string {
 <?php if ($isLoggedIn): ?>
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="assets/js/select2.min.js"></script>
+<script src="<?= nu_asset('assets/js/nusubform.js') ?>"></script>
 <script src="assets/js/nubuilder-next.js"></script>
 <script>
 (function () {
@@ -303,9 +304,6 @@ function nu_asset(string $path): string {
     } catch (e) {}
 
     // Load the correct module.
-    // nubuilder-next.js also listens on DOMContentLoaded — but scripts at the
-    // bottom of <body> execute AFTER DOMContentLoaded on a redirect (login POST),
-    // so we call loadModule here too as the reliable fallback.
     function _boot() {
         if (!window.NuApp) return;
         var hash = (location.hash || '').replace('#', '');
@@ -315,7 +313,6 @@ function nu_asset(string $path): string {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', _boot);
     } else {
-        // DOM already ready (e.g. after login redirect) — run immediately
         _boot();
     }
 })();

@@ -6,8 +6,6 @@ window.NuApp = {
     this.loadTheme();
     // NOTE: loadModule is intentionally NOT called here.
     // index.php _boot() is the sole trigger for the initial module load.
-    // Calling it here too caused a dual-fetch race after login where
-    // session_regenerate_id(true) invalidated the session for one request.
   },
 
   bindEvents() {
@@ -150,6 +148,14 @@ window.NuApp = {
     return json;
   },
 
+  // ── helper: dispatch nu:form:opened so nuSubform.initAll bootstraps subforms ──
+  _dispatchFormOpened(box) {
+    if (window.nuSubform && typeof window.nuSubform.initAll === 'function') {
+      window.nuSubform.initAll(box);
+    }
+    document.dispatchEvent(new CustomEvent('nu:form:opened', { detail: { scope: box } }));
+  },
+
   async previewForm(code) {
     try {
       const json = await this.apiJson(
@@ -180,6 +186,9 @@ window.NuApp = {
 
       overlay.appendChild(box);
       document.body.appendChild(overlay);
+
+      // Bootstrap subforms inside this overlay
+      this._dispatchFormOpened(box);
 
       if (window.nuForm && typeof window.nuForm.init === 'function') {
         const formEl = overlay.querySelector('.nu-generated-form');
@@ -223,6 +232,9 @@ window.NuApp = {
 
       overlay.appendChild(box);
       document.body.appendChild(overlay);
+
+      // Bootstrap subforms inside this overlay — sets parent_id from the record
+      this._dispatchFormOpened(box);
 
       if (window.nuForm && typeof window.nuForm.init === 'function') {
         const formEl = overlay.querySelector('.nu-generated-form');
@@ -612,12 +624,14 @@ window.nbFormBuilder = (function () {
     if (type === 'subform') {
       var sf  = extra.subform || {};
       var sfv = sf.form_code ? sf.form_code + '.' + (sf.fk_field || '') : '';
+      // All three view options — grid (default), form (cards), inline (editable rows)
       html += '<div class="nb-fp nb-fp-full"><label>Config (form_code.fk_field)</label>' +
         '<input type="text" class="nu-input nu-subform-config" value="' + _esc(sfv) + '" placeholder="order_items.order_id"></div>' +
         '<div class="nb-fp"><label>View</label>' +
         '<select class="nu-input nu-subform-view">' +
-          '<option value="grid"' + ((sf.view || 'grid') === 'grid' ? ' selected' : '') + '>Grid</option>' +
-          '<option value="form"' + (sf.view === 'form' ? ' selected' : '')             + '>Form</option>' +
+          '<option value="grid"'   + ((sf.view || 'grid') === 'grid'   ? ' selected' : '') + '>Grid (table)</option>' +
+          '<option value="form"'   + (sf.view === 'form'               ? ' selected' : '') + '>Form (cards)</option>' +
+          '<option value="inline"' + (sf.view === 'inline'             ? ' selected' : '') + '>Inline (editable rows)</option>' +
         '</select></div>';
     }
     if (type === 'calculated') {
@@ -903,343 +917,4 @@ window.saveForm = async function () {
       sort_order:      parseInt(el.dataset.sortOrder || (index + 1), 10),
       tab:             el.dataset.tab            || '',
       section:         el.dataset.section        || '',
-      visibility_rule: el.dataset.visibilityRule || '',
-      readonly_rule:   el.dataset.readonlyRule   || '',
-      css:             el.dataset.css            || '',
-      js_onchange:     el.dataset.onchange       || '',
-      rows:            parseInt(el.dataset.rows  || '3', 10),
-      min:             el.dataset.min            || '',
-      max:             el.dataset.max            || '',
-      step:            el.dataset.step           || '',
-      accept:          el.dataset.accept         || '',
-      multiple_upload: el.dataset.multipleUpload === '1' ? 1 : 0,
-      html_content:    el.dataset.htmlContent    || '',
-      button_action:   el.dataset.buttonAction   || '',
-      legend:          el.dataset.legend         || '',
-      select2:         el.dataset.select2        === '1' ? 1 : 0
-    };
-
-    if (field.type === 'select' || field.type === 'radio' || field.type === 'checkbox_group') {
-      const sourceType = el.querySelector('.nu-select-source-type');
-      const sqlInput   = el.querySelector('.nu-select-sql');
-      const multiBox   = el.querySelector('.nu-field-multiple');
-      const select2Box = el.querySelector('.nu-field-select2');
-      const txt        = el.querySelector('.nu-select-static');
-      if (multiBox)   field.multiple = multiBox.checked;
-      if (select2Box) field.select2  = select2Box.checked ? 1 : 0;
-      if (sourceType && sourceType.value === 'sql' && sqlInput && sqlInput.value.trim()) {
-        field.source_type = 'sql';
-        field.sql_source  = sqlInput.value.trim();
-      } else {
-        field.source_type = 'static';
-        if (txt) {
-          field.options = txt.value.split('\n').filter(Boolean).map(function (v) {
-            const parts = v.split('|');
-            return { value: (parts[0] || '').trim(), label: (parts[1] || parts[0] || '').trim() };
-          });
-        }
-      }
-    }
-
-    if (field.type === 'lookup') {
-      const txt         = el.querySelector('.nu-lookup-source');
-      const idCol       = el.querySelector('.nu-lookup-id');
-      const filterInput = el.querySelector('.nu-lookup-filter');
-      const extraInput  = el.querySelector('.nu-lookup-extra');
-      const rawVal      = txt ? txt.value.trim() : '';
-      const sep         = rawVal.indexOf(':') > -1 ? ':' : '.';
-      if (rawVal && rawVal.indexOf(sep) > -1) {
-        const parts = rawVal.split(sep);
-        field.lookup = {
-          table:          parts[0].trim(),
-          id_column:      idCol       ? idCol.value.trim() || 'id' : 'id',
-          display_column: (parts[1]  || 'name').trim(),
-          filter:         filterInput ? filterInput.value : '',
-          extra:          extraInput  ? extraInput.value  : ''
-        };
-      }
-    }
-
-    if (field.type === 'subform') {
-      const txt  = el.querySelector('.nu-subform-config');
-      const view = el.querySelector('.nu-subform-view');
-      if (txt && txt.value.indexOf('.') > -1) {
-        const parts = txt.value.split('.');
-        field.subform = { form_code: parts[0], fk_field: parts[1], view: view ? view.value : 'grid' };
-      }
-    }
-
-    if (field.type === 'calculated') {
-      const txt = el.querySelector('.nu-calc-expression');
-      if (txt) field.calculated = txt.value;
-    }
-
-    fields.push(field);
-  });
-
-  function _gv(id) { var e = document.getElementById(id); return e ? e.value : ''; }
-  function _gc(id) { var e = document.getElementById(id); return e ? e.checked : false; }
-
-  const payload = {
-    form_name:   formName,
-    form_code:   formCode,
-    form_table:  formTable,
-    form_layout: JSON.stringify(fields),
-    form_active: 1,
-    form_custom_js:              _gv('formCustomJs'),
-    form_js_before_save:         _gv('formJsBeforeSave'),
-    form_js_after_save:          _gv('formJsAfterSave'),
-    form_custom_php:             _gv('formCustomPhp'),
-    form_custom_css:             _gv('formCustomCss'),
-    browse_sql:                  _gv('formBrowseSql'),
-    browse_columns:              _gv('formBrowseColumns'),
-    browse_search_enabled:       _gc('formBrowseSearchEnabled') ? 1 : 0,
-    browse_search_placeholder:   _gv('formBrowseSearchPlaceholder'),
-    browse_search_fields:        _gv('formBrowseSearchFields'),
-    browse_page_size:            _gv('formBrowsePageSize') || 20,
-    browse_default_sort:         _gv('formBrowseDefaultSort')
-  };
-
-  try {
-    const endpoint = id
-      ? 'api/crud.php?table=nu_forms&id=' + encodeURIComponent(id)
-      : 'api/crud.php?table=nu_forms';
-
-    const json = await NuApp.apiJson(endpoint, {
-      method:  id ? 'PUT' : 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload)
-    });
-
-    if (!json.success) { NuApp.toast(json.error || 'Save failed', 'error'); return; }
-
-    const formId = id || json.id;
-    if (formTable) {
-      try {
-        const setupJson = await NuApp.apiJson('api/form-setup.php', {
-          method:  'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ form_id: formId, form_code: formCode, form_table: formTable, fields: fields })
-        });
-        if (!setupJson.success) NuApp.toast('Table setup: ' + setupJson.error, 'error');
-      } catch (setupErr) { console.error('Table setup error', setupErr); }
-    }
-
-    NuApp.toast('Form saved');
-    const card = document.getElementById('formBuilderCard');
-    if (card) card.style.display = 'none';
-    NuApp.loadModule('forms');
-  } catch (err) {
-    console.error('saveForm error', err);
-    NuApp.toast('Error: ' + err.message, 'error');
-  }
-};
-
-window.deleteForm = function (id, name) {
-  if (!confirm('Delete form "' + name + '"?')) return;
-  NuApp.apiJson('api/crud.php?table=nu_forms&id=' + encodeURIComponent(id), {
-    method: 'DELETE', credentials: 'same-origin'
-  }).then(function (json) {
-    if (json.success) { NuApp.toast('Deleted'); NuApp.loadModule('forms'); }
-    else NuApp.toast(json.error || 'Failed', 'error');
-  }).catch(function (e) { NuApp.toast('Error: ' + e.message, 'error'); });
-};
-
-// ─── Global shims ──────────────────────────────────────────────────────────────────────────
-window.openFormBuilder = function ()             { return nbFormBuilder.open(); };
-window.editForm        = function (id)           { return nbFormBuilder.edit(id); };
-window.closeNuForm     = function (btn) {
-  const overlay = btn ? btn.closest('.nu-form-overlay') : null;
-  if (overlay) { overlay.remove(); return; }
-  NuApp.loadModule('forms');
-};
-window.previewForm = function (code)              { return NuApp.previewForm(code); };
-window.browseForm  = function (code, page, query) { return NuApp.browseForm(code, page, query); };
-window.addRecord   = function (code)              { return NuApp.addRecord(code); };
-window.editRecord  = function (code, id)          { return NuApp.editRecord(code, id); };
-
-window.nuForm = {
-  data: {}, hashCookies: {}, fields: {}, isNew: true, formId: null, formCode: null,
-
-  async init(formCode, recordData, isNew) {
-    this.formCode = formCode;
-    this.data = recordData || {};
-    this.isNew = isNew !== false;
-    this.hashCookies = {};
-    await this.loadFields(formCode);
-    await this.runEvent('js_onload');
-  },
-
-  async loadFields(formCode) {
-    try {
-      const json = await NuApp.apiJson('api/form.php?action=fields&code=' + encodeURIComponent(formCode), { credentials: 'same-origin' });
-      if (json.success && Array.isArray(json.data)) {
-        this.fields = {};
-        json.data.forEach((f) => { this.fields[f.fieldname] = f; });
-      }
-    } catch (e) { console.error('loadFields error', e); }
-  },
-
-  getValue(fieldName) {
-    let el = document.querySelector('.nu-field-wrapper[data-field="' + fieldName + '"] [data-field="' + fieldName + '"]')
-          || document.querySelector('[data-field="' + fieldName + '"]');
-    if (!el) return null;
-    return el.type === 'checkbox' ? (el.checked ? 1 : 0) : el.value;
-  },
-
-  setValue(fieldName, value) {
-    let el = document.querySelector('.nu-field-wrapper[data-field="' + fieldName + '"] [data-field="' + fieldName + '"]')
-          || document.querySelector('[data-field="' + fieldName + '"]');
-    if (!el) return;
-    if (el.type === 'checkbox') el.checked = !!value;
-    else el.value = value == null ? '' : value;
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    this.recalculate();
-  },
-
-  getText(fieldName) {
-    const el = document.querySelector('[data-field="' + fieldName + '"]');
-    if (!el) return null;
-    if (el.options && el.selectedIndex >= 0) return el.options[el.selectedIndex].text;
-    return el.value;
-  },
-
-  show(f)    { const w = document.querySelector('.nu-field-wrapper[data-field="' + f + '"]'); if (w) w.style.display = ''; },
-  hide(f)    { const w = document.querySelector('.nu-field-wrapper[data-field="' + f + '"]'); if (w) w.style.display = 'none'; },
-  enable(f)  { const e = document.querySelector('[data-field="' + f + '"]'); if (e) e.disabled = false; },
-  disable(f) { const e = document.querySelector('[data-field="' + f + '"]'); if (e) e.disabled = true; },
-  setProperty(n, v) { this.hashCookies[n] = v; },
-  getProperty(n)    { return this.hashCookies[n]; },
-
-  recalculate() {
-    document.querySelectorAll('[data-calculated="true"]').forEach((el) => {
-      const expr = el.dataset.expression || '';
-      if (!expr) return;
-      try { const fn = new Function('nu', 'with(nu){ return ' + expr + '; }'); el.value = fn(this) ?? ''; }
-      catch (e) { console.error('Calc error', e); }
-    });
-  },
-
-  async runEvent(eventType) {
-    try {
-      const json = await NuApp.apiJson(
-        'api/form.php?action=events&code=' + encodeURIComponent(this.formCode) + '&event=' + encodeURIComponent(eventType),
-        { credentials: 'same-origin' }
-      );
-      if (json.success && json.code && eventType.indexOf('js_') === 0) {
-        (new Function('nu', json.code))(this);
-      }
-    } catch (e) { console.error('Event error', eventType, e); }
-  },
-
-  async runProcedure(procedureCode, params) {
-    try {
-      return await NuApp.apiJson('api/procedure.php', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: procedureCode, params: params || {}, hashCookies: this.hashCookies })
-      });
-    } catch (e) { NuApp.toast('Procedure error: ' + e.message, 'error'); return { success: false }; }
-  }
-};
-
-window.nuGetValue     = (f)    => window.nuForm.getValue(f);
-window.nuSetValue     = (f, v) => window.nuForm.setValue(f, v);
-window.nuGetText      = (f)    => window.nuForm.getText(f);
-window.nuShow         = (f)    => window.nuForm.show(f);
-window.nuHide         = (f)    => window.nuForm.hide(f);
-window.nuEnable       = (f)    => window.nuForm.enable(f);
-window.nuDisable      = (f)    => window.nuForm.disable(f);
-window.nuSetProperty  = (n, v) => window.nuForm.setProperty(n, v);
-window.nuGetProperty  = (n)    => window.nuForm.getProperty(n);
-window.nuRunPHPHidden = (c, p) => window.nuForm.runProcedure(c, p);
-
-window.openLookupModal = function (fieldName, table, idCol, displayCol, filter, extraData) {
-  NuApp.apiJson(
-    'api/lookup.php?table=' + encodeURIComponent(table) +
-    '&id='      + encodeURIComponent(idCol) +
-    '&display=' + encodeURIComponent(displayCol) +
-    '&filter='  + encodeURIComponent(filter   || '') +
-    '&extra='   + encodeURIComponent(extraData || ''),
-    { credentials: 'same-origin' }
-  ).then(function (json) {
-    if (!json.success) { NuApp.toast(json.error || 'Lookup failed', 'error'); return; }
-    const existing = document.querySelector('.nu-lookup-overlay');
-    if (existing) existing.remove();
-    const overlay = document.createElement('div');
-    overlay.className = 'nu-lookup-overlay';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
-    const box = document.createElement('div');
-    box.style.cssText = 'background:#fff;border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;';
-    let rows = '';
-    if (json.data && json.data.length) {
-      json.data.forEach(function (row) {
-        const rowJson = JSON.stringify(row).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-        const displayText = String(row[displayCol] || '');
-        rows += '<tr style="cursor:pointer;" data-row="' + rowJson + '" onclick="selectLookup(\'' +
-          String(fieldName).replace(/'/g, "\\'") + '\', \'' +
-          String(row[idCol]).replace(/'/g, "\\'") + '\', \'' +
-          String(displayText).replace(/'/g, "\\'") + '\', this)">' +
-          '<td style="padding:10px;border-bottom:1px solid #ddd;">' + displayText + '</td></tr>';
-      });
-    } else {
-      rows = '<tr><td style="padding:20px;text-align:center;color:#666;">No records found</td></tr>';
-    }
-    box.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-      '<h3 style="margin:0;">Select ' + displayCol + '</h3>' +
-      '<button type="button" onclick="this.closest(\'.nu-lookup-overlay\').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;">&times;</button>' +
-      '</div>' +
-      '<input type="text" class="nu-input" placeholder="Search..." style="margin-bottom:12px;" onkeyup="filterLookupTable(this.value,this.nextElementSibling)">' +
-      '<table style="width:100%;border-collapse:collapse;">' + rows + '</table>';
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    const hidden = document.querySelector('input[type="hidden"][data-field="' + fieldName + '"]');
-    if (hidden) hidden.dataset.lookupMapping = extraData || '';
-  }).catch(function (e) { NuApp.toast('Lookup error: ' + e.message, 'error'); });
-};
-
-window.filterLookupTable = function (value, table) {
-  if (!table) return;
-  const lower = String(value).toLowerCase();
-  table.querySelectorAll('tr').forEach(function (row) {
-    row.style.display = row.textContent.toLowerCase().indexOf(lower) === -1 ? 'none' : '';
-  });
-};
-
-window.selectLookup = function (fieldName, id, display, rowElement) {
-  const hidden = document.querySelector('input[type="hidden"][data-field="' + fieldName + '"]');
-  const text   = hidden ? hidden.nextElementSibling : null;
-  if (hidden) hidden.value = id;
-  if (text)   text.value   = display;
-  if (rowElement && rowElement.dataset.row && hidden && hidden.dataset.lookupMapping) {
-    try {
-      const rowData = JSON.parse(rowElement.dataset.row.replace(/&quot;/g, '"').replace(/&#39;/g, "'"));
-      hidden.dataset.lookupMapping.split(',').forEach(function (pair) {
-        const parts = pair.split(':');
-        if (parts.length !== 2) return;
-        if (rowData[parts[0].trim()] !== undefined) window.nuSetValue(parts[1].trim(), rowData[parts[0].trim()]);
-      });
-    } catch (e) { console.error('Lookup mapping error', e); }
-  }
-  const overlay = document.querySelector('.nu-lookup-overlay');
-  if (overlay) overlay.remove();
-  if (hidden) hidden.dispatchEvent(new Event('change', { bubbles: true }));
-};
-
-window.clearLookup = function (fieldName) {
-  const hidden = document.querySelector('input[type="hidden"][data-field="' + fieldName + '"]');
-  const text   = hidden ? hidden.nextElementSibling : null;
-  if (hidden) hidden.value = '';
-  if (text)   text.value   = '';
-  if (hidden && hidden.dataset.lookupMapping) {
-    hidden.dataset.lookupMapping.split(',').forEach(function (pair) {
-      const parts = pair.split(':');
-      if (parts.length !== 2) return;
-      window.nuSetValue(parts[1].trim(), '');
-    });
-  }
-  if (hidden) hidden.dispatchEvent(new Event('change', { bubbles: true }));
-};
+      visibility_rule: el.dataset.visibilityRul
