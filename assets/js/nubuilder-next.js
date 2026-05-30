@@ -4,11 +4,10 @@ window.NuApp = {
   init() {
     this.bindEvents();
     this.loadTheme();
-
-    if (document.querySelector('.nu-app')) {
-      const moduleFromHash = (window.location.hash || '').replace('#', '');
-      this.loadModule(moduleFromHash || 'dashboard');
-    }
+    // NOTE: loadModule is intentionally NOT called here.
+    // index.php _boot() is the sole trigger for the initial module load.
+    // Calling it here too caused a dual-fetch race after login where
+    // session_regenerate_id(true) invalidated the session for one request.
   },
 
   bindEvents() {
@@ -107,6 +106,7 @@ window.NuApp = {
           '<div style="padding:24px;border:2px solid red;background:#fee;">' +
           '<h3>Module load failed</h3>' +
           '<p>Status: ' + res.status + '</p>' +
+          '<pre style="font-size:12px;overflow:auto;">' + html.substring(0, 2000) + '</pre>' +
           '</div>';
         return;
       }
@@ -129,7 +129,6 @@ window.NuApp = {
 
   initModuleScripts(module) {
     if (module === 'forms') {
-      // Re-init the toolbox/canvas drag listeners after innerHTML injection
       if (window.nbFormBuilder && typeof window.nbFormBuilder._initAfterLoad === 'function') {
         window.nbFormBuilder._initAfterLoad();
       }
@@ -517,9 +516,7 @@ window.submitNuForm = async function (formElement) {
   }
 };
 
-// ─── nbFormBuilder ────────────────────────────────────────────────────────────
-// Defined here (in a real <script src>) so it survives innerHTML module injection.
-// forms.php uses onclick="nbFormBuilder.open()" etc — those calls land here.
+// ─── nbFormBuilder ─────────────────────────────────────────────────────────────────────────────
 window.nbFormBuilder = (function () {
 
   function _esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
@@ -755,7 +752,6 @@ window.nbFormBuilder = (function () {
     }
   }
 
-  // ── public API ────────────────────────────────────────────────
   return {
     _canvasEmpty: _canvasEmpty,
 
@@ -877,7 +873,7 @@ window.nbFormBuilder = (function () {
 
 })();
 
-// ─── saveForm ────────────────────────────────────────────────────────────────
+// ─── saveForm ────────────────────────────────────────────────────────────────────────────
 window.saveForm = async function () {
   const id        = _elv('editFormId');
   const formName  = (_elv('builderFormName') || '').trim();
@@ -1051,7 +1047,7 @@ window.deleteForm = function (id, name) {
   }).catch(function (e) { NuApp.toast('Error: ' + e.message, 'error'); });
 };
 
-// ─── Global shims ─────────────────────────────────────────────────────────────
+// ─── Global shims ──────────────────────────────────────────────────────────────────────────
 window.openFormBuilder = function ()             { return nbFormBuilder.open(); };
 window.editForm        = function (id)           { return nbFormBuilder.edit(id); };
 window.closeNuForm     = function (btn) {
