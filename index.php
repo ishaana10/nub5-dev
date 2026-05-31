@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-// ─── Bootstrap ───────────────────────────────────────────────────────────────────────────────
+// ─── Bootstrap ────────────────────────────────────────────────────────────────
 $bootError  = '';
 $loginError = '';
 $isLoggedIn = false;
@@ -22,7 +22,7 @@ try {
     $bootError = 'Application failed to start. Please contact the administrator.';
 }
 
-// ─── Logout ───────────────────────────────────────────────────────────────────────────────
+// ─── Logout ───────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
     if ($auth) $auth->logout();
     else { $_SESSION = []; session_destroy(); }
@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['logout'])) {
     exit;
 }
 
-// ─── Login ───────────────────────────────────────────────────────────────────────────────
+// ─── Login ────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     $username = trim((string)($_POST['username'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     }
 }
 
-// ─── Auth Check ──────────────────────────────────────────────────────────────────────────
+// ─── Auth Check ───────────────────────────────────────────────────────────────
 if ($auth) {
     try {
         $isLoggedIn  = $auth->checkAuth();
@@ -69,9 +69,11 @@ $userDisplay = 'User';
 if (is_array($currentUser)) {
     $userDisplay = $currentUser['usr_name'] ?? $currentUser['usr_username'] ?? 'User';
 }
-$isAdmin = strtolower((string)($currentUser['usr_role'] ?? '')) === 'admin';
+// ── Inspector is visible to globeadmin OR admin ──────────────────────────────
+$_role   = strtolower((string)($currentUser['usr_role'] ?? ''));
+$isAdmin = ($_role === 'globeadmin' || $_role === 'admin');
 
-// ─── Asset helpers ──────────────────────────────────────────────────────────────────────
+// ─── Asset helpers ────────────────────────────────────────────────────────────
 function nu_asset(string $path): string {
     $full = __DIR__ . '/' . ltrim($path, '/');
     $v    = is_file($full) ? filemtime($full) : time();
@@ -234,8 +236,8 @@ function nu_asset(string $path): string {
             </a>
 
             <?php if ($isAdmin): ?>
-            <!-- ── Admin-only divider ── -->
-            <div style="margin:10px 8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted,#888);padding:0 4px;">Admin</div>
+            <!-- ── Admin-only section ── -->
+            <div style="margin:12px 8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted,#888);padding:0 4px;">Admin Tools</div>
             <a href="#inspector" class="nu-nav-item" data-module="inspector"
                onclick="NuApp.loadModule('inspector'); return false;"
                style="color:var(--warning,#f59e0b);">
@@ -243,8 +245,8 @@ function nu_asset(string $path): string {
                     <ellipse cx="12" cy="5" rx="9" ry="3"/>
                     <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
                     <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-                    <line x1="18" y1="18" x2="22" y2="22"/>
-                    <circle cx="18" cy="18" r="3"/>
+                    <line x1="19" y1="19" x2="23" y2="23"/>
+                    <circle cx="19" cy="19" r="3"/>
                 </svg>
                 <span>DB &amp; Server Inspector</span>
             </a>
@@ -315,13 +317,11 @@ function nu_asset(string $path): string {
 <script src="assets/js/nubuilder-next.js"></script>
 <script>
 (function () {
-    // Restore saved theme
     try {
         var t = localStorage.getItem('nu-theme');
         if (t) document.documentElement.setAttribute('data-theme', t);
     } catch (e) {}
 
-    // Load the correct module.
     function _boot() {
         if (!window.NuApp) return;
         var hash = (location.hash || '').replace('#', '');
