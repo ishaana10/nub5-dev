@@ -1,8 +1,7 @@
 <?php
 /**
  * modules/inspector/inspector.php
- * Admin DB & Server Inspector — rendered by NuApp.loadModule('inspector')
- * Fetched via XHR — must self-bootstrap.
+ * Admin DB & Server Inspector
  */
 if (!defined('NU_VERSION')) {
     $nuRoot = realpath(__DIR__ . '/../../');
@@ -19,19 +18,34 @@ if (!$_auth->checkAuth()) {
 $_u    = $_auth->getCurrentUser();
 $_role = strtolower((string)($_u['usr_role'] ?? ''));
 if ($_role !== 'globeadmin' && $_role !== 'admin') {
-    echo '<div style="padding:24px;color:red;">Access denied — admin role required.</div>';
+    echo '<div style="padding:24px;color:red;">Access denied.</div>';
     return;
 }
 ?>
 <style>
-#nuInspector { display:flex; flex-direction:column; height:calc(100vh - 60px); gap:0; font-size:14px; }
-.nu-ins-tabs  { display:flex; gap:4px; padding:12px 16px 0; border-bottom:1px solid var(--border-color,#e2e8f0); flex-shrink:0; flex-wrap:wrap; }
-.nu-ins-tab   { padding:8px 16px; border:none; background:none; cursor:pointer; font-size:13px; font-weight:500;
+#nuInspector { display:flex; flex-direction:column; height:calc(100vh - 60px); font-size:14px; }
+/* Header bar */
+.nu-ins-header { display:flex; align-items:center; gap:8px; padding:10px 16px;
+                 border-bottom:2px solid var(--border-color,#e2e8f0); flex-shrink:0;
+                 background:var(--bg-subtle,#f8fafc); flex-wrap:wrap; }
+.nu-ins-header h3 { margin:0; font-size:15px; flex:1; min-width:120px; }
+.nu-ins-launch-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px;
+                     border:none; border-radius:7px; cursor:pointer; font-size:13px; font-weight:600;
+                     text-decoration:none; transition:.15s; white-space:nowrap; }
+.nu-ins-launch-db  { background:#1e40af; color:#fff; }
+.nu-ins-launch-db:hover  { background:#1d3a9e; }
+.nu-ins-launch-ftp { background:#065f46; color:#fff; }
+.nu-ins-launch-ftp:hover { background:#054f3a; }
+.nu-ins-launch-cpanel { background:#e65100; color:#fff; }
+.nu-ins-launch-cpanel:hover { background:#bf4500; }
+/* Tabs */
+.nu-ins-tabs  { display:flex; gap:4px; padding:10px 16px 0; border-bottom:1px solid var(--border-color,#e2e8f0); flex-shrink:0; flex-wrap:wrap; }
+.nu-ins-tab   { padding:7px 14px; border:none; background:none; cursor:pointer; font-size:13px; font-weight:500;
                 color:var(--text-muted,#64748b); border-bottom:3px solid transparent; margin-bottom:-1px;
                 border-radius:4px 4px 0 0; transition:.15s; }
 .nu-ins-tab.active,.nu-ins-tab:hover { color:var(--primary,#0ea5e9); border-bottom-color:var(--primary,#0ea5e9); background:rgba(14,165,233,.06); }
-.nu-ins-panel         { display:none; flex:1; overflow:hidden; min-height:0; }
-.nu-ins-panel.active  { display:flex; }
+.nu-ins-panel        { display:none; flex:1; overflow:hidden; min-height:0; }
+.nu-ins-panel.active { display:flex; }
 /* DB */
 #nuInsDbPanel      { flex-direction:row; }
 .nu-ins-table-list { width:220px; min-width:140px; border-right:1px solid var(--border-color,#e2e8f0); overflow-y:auto; padding:8px; flex-shrink:0; }
@@ -42,43 +56,64 @@ if ($_role !== 'globeadmin' && $_role !== 'admin') {
 .nu-ins-schema table { width:100%; border-collapse:collapse; font-size:13px; }
 .nu-ins-schema th,.nu-ins-schema td { padding:8px 10px; text-align:left; border-bottom:1px solid var(--border-color,#e2e8f0); }
 .nu-ins-schema th    { font-weight:600; background:var(--bg-subtle,rgba(0,0,0,.03)); }
-.nu-badge        { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:600; background:#f1f5f9; color:#64748b; }
-.nu-badge.pri    { background:#fef3c7; color:#92400e; }
-.nu-badge.nn     { background:#dcfce7; color:#166534; }
+.nu-badge     { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:600; background:#f1f5f9; color:#64748b; }
+.nu-badge.pri { background:#fef3c7; color:#92400e; }
+.nu-badge.nn  { background:#dcfce7; color:#166534; }
 /* SQL */
-#nuInsSqlPanel      { flex-direction:column; }
-.nu-ins-sql-bar     { display:flex; gap:8px; padding:12px 16px; align-items:flex-end; border-bottom:1px solid var(--border-color,#e2e8f0); flex-shrink:0; }
+#nuInsSqlPanel       { flex-direction:column; }
+.nu-ins-sql-bar      { display:flex; gap:8px; padding:12px 16px; align-items:flex-end; border-bottom:1px solid var(--border-color,#e2e8f0); flex-shrink:0; }
 .nu-ins-sql-bar textarea { flex:1; font-family:monospace; font-size:13px; resize:vertical; min-height:80px; padding:8px 10px;
                            border:1px solid var(--border-color,#e2e8f0); border-radius:6px; background:var(--input-bg,#fff); color:inherit; }
 .nu-ins-sql-results  { flex:1; overflow:auto; padding:16px; }
 .nu-ins-sql-results table { width:100%; border-collapse:collapse; font-size:12px; }
 .nu-ins-sql-results th,.nu-ins-sql-results td { padding:6px 10px; border:1px solid var(--border-color,#e2e8f0); white-space:nowrap; }
 .nu-ins-sql-results th { background:var(--bg-subtle,rgba(0,0,0,.03)); font-weight:600; }
-.nu-ins-err { color:red; font-weight:600; }
-.nu-ins-ok  { color:green; font-weight:600; }
+.nu-ins-err { color:#dc2626; font-weight:600; }
+.nu-ins-ok  { color:#16a34a; font-weight:600; }
 /* Files */
-#nuInsFilePanel     { flex-direction:row; }
-.nu-ins-file-tree   { width:260px; min-width:160px; border-right:1px solid var(--border-color,#e2e8f0); overflow-y:auto; padding:8px; flex-shrink:0; }
-.nu-ins-file-item   { padding:5px 8px; border-radius:4px; cursor:pointer; font-size:12px; white-space:nowrap; overflow:hidden;
-                      text-overflow:ellipsis; display:flex; gap:6px; align-items:center; }
+#nuInsFilePanel      { flex-direction:row; }
+.nu-ins-file-tree    { width:260px; min-width:160px; border-right:1px solid var(--border-color,#e2e8f0); overflow-y:auto; padding:8px; flex-shrink:0; }
+.nu-ins-file-item    { padding:5px 8px; border-radius:4px; cursor:pointer; font-size:12px; white-space:nowrap; overflow:hidden;
+                       text-overflow:ellipsis; display:flex; gap:6px; align-items:center; transition:.1s; }
 .nu-ins-file-item:hover { background:rgba(0,0,0,.05); }
-.nu-ins-file-content { flex:1; overflow:auto; padding:16px; }
-.nu-ins-file-content pre { font-size:12px; font-family:monospace; white-space:pre-wrap; word-break:break-all;
-                           background:var(--bg-subtle,#f8fafc); padding:12px; border-radius:6px;
-                           border:1px solid var(--border-color,#e2e8f0); margin:0; }
+.nu-ins-file-item.active { background:var(--primary,#0ea5e9); color:#fff; }
+.nu-ins-file-content { flex:1; overflow:auto; padding:0; display:flex; flex-direction:column; }
+.nu-ins-file-toolbar { display:flex; align-items:center; gap:8px; padding:8px 16px;
+                       border-bottom:1px solid var(--border-color,#e2e8f0); flex-shrink:0;
+                       background:var(--bg-subtle,#f8fafc); flex-wrap:wrap; }
+.nu-ins-file-toolbar strong { flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.nu-ins-editor { flex:1; font-size:12px; font-family:monospace; resize:none; width:100%; border:none;
+                 background:var(--bg-subtle,#f8fafc); color:inherit; padding:12px 16px;
+                 outline:none; tab-size:4; line-height:1.6; }
 /* Server */
-#nuInsSrvPanel      { flex-direction:column; overflow-y:auto; padding:20px; gap:16px; }
-.nu-ins-srv-card    { background:var(--bg-subtle,#f8fafc); border:1px solid var(--border-color,#e2e8f0); border-radius:8px; padding:16px; margin-bottom:12px; }
-.nu-ins-srv-card h4 { margin:0 0 12px; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#64748b; }
-.nu-ins-srv-row     { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--border-color,#e2e8f0); font-size:13px; }
+#nuInsSrvPanel       { flex-direction:column; overflow-y:auto; padding:20px; gap:16px; }
+.nu-ins-srv-card     { background:var(--bg-subtle,#f8fafc); border:1px solid var(--border-color,#e2e8f0); border-radius:8px; padding:16px; margin-bottom:12px; }
+.nu-ins-srv-card h4  { margin:0 0 12px; font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#64748b; }
+.nu-ins-srv-row      { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--border-color,#e2e8f0); font-size:13px; }
 .nu-ins-srv-row:last-child { border:none; }
-.nu-ins-srv-label   { color:#64748b; flex-shrink:0; }
-.nu-ins-srv-val     { font-weight:600; word-break:break-all; text-align:right; }
-.nu-ins-ext-list    { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
-.nu-ins-ext-badge   { font-size:11px; padding:2px 7px; border-radius:10px; background:#e2e8f0; color:#64748b; }
+.nu-ins-srv-label    { color:#64748b; flex-shrink:0; }
+.nu-ins-srv-val      { font-weight:600; word-break:break-all; text-align:right; }
+.nu-ins-ext-list     { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+.nu-ins-ext-badge    { font-size:11px; padding:2px 7px; border-radius:10px; background:#e2e8f0; color:#64748b; }
 </style>
 
 <div id="nuInspector">
+
+  <!-- Header with quick-launch buttons -->
+  <div class="nu-ins-header">
+    <h3>&#x1F6E0; DB &amp; Server Inspector</h3>
+    <button class="nu-ins-launch-btn nu-ins-launch-db" onclick="nuInsOpenPhpMyAdmin()" title="Open phpMyAdmin in a new tab">
+      &#x1F5C4; MySQL Database
+    </button>
+    <button class="nu-ins-launch-btn nu-ins-launch-ftp" onclick="nuInsOpenFileManager()" title="Open cPanel File Manager">
+      &#x1F4C2; File Manager
+    </button>
+    <button class="nu-ins-launch-btn nu-ins-launch-cpanel" onclick="nuInsOpenCpanel()" title="Open cPanel">
+      &#x2699; cPanel
+    </button>
+  </div>
+
+  <!-- Tabs -->
   <div class="nu-ins-tabs">
     <button class="nu-ins-tab active" onclick="nuInsTab(this,'nuInsDbPanel')">&#x1F5C4; Database</button>
     <button class="nu-ins-tab"       onclick="nuInsTab(this,'nuInsSqlPanel')">&#x2699; SQL Runner</button>
@@ -86,11 +121,13 @@ if ($_role !== 'globeadmin' && $_role !== 'admin') {
     <button class="nu-ins-tab"       onclick="nuInsTab(this,'nuInsSrvPanel')">&#x1F5A5; Server Info</button>
   </div>
 
+  <!-- DB Panel -->
   <div class="nu-ins-panel active" id="nuInsDbPanel">
     <div class="nu-ins-table-list" id="nuInsTableList"><div style="padding:8px;color:#999;font-size:12px;">Loading&hellip;</div></div>
     <div class="nu-ins-schema"     id="nuInsSchema"><div style="padding:20px;color:#999;font-size:13px;">Select a table.</div></div>
   </div>
 
+  <!-- SQL Panel -->
   <div class="nu-ins-panel" id="nuInsSqlPanel">
     <div class="nu-ins-sql-bar">
       <textarea id="nuInsSqlInput" placeholder="SELECT * FROM nu_users LIMIT 10;  (Ctrl+Enter to run)"></textarea>
@@ -99,21 +136,60 @@ if ($_role !== 'globeadmin' && $_role !== 'admin') {
     <div class="nu-ins-sql-results" id="nuInsSqlResults"><p style="color:#999;font-size:13px;">Write a query and press Run.</p></div>
   </div>
 
+  <!-- File Browser -->
   <div class="nu-ins-panel" id="nuInsFilePanel">
-    <div class="nu-ins-file-tree"    id="nuInsFileTree"><div style="padding:8px;color:#999;font-size:12px;">Loading&hellip;</div></div>
-    <div class="nu-ins-file-content" id="nuInsFileContent"><p style="color:#999;font-size:13px;padding:20px;">Select a file.</p></div>
+    <div class="nu-ins-file-tree" id="nuInsFileTree"><div style="padding:8px;color:#999;font-size:12px;">Loading&hellip;</div></div>
+    <div class="nu-ins-file-content" id="nuInsFileContent">
+      <div class="nu-ins-file-toolbar">
+        <strong id="nuInsFileName">Select a file</strong>
+        <span id="nuInsFileSize" style="font-size:11px;color:#888;"></span>
+        <button class="nu-btn nu-btn-primary nu-btn-sm" id="nuInsSaveBtn" onclick="nuInsSaveFile()" style="display:none;">&#x1F4BE; Save</button>
+        <span id="nuInsSaveStatus" style="font-size:12px;"></span>
+      </div>
+      <textarea class="nu-ins-editor" id="nuInsEditor" placeholder="Select a file from the tree to edit it here..." readonly></textarea>
+    </div>
   </div>
 
+  <!-- Server Panel -->
   <div class="nu-ins-panel" id="nuInsSrvPanel">
     <div style="color:#999;font-size:13px;padding:20px;">Loading&hellip;</div>
   </div>
+
 </div>
 
 <script>
 (function(){
   var _api = 'api/inspector.php';
+  var _currentFilePath = null;
+  var _currentFileEditable = false;
 
-  /* Tab switcher — on window so onclick= can find it */
+  /* ── Quick-launch buttons ── */
+  window.nuInsOpenPhpMyAdmin = function() {
+    fetch(_api + '?action=phpmyadmin_url', {credentials:'same-origin'})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if (!j.success || !j.candidates.length) { alert('Could not detect phpMyAdmin URL.'); return; }
+        // Try first candidate
+        window.open(j.candidates[0], '_blank');
+      })
+      .catch(function(){ window.open('/phpmyadmin/', '_blank'); });
+  };
+
+  window.nuInsOpenFileManager = function() {
+    var proto = location.protocol;
+    var host  = location.hostname;
+    // cPanel File Manager URLs
+    var url = proto + '//' + host + ':2083/frontend/jupiter/filemanager/index.html';
+    window.open(url, '_blank');
+  };
+
+  window.nuInsOpenCpanel = function() {
+    var proto = location.protocol;
+    var host  = location.hostname;
+    window.open(proto + '//' + host + ':2083/', '_blank');
+  };
+
+  /* ── Tab switcher ── */
   window.nuInsTab = function(btn, panelId) {
     document.querySelectorAll('#nuInspector .nu-ins-tab').forEach(function(t){ t.classList.remove('active'); });
     document.querySelectorAll('#nuInspector .nu-ins-panel').forEach(function(p){ p.classList.remove('active'); });
@@ -124,7 +200,7 @@ if ($_role !== 'globeadmin' && $_role !== 'admin') {
     if (panelId === 'nuInsFilePanel' && !window._nuInsFileLoaded) { window._nuInsFileLoaded = true; nuInsLoadDir('/'); }
   };
 
-  /* DB: tables */
+  /* ── DB: tables ── */
   function nuInsLoadTables() {
     fetch(_api + '?action=tables', {credentials:'same-origin'})
       .then(function(r){ return r.json(); })
@@ -134,10 +210,8 @@ if ($_role !== 'globeadmin' && $_role !== 'admin') {
         list.innerHTML = '';
         (j.tables || []).forEach(function(t){
           var d = document.createElement('div');
-          d.className   = 'nu-ins-table-item';
-          d.textContent = t;
-          d.title       = t;
-          d.onclick     = function(){ window.nuInsLoadTable(t, d); };
+          d.className = 'nu-ins-table-item'; d.textContent = t; d.title = t;
+          d.onclick = function(){ window.nuInsLoadTable(t, d); };
           list.appendChild(d);
         });
       })
@@ -209,51 +283,55 @@ if ($_role !== 'globeadmin' && $_role !== 'admin') {
       });
   };
 
-  /* SQL Runner */
+  /* ── SQL Runner ── */
   window.nuInsRunSql = function() {
     var sql = (document.getElementById('nuInsSqlInput') || {}).value || '';
     if (!sql.trim()) return;
     var out = document.getElementById('nuInsSqlResults');
     out.innerHTML = '<div style="padding:12px;color:#999;">Running&hellip;</div>';
     fetch(_api + '?action=sql', {
-      method: 'POST', credentials: 'same-origin',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({sql: sql})
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({sql:sql})
     })
     .then(function(r){ return r.json(); })
     .then(function(j){
       if (!j.success) { out.innerHTML = '<p class="nu-ins-err">&#x274C; ' + j.error + '</p>'; return; }
       if (j.type === 'select') {
-        if (!j.rows.length) { out.innerHTML = '<p class="nu-ins-ok">&#x2705; 0 rows returned</p>'; return; }
+        if (!j.rows.length) { out.innerHTML = '<p class="nu-ins-ok">&#x2705; 0 rows</p>'; return; }
         var cols = Object.keys(j.rows[0]);
-        var html = '<p class="nu-ins-ok" style="margin-bottom:8px;">&#x2705; ' + j.count + ' row' + (j.count !== 1 ? 's' : '') + '</p><table><thead><tr>';
+        var html = '<p class="nu-ins-ok" style="margin-bottom:8px;">&#x2705; ' + j.count + ' row' + (j.count!==1?'s':'') + '</p><table><thead><tr>';
         cols.forEach(function(c){ html += '<th>' + c + '</th>'; });
         html += '</tr></thead><tbody>';
         j.rows.forEach(function(row){
           html += '<tr>';
           cols.forEach(function(c){
             var v = row[c];
-            html += '<td>' + (v != null ? String(v) : '<em style="color:#aaa;">NULL</em>') + '</td>';
+            html += '<td>' + (v!=null?String(v):'<em style="color:#aaa;">NULL</em>') + '</td>';
           });
           html += '</tr>';
         });
         out.innerHTML = html + '</tbody></table>';
       } else {
-        out.innerHTML = '<p class="nu-ins-ok">&#x2705; Query OK &mdash; ' + j.affected + ' row' + (j.affected !== 1 ? 's' : '') + ' affected</p>';
+        out.innerHTML = '<p class="nu-ins-ok">&#x2705; OK &mdash; ' + j.affected + ' row' + (j.affected!==1?'s':'') + ' affected</p>';
       }
     })
     .catch(function(e){ out.innerHTML = '<p class="nu-ins-err">&#x274C; ' + e.message + '</p>'; });
   };
 
-  /* Ctrl+Enter shortcut */
   document.addEventListener('keydown', function(e){
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if ((e.ctrlKey||e.metaKey) && e.key==='Enter') {
       var inp = document.getElementById('nuInsSqlInput');
-      if (inp && document.activeElement === inp) { e.preventDefault(); window.nuInsRunSql(); }
+      if (inp && document.activeElement===inp) { e.preventDefault(); window.nuInsRunSql(); }
+    }
+    // Ctrl+S to save file
+    if ((e.ctrlKey||e.metaKey) && e.key==='s') {
+      var ed = document.getElementById('nuInsEditor');
+      if (ed && document.activeElement===ed && _currentFileEditable) { e.preventDefault(); window.nuInsSaveFile(); }
     }
   });
 
-  /* File Browser */
+  /* ── File Browser ── */
   window.nuInsLoadDir = function(path) {
     var tree = document.getElementById('nuInsFileTree');
     tree.innerHTML = '<div style="padding:8px;color:#999;font-size:12px;">Loading&hellip;</div>';
@@ -261,37 +339,90 @@ if ($_role !== 'globeadmin' && $_role !== 'admin') {
       .then(function(r){ return r.json(); })
       .then(function(j){
         if (!j.success) { tree.innerHTML = '<div style="color:red;padding:8px;">' + j.error + '</div>'; return; }
-        tree.innerHTML = '<div style="padding:4px 8px;font-size:11px;color:#999;border-bottom:1px solid var(--border-color,#e2e8f0);margin-bottom:4px;word-break:break-all;">' + j.path + '</div>';
+        tree.innerHTML = '<div style="padding:4px 8px 6px;font-size:11px;color:#999;border-bottom:1px solid var(--border-color,#e2e8f0);margin-bottom:4px;word-break:break-all;">' + j.path + '</div>';
         (j.entries || []).forEach(function(entry){
           var d = document.createElement('div');
           d.className = 'nu-ins-file-item';
-          d.innerHTML = (entry.type === 'dir' ? '&#x1F4C1;' : '&#x1F4C4;') + ' <span style="overflow:hidden;text-overflow:ellipsis;">' + entry.name + '</span>';
-          d.title = entry.name + (entry.size != null ? ' (' + Math.round(entry.size/1024) + 'KB)' : '');
-          if (entry.type === 'dir') d.onclick = function(){ window.nuInsLoadDir(entry.path); };
-          else                      d.onclick = function(){ window.nuInsLoadFile(entry.path); };
+          d.innerHTML = (entry.type==='dir'?'&#x1F4C1;':'&#x1F4C4;') + ' <span>' + entry.name + '</span>';
+          d.title = entry.name + (entry.size!=null?' ('+Math.round(entry.size/1024)+'KB)':'');
+          if (entry.type==='dir') d.onclick = function(){ window.nuInsLoadDir(entry.path); };
+          else                    d.onclick = function(){ window.nuInsLoadFile(entry.path, d); };
           tree.appendChild(d);
         });
       })
       .catch(function(e){ document.getElementById('nuInsFileTree').innerHTML = '<div style="color:red;padding:8px;">' + e.message + '</div>'; });
   };
 
-  window.nuInsLoadFile = function(path) {
-    var out = document.getElementById('nuInsFileContent');
-    out.innerHTML = '<p style="padding:20px;color:#999;font-size:13px;">Loading&hellip;</p>';
+  window.nuInsLoadFile = function(path, treeEl) {
+    // Highlight active item
+    document.querySelectorAll('.nu-ins-file-item').forEach(function(i){ i.classList.remove('active'); });
+    if (treeEl) treeEl.classList.add('active');
+
+    var nameEl   = document.getElementById('nuInsFileName');
+    var sizeEl   = document.getElementById('nuInsFileSize');
+    var saveBtn  = document.getElementById('nuInsSaveBtn');
+    var statusEl = document.getElementById('nuInsSaveStatus');
+    var editor   = document.getElementById('nuInsEditor');
+
+    nameEl.textContent  = 'Loading…';
+    sizeEl.textContent  = '';
+    statusEl.textContent = '';
+    editor.value        = '';
+    editor.readOnly     = true;
+    saveBtn.style.display = 'none';
+
     fetch(_api + '?action=files&path=' + encodeURIComponent(path), {credentials:'same-origin'})
       .then(function(r){ return r.json(); })
       .then(function(j){
-        if (!j.success) { out.innerHTML = '<div style="color:red;padding:16px;">' + j.error + '</div>'; return; }
-        var sz = j.size > 1024 ? Math.round(j.size/1024) + 'KB' : j.size + 'B';
-        out.innerHTML =
-          '<div style="display:flex;justify-content:space-between;align-items:center;padding:0 0 10px;margin-bottom:10px;border-bottom:1px solid var(--border-color,#e2e8f0);">' +
-          '<strong style="font-size:13px;">' + j.name + '</strong><span style="font-size:11px;color:#888;">' + sz + '</span></div>' +
-          '<pre>' + (j.content || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>';
+        if (!j.success) { nameEl.textContent = 'Error'; editor.value = j.error; return; }
+        _currentFilePath    = j.path;
+        _currentFileEditable = !!j.editable;
+        nameEl.textContent  = j.name;
+        var sz = j.size > 1024 ? Math.round(j.size/1024)+'KB' : j.size+'B';
+        sizeEl.textContent  = sz;
+        editor.value        = j.content || '';
+        if (_currentFileEditable) {
+          editor.readOnly     = false;
+          saveBtn.style.display = '';
+          statusEl.textContent  = '&#x270F; Editable';
+          statusEl.style.color  = '#16a34a';
+        } else {
+          editor.readOnly = true;
+          saveBtn.style.display = 'none';
+          statusEl.innerHTML = '<span style="color:#f59e0b;">&#x1F512; Read-only</span>';
+        }
       })
-      .catch(function(e){ out.innerHTML = '<div style="color:red;padding:16px;">' + e.message + '</div>'; });
+      .catch(function(e){ nameEl.textContent='Error'; editor.value=e.message; });
   };
 
-  /* Server Info */
+  window.nuInsSaveFile = function() {
+    if (!_currentFilePath || !_currentFileEditable) return;
+    var editor   = document.getElementById('nuInsEditor');
+    var statusEl = document.getElementById('nuInsSaveStatus');
+    var saveBtn  = document.getElementById('nuInsSaveBtn');
+    statusEl.innerHTML = '<span style="color:#64748b;">Saving&hellip;</span>';
+    saveBtn.disabled   = true;
+    fetch(_api + '?action=file_write', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path: _currentFilePath, content: editor.value})
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      saveBtn.disabled = false;
+      if (j.success) {
+        statusEl.innerHTML = '<span style="color:#16a34a;">&#x2705; Saved (' + j.bytes + ' bytes) &mdash; backup: ' + j.backup + '</span>';
+      } else {
+        statusEl.innerHTML = '<span style="color:red;">&#x274C; ' + j.error + '</span>';
+      }
+    })
+    .catch(function(e){
+      saveBtn.disabled = false;
+      statusEl.innerHTML = '<span style="color:red;">&#x274C; ' + e.message + '</span>';
+    });
+  };
+
+  /* ── Server Info ── */
   function nuInsLoadServer() {
     var p = document.getElementById('nuInsSrvPanel');
     p.innerHTML = '<div style="padding:20px;color:#999;font-size:13px;">Loading&hellip;</div>';
@@ -305,20 +436,19 @@ if ($_role !== 'globeadmin' && $_role !== 'admin') {
               return '<div class="nu-ins-srv-row"><span class="nu-ins-srv-label">' + r[0] + '</span><span class="nu-ins-srv-val">' + r[1] + '</span></div>';
             }).join('') + '</div>';
         }
-        function fmt(b) {
-          if (!b) return 'n/a';
-          return b > 1073741824 ? (b/1073741824).toFixed(1) + ' GB' : Math.round(b/1048576) + ' MB';
-        }
+        function fmt(b) { if (!b) return 'n/a'; return b>1073741824?(b/1073741824).toFixed(1)+' GB':Math.round(b/1048576)+' MB'; }
         p.innerHTML =
-          card('Runtime', [['PHP', j.php_version], ['MySQL', j.db_version], ['OS', j.server_os], ['App Root', j.app_root]]) +
-          card('Resources', [['Disk Free', fmt(j.disk_free)], ['Disk Total', fmt(j.disk_total)], ['Memory Limit', j.memory_limit], ['Upload Max', j.upload_max]]) +
+          card('Runtime',   [['PHP', j.php_version],['MySQL', j.db_version],['OS', j.server_os],['Server IP', j.server_addr]]) +
+          card('Paths',     [['App Root', j.app_root],['Doc Root', j.doc_root]]) +
+          card('Resources', [['Disk Free', fmt(j.disk_free)],['Disk Total', fmt(j.disk_total)],
+                              ['Memory Limit', j.memory_limit],['Upload Max', j.upload_max],['Max Exec', j.max_exec]]) +
           '<div class="nu-ins-srv-card"><h4>Extensions (' + j.extensions.length + ')</h4>' +
           '<div class="nu-ins-ext-list">' + j.extensions.map(function(ex){ return '<span class="nu-ins-ext-badge">' + ex + '</span>'; }).join('') + '</div></div>';
       })
       .catch(function(e){ document.getElementById('nuInsSrvPanel').innerHTML = '<div style="color:red;padding:20px;">' + e.message + '</div>'; });
   }
 
-  /* Boot */
+  /* ── Boot ── */
   window._nuInsSrvLoaded  = false;
   window._nuInsFileLoaded = false;
   nuInsLoadTables();
