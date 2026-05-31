@@ -729,6 +729,185 @@ window.submitNuForm = async function (formElement) {
   }
 };
 
+// ─── SAVE FORM — reads all builder fields including form_code, table_mode, pk_type ─
+window.saveForm = async function () {
+  const formId    = (document.getElementById('editFormId')    || {}).value || '';
+  const formName  = ((document.getElementById('builderFormName')  || {}).value || '').trim();
+  const formCode  = ((document.getElementById('builderFormCode')  || {}).value || '').trim();
+  const tableMode = (document.querySelector('input[name="formTableMode"]:checked') || {}).value || 'new';
+  const pkType    = (document.querySelector('input[name="formPkType"]:checked')    || {}).value || 'autoincrement';
+
+  // resolve table name: existing-table select or new-table text input
+  let formTable = '';
+  if (tableMode === 'existing') {
+    formTable = ((document.getElementById('builderFormTableExisting') || {}).value || '').trim();
+  } else {
+    formTable = ((document.getElementById('builderFormTable') || {}).value || '').trim();
+  }
+
+  if (!formName) { NuApp.toast('Form name is required', 'error'); return; }
+
+  // collect fields from canvas
+  const fields = [];
+  document.querySelectorAll('#formCanvas .nb-cfield').forEach(function (card, idx) {
+    const type      = card.dataset.type || 'text';
+    const labelEl   = card.querySelector('.nu-builder-label');
+    const nameEl    = card.querySelector('.nu-builder-name');
+    const widthEl   = card.querySelector('.nu-field-width');
+    const reqEl     = card.querySelector('.nu-field-required');
+    const label     = labelEl  ? labelEl.value.trim()  : '';
+    const name      = nameEl   ? nameEl.value.trim()   : '';
+    const width     = widthEl  ? widthEl.value         : '100%';
+    const required  = reqEl    ? reqEl.checked          : false;
+
+    const field = {
+      type:             type,
+      fieldtype:        type,
+      label:            label,
+      fieldlabel:       label,
+      name:             name,
+      fieldname:        name,
+      width:            width,
+      required:         required,
+      sort_order:       idx,
+      default_value:    (card.querySelector('.nu-field-default')     || {}).value || '',
+      placeholder:      (card.querySelector('.nu-field-placeholder') || {}).value || '',
+      help_text:        (card.querySelector('.nu-field-help')        || {}).value || '',
+      css_class:        (card.querySelector('.nu-field-cssclass')    || {}).value || '',
+      tab:              (card.querySelector('.nu-field-tab')         || {}).value || '',
+      section:          (card.querySelector('.nu-field-section')     || {}).value || '',
+      visibility_rule:  (card.querySelector('.nu-field-vis')         || {}).value || '',
+      readonly_rule:    (card.querySelector('.nu-field-readonly')    || {}).value || '',
+      js_onchange:      (card.querySelector('.nu-field-onchange')    || {}).value || '',
+      rows:             parseInt((card.querySelector('.nu-field-rows')  || {}).value || '3', 10),
+      min:              (card.querySelector('.nu-field-min')         || {}).value || '',
+      max:              (card.querySelector('.nu-field-max')         || {}).value || '',
+      step:             (card.querySelector('.nu-field-step')        || {}).value || '',
+      accept:           (card.querySelector('.nu-field-accept')      || {}).value || '',
+      multiple_upload:  !!((card.querySelector('.nu-field-multiple-upload') || {}).checked),
+      legend:           (card.querySelector('.nu-field-legend')      || {}).value || '',
+      select2:          !!((card.querySelector('.nu-field-select2')  || {}).checked),
+      multiple:         !!((card.querySelector('.nu-field-multiple') || {}).checked),
+      html_content:     (card.querySelector('.nu-html-content')      || {}).value || '',
+      button_action:    (card.querySelector('.nu-field-button-action') || {}).value || '',
+      calculated:       (card.querySelector('.nu-calc-expression')   || {}).value || '',
+    };
+
+    // select / radio / checkbox_group options
+    const srcTypeEl = card.querySelector('.nu-select-source-type');
+    if (srcTypeEl) {
+      field.source_type = srcTypeEl.value || 'static';
+      field.sourcetype  = field.source_type;
+      if (field.source_type === 'static') {
+        const raw = ((card.querySelector('.nu-select-static') || {}).value || '').trim();
+        field.options = raw.split('\n').filter(Boolean).map(function (line) {
+          const parts = line.split('|');
+          return { value: (parts[0] || '').trim(), label: (parts[1] || parts[0] || '').trim() };
+        });
+      } else {
+        field.sql_source  = ((card.querySelector('.nu-select-sql') || {}).value || '').trim();
+        field.sqlsource   = field.sql_source;
+      }
+    }
+
+    // lookup
+    const lkSrcEl = card.querySelector('.nu-lookup-source');
+    if (lkSrcEl) {
+      const lkSrc   = lkSrcEl.value.trim();
+      const lkParts = lkSrc.split('.');
+      field.lookup = {
+        table:          lkParts[0] || '',
+        display_column: lkParts[1] || 'name',
+        displaycolumn:  lkParts[1] || 'name',
+        id_column:      ((card.querySelector('.nu-lookup-id')     || {}).value || 'id').trim(),
+        idcolumn:       ((card.querySelector('.nu-lookup-id')     || {}).value || 'id').trim(),
+        filter:         ((card.querySelector('.nu-lookup-filter') || {}).value || '').trim(),
+        extra:          ((card.querySelector('.nu-lookup-extra')  || {}).value || '').trim(),
+      };
+    }
+
+    // subform
+    const sfEl = card.querySelector('.nu-subform-config');
+    if (sfEl) {
+      const sfVal   = sfEl.value.trim();
+      const sfParts = sfVal.split('.');
+      field.subform = {
+        form_code: sfParts[0] || '',
+        fk_field:  sfParts[1] || '',
+        view:      ((card.querySelector('.nu-subform-view') || {}).value || 'grid'),
+      };
+    }
+
+    fields.push(field);
+  });
+
+  // build main payload
+  const payload = {
+    form_id:                   formId   || null,
+    form_name:                 formName,
+    form_code:                 formCode || formName.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+    form_table:                formTable,
+    form_table_mode:           tableMode,
+    form_pk_type:              pkType,
+    form_layout:               JSON.stringify(fields),
+    browse_sql:                ((document.getElementById('formBrowseSql')               || {}).value || ''),
+    browse_columns:            ((document.getElementById('formBrowseColumns')           || {}).value || ''),
+    browse_search_enabled:     (document.getElementById('formBrowseSearchEnabled')      || {}).checked ? 1 : 0,
+    browse_search_placeholder: ((document.getElementById('formBrowseSearchPlaceholder') || {}).value || ''),
+    browse_search_fields:      ((document.getElementById('formBrowseSearchFields')      || {}).value || ''),
+    browse_page_size:          parseInt((document.getElementById('formBrowsePageSize')  || {}).value || '20', 10),
+    browse_default_sort:       ((document.getElementById('formBrowseDefaultSort')       || {}).value || ''),
+    browse_display_mode:       (document.querySelector('input[name="browseDisplayMode"]:checked') || {}).value || 'inline',
+    form_custom_js:            ((document.getElementById('formCustomJs')                || {}).value || ''),
+    form_js_before_save:       ((document.getElementById('formJsBeforeSave')            || {}).value || ''),
+    form_js_after_save:        ((document.getElementById('formJsAfterSave')             || {}).value || ''),
+    form_custom_php:           ((document.getElementById('formCustomPhp')               || {}).value || ''),
+    form_custom_css:           ((document.getElementById('formCustomCss')               || {}).value || ''),
+  };
+
+  try {
+    // 1. Save form meta + layout
+    const saveRes = await NuApp.apiJson('api/forms.php?action=save', {
+      method:      'POST',
+      credentials: 'same-origin',
+      headers:     { 'Content-Type': 'application/json' },
+      body:        JSON.stringify(payload),
+    });
+    if (!saveRes.success) { NuApp.toast(saveRes.error || 'Save failed', 'error'); return; }
+
+    const savedId = saveRes.form_id || formId;
+    if (document.getElementById('editFormId')) {
+      document.getElementById('editFormId').value = savedId;
+    }
+
+    // 2. Run DB schema sync (create/alter table, pk_type, columns)
+    const setupPayload = {
+      form_id:    savedId,
+      form_table: formTable,
+      table_mode: tableMode,
+      pk_type:    pkType,
+      fields:     fields,
+    };
+    const setupRes = await NuApp.apiJson('api/form-setup.php', {
+      method:      'POST',
+      credentials: 'same-origin',
+      headers:     { 'Content-Type': 'application/json' },
+      body:        JSON.stringify(setupPayload),
+    });
+    if (!setupRes.success) {
+      NuApp.toast('Form saved but DB sync failed: ' + (setupRes.error || 'unknown error'), 'error');
+      return;
+    }
+
+    NuApp.toast(formId ? 'Form updated' : 'Form created');
+    NuApp.loadModule('forms');
+
+  } catch (err) {
+    console.error('saveForm error', err);
+    NuApp.toast('Error: ' + err.message, 'error');
+  }
+};
+
 // nbFormBuilder
 window.nbFormBuilder = (function () {
 
@@ -1004,19 +1183,19 @@ window.nbFormBuilder = (function () {
     var card = radio.closest('.nb-tmode-card');
     if (card) card.classList.add('selected');
 
-    var existingWrap = document.getElementById('existingTableWrap');
-    var newTableWrap = document.getElementById('newTableWrap');
+    var existingWrap   = document.getElementById('existingTableWrap');
+    var newTableWrap   = document.getElementById('newTableWrap');
     var existingSelect = document.getElementById('builderFormTableExisting');
-    var pkCards = document.querySelectorAll('.nb-pk-card');
+    var pkCards        = document.querySelectorAll('.nb-pk-card');
 
     if (tableMode === 'existing') {
-      if (existingWrap) existingWrap.style.display = '';
-      if (newTableWrap) newTableWrap.style.display = 'none';
+      if (existingWrap)   existingWrap.style.display   = '';
+      if (newTableWrap)   newTableWrap.style.display   = 'none';
       if (existingSelect && formTable) existingSelect.value = formTable;
       pkCards.forEach(function (c) { c.style.opacity = '0.45'; c.style.pointerEvents = 'none'; });
     } else {
-      if (existingWrap) existingWrap.style.display = 'none';
-      if (newTableWrap) newTableWrap.style.display = '';
+      if (existingWrap)   existingWrap.style.display   = 'none';
+      if (newTableWrap)   newTableWrap.style.display   = '';
       pkCards.forEach(function (c) { c.style.opacity = ''; c.style.pointerEvents = ''; });
     }
   }
@@ -1123,22 +1302,22 @@ window.nbFormBuilder = (function () {
 
       if (nameEl)  nameEl.value  = form.form_name  || '';
       if (codeEl)  codeEl.value  = form.form_code  || '';
-      if (tableEl) tableEl.value = form.form_table || '';
-      if (idEl)    idEl.value    = form.form_id    || '';
+      if (tableEl) tableEl.value = form.form_table  || '';
+      if (idEl)    idEl.value    = form.form_id     || '';
 
       // restore advanced form settings
       var browseFields = {
-        formBrowseSql:               form.browse_sql              || '',
-        formBrowseColumns:           form.browse_columns          || '',
+        formBrowseSql:               form.browse_sql               || '',
+        formBrowseColumns:           form.browse_columns           || '',
         formBrowseSearchPlaceholder: form.browse_search_placeholder || '',
-        formBrowseSearchFields:      form.browse_search_fields    || '',
-        formBrowsePageSize:          form.browse_page_size        || 20,
-        formBrowseDefaultSort:       form.browse_default_sort     || '',
-        formCustomJs:                form.form_custom_js          || '',
-        formJsBeforeSave:            form.form_js_before_save     || '',
-        formJsAfterSave:             form.form_js_after_save      || '',
-        formCustomPhp:               form.form_custom_php         || '',
-        formCustomCss:               form.form_custom_css         || ''
+        formBrowseSearchFields:      form.browse_search_fields      || '',
+        formBrowsePageSize:          form.browse_page_size          || 20,
+        formBrowseDefaultSort:       form.browse_default_sort       || '',
+        formCustomJs:                form.form_custom_js            || '',
+        formJsBeforeSave:            form.form_js_before_save       || '',
+        formJsAfterSave:             form.form_js_after_save        || '',
+        formCustomPhp:               form.form_custom_php           || '',
+        formCustomCss:               form.form_custom_css           || ''
       };
       Object.keys(browseFields).forEach(function (k) {
         var el = _el(k);
@@ -1158,7 +1337,7 @@ window.nbFormBuilder = (function () {
         }
       }
 
-      // restore pk type and table mode
+      // restore pk type and table mode (uses new columns form_pk_type, form_table_mode)
       _restorePkType(form.form_pk_type || 'autoincrement');
       _restoreTableMode(form.form_table_mode || 'new', form.form_table || '');
 
