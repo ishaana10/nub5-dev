@@ -963,6 +963,42 @@ window.nbFormBuilder = (function () {
     }
   }
 
+  // ─── helpers to restore pk/table-mode UI state ───────────────────────────────
+  function _restorePkType(pkType) {
+    var radio = document.querySelector('input[name="formPkType"][value="' + pkType + '"]');
+    if (!radio) return;
+    radio.checked = true;
+    document.querySelectorAll('.nb-pk-card').forEach(function (c) { c.classList.remove('selected'); });
+    var card = radio.closest('.nb-pk-card');
+    if (card) card.classList.add('selected');
+  }
+
+  function _restoreTableMode(tableMode, formTable) {
+    var radio = document.querySelector('input[name="formTableMode"][value="' + tableMode + '"]');
+    if (!radio) return;
+    radio.checked = true;
+    document.querySelectorAll('.nb-tmode-card').forEach(function (c) { c.classList.remove('selected'); });
+    var card = radio.closest('.nb-tmode-card');
+    if (card) card.classList.add('selected');
+
+    // toggle existing-table dropdown vs free-text input
+    var existingWrap = document.getElementById('existingTableWrap');
+    var newTableWrap = document.getElementById('newTableWrap');
+    var existingSelect = document.getElementById('builderFormTableExisting');
+    var pkCards = document.querySelectorAll('.nb-pk-card');
+
+    if (tableMode === 'existing') {
+      if (existingWrap) existingWrap.style.display = '';
+      if (newTableWrap) newTableWrap.style.display = 'none';
+      if (existingSelect && formTable) existingSelect.value = formTable;
+      pkCards.forEach(function (c) { c.style.opacity = '0.45'; c.style.pointerEvents = 'none'; });
+    } else {
+      if (existingWrap) existingWrap.style.display = 'none';
+      if (newTableWrap) newTableWrap.style.display = '';
+      pkCards.forEach(function (c) { c.style.opacity = ''; c.style.pointerEvents = ''; });
+    }
+  }
+
   return {
     _canvasEmpty: _canvasEmpty,
 
@@ -980,6 +1016,38 @@ window.nbFormBuilder = (function () {
       } else {
         var target = document.querySelector('.nb-display-mode-card input[value="' + mode + '"]');
         if (target) target.closest('.nb-display-mode-card').classList.add('selected');
+      }
+    },
+
+    selectPkType: function (pkType, clickedCard) {
+      var radio = clickedCard ? clickedCard.querySelector('input[type=radio]') :
+        document.querySelector('input[name="formPkType"][value="' + pkType + '"]');
+      if (radio) radio.checked = true;
+      document.querySelectorAll('.nb-pk-card').forEach(function (c) { c.classList.remove('selected'); });
+      var target = clickedCard || (radio ? radio.closest('.nb-pk-card') : null);
+      if (target) target.classList.add('selected');
+    },
+
+    selectTableMode: function (tableMode, clickedCard) {
+      var radio = clickedCard ? clickedCard.querySelector('input[type=radio]') :
+        document.querySelector('input[name="formTableMode"][value="' + tableMode + '"]');
+      if (radio) radio.checked = true;
+      document.querySelectorAll('.nb-tmode-card').forEach(function (c) { c.classList.remove('selected'); });
+      var target = clickedCard || (radio ? radio.closest('.nb-tmode-card') : null);
+      if (target) target.classList.add('selected');
+
+      var existingWrap   = document.getElementById('existingTableWrap');
+      var newTableWrap   = document.getElementById('newTableWrap');
+      var pkCards        = document.querySelectorAll('.nb-pk-card');
+
+      if (tableMode === 'existing') {
+        if (existingWrap) existingWrap.style.display = '';
+        if (newTableWrap) newTableWrap.style.display = 'none';
+        pkCards.forEach(function (c) { c.style.opacity = '0.45'; c.style.pointerEvents = 'none'; });
+      } else {
+        if (existingWrap) existingWrap.style.display = 'none';
+        if (newTableWrap) newTableWrap.style.display = '';
+        pkCards.forEach(function (c) { c.style.opacity = ''; c.style.pointerEvents = ''; });
       }
     },
 
@@ -1022,6 +1090,10 @@ window.nbFormBuilder = (function () {
       ].forEach(function (id) { var e = _el(id); if (e) e.value = ''; });
       var chk = _el('formBrowseSearchEnabled'); if (chk) chk.checked = false;
       var ps  = _el('formBrowsePageSize');      if (ps)  ps.value   = '20';
+
+      // reset pk type and table mode to defaults
+      _restorePkType('autoincrement');
+      _restoreTableMode('new', '');
 
       nbFormBuilder.selectDisplayMode('inline');
 
@@ -1076,6 +1148,10 @@ window.nbFormBuilder = (function () {
 
         nbFormBuilder.selectDisplayMode(form.browse_display_mode || 'inline');
 
+        // restore pk type and table mode from saved record
+        _restorePkType(form.form_pk_type || 'autoincrement');
+        _restoreTableMode(form.form_table_mode || 'new', form.form_table || '');
+
         _el('formCanvas').innerHTML = '<div class="nb-canvas-empty" id="canvasEmpty" style="display:none;"></div>';
         try {
           var layout = JSON.parse(form.form_layout || '[]');
@@ -1103,13 +1179,19 @@ window.saveForm = async function () {
   function _elc(eid) { var e = document.getElementById(eid); return e ? e.checked : false; }
   function _radio(name) {
     var el = document.querySelector('input[name="' + name + '"]:checked');
-    return el ? el.value : 'inline';
+    return el ? el.value : null;
   }
 
   const id        = _elv('editFormId');
   const formName  = (_elv('builderFormName') || '').trim();
-  const formTable = (_elv('builderFormTable') || '').trim();
   const formCode  = formName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+
+  // resolve table name: existing-table dropdown or free-text input
+  const tableMode = _radio('formTableMode') || 'new';
+  const pkType    = _radio('formPkType')    || 'autoincrement';
+  const formTable = tableMode === 'existing'
+    ? (_elv('builderFormTableExisting') || '').trim()
+    : (_elv('builderFormTable') || '').trim();
 
   if (!formName) { NuApp.toast('Form name required', 'error'); return; }
 
@@ -1214,6 +1296,8 @@ window.saveForm = async function () {
     form_name:                 formName,
     form_code:                 formCode,
     form_table:                formTable,
+    form_table_mode:           tableMode,
+    form_pk_type:              pkType,
     form_layout:               JSON.stringify(fields),
     form_active:               1,
     form_custom_js:            _elv('formCustomJs'),
@@ -1228,7 +1312,7 @@ window.saveForm = async function () {
     browse_search_fields:      _elv('formBrowseSearchFields'),
     browse_page_size:          _elv('formBrowsePageSize') || 20,
     browse_default_sort:       _elv('formBrowseDefaultSort'),
-    browse_display_mode:       _radio('browseDisplayMode')
+    browse_display_mode:       _radio('browseDisplayMode') || 'inline'
   };
 
   try {
@@ -1253,7 +1337,14 @@ window.saveForm = async function () {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ form_id: formId, form_code: formCode, form_table: formTable, fields: fields })
+          body: JSON.stringify({
+            form_id:    formId,
+            form_code:  formCode,
+            form_table: formTable,
+            table_mode: tableMode,
+            pk_type:    pkType,
+            fields:     fields
+          })
         });
         const setupJson = await setupRes.json();
         if (!setupJson.success) NuApp.toast('Table setup: ' + setupJson.error, 'error');
