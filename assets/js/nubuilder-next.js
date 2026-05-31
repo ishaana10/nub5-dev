@@ -850,8 +850,10 @@ window.nbFormBuilder = (function () {
     return html;
   }
 
-  var _dragTool  = null;
-  var _dragField = null;
+  var _dragTool    = null;
+  var _dragField   = null;
+  // ─── dropEnabled flag — set false to lock canvas drag-and-drop reordering ────
+  var _dropEnabled = true;
 
   function _initToolbox() {
     document.querySelectorAll('#panelFields .nb-tool').forEach(function (tool) {
@@ -870,7 +872,11 @@ window.nbFormBuilder = (function () {
   function _initCanvasDrop() {
     var canvas = _el('formCanvas');
     if (!canvas) return;
-    canvas.addEventListener('dragover', function (e) { e.preventDefault(); canvas.classList.add('drag-over'); });
+    canvas.addEventListener('dragover', function (e) {
+      // only accept palette tool drops when _dropEnabled is false (field reorder blocked but new drops still allowed)
+      e.preventDefault();
+      canvas.classList.add('drag-over');
+    });
     canvas.addEventListener('dragleave', function () { canvas.classList.remove('drag-over'); });
     canvas.addEventListener('drop', function (e) {
       e.preventDefault();
@@ -882,6 +888,7 @@ window.nbFormBuilder = (function () {
   function _makeDraggable(el) {
     el.setAttribute('draggable', 'true');
     el.addEventListener('dragstart', function (e) {
+      if (!_dropEnabled) { e.preventDefault(); return; }
       _dragField = el; el.classList.add('drag-source'); e.dataTransfer.effectAllowed = 'move';
     });
     el.addEventListener('dragend', function () {
@@ -890,6 +897,7 @@ window.nbFormBuilder = (function () {
       _dragField = null;
     });
     el.addEventListener('dragover', function (e) {
+      if (!_dropEnabled) return;       // ← reorder blocked when drop disabled
       if (!_dragField || _dragField === el) return;
       e.preventDefault();
       var r = el.getBoundingClientRect();
@@ -899,18 +907,19 @@ window.nbFormBuilder = (function () {
     });
   }
 
-  // ─── confirm before removing a field card (only when editing an existing form) ─
+  // ─── confirm before removing a field card ────────────────────────────────────
+  // Always confirms. Message adapts based on whether the form is already saved.
   function _confirmFieldDelete(card) {
-    var editId = _el('editFormId');
-    var isEdit = editId && editId.value && editId.value !== '';
+    var editId  = _el('editFormId');
+    var isSaved = editId && editId.value && editId.value !== '';
     var labelEl = card.querySelector('.nb-cfield-label');
     var label   = labelEl ? (labelEl.textContent || '').trim() : 'this field';
-    if (isEdit) {
-      if (!confirm('Remove field "' + label + '"?\n\nIf this form has a database table, the column will be dropped when you save. This cannot be undone.')) {
-        return false;
-      }
-    }
-    return true;
+
+    var msg = isSaved
+      ? 'Remove field "' + label + '"?\n\nThis form has already been saved. The database column will be dropped when you save again. This cannot be undone.'
+      : 'Remove field "' + label + '"?\n\nThe field will be removed from the layout.';
+
+    return confirm(msg);
   }
 
   function _addField(type, label, name, required, extraData) {
@@ -1029,6 +1038,19 @@ window.nbFormBuilder = (function () {
       _initCanvasDrop();
     },
 
+    // ─── dropEnabled public API ───────────────────────────────────────────────
+    // Call nbFormBuilder.setDropEnabled(false) to lock field reordering (e.g. preview mode)
+    // Call nbFormBuilder.setDropEnabled(true)  to re-enable it
+    setDropEnabled: function (val) {
+      _dropEnabled = !!val;
+      var canvas = _el('formCanvas');
+      if (!canvas) return;
+      canvas.querySelectorAll('.nb-cfield-drag').forEach(function (h) {
+        h.style.visibility = _dropEnabled ? 'visible' : 'hidden';
+        h.title = _dropEnabled ? 'Drag to reorder' : 'Reordering disabled';
+      });
+    },
+
     selectDisplayMode: function (mode, clickedCard) {
       var radio = clickedCard ? clickedCard.querySelector('input[type=radio]') : document.getElementById('browseDisplayMode' + mode.charAt(0).toUpperCase() + mode.slice(1));
       if (radio) radio.checked = true;
@@ -1062,4 +1084,94 @@ window.nbFormBuilder = (function () {
       var newTableWrap   = document.getElementById('newTableWrap');
       var pkCards        = document.querySelectorAll('.nb-pk-card');
 
-     
+      if (tableMode === 'existing') {
+        if (existingWrap) existingWrap.style.display = '';
+        if (newTableWrap) newTableWrap.style.display = 'none';
+        pkCards.forEach(function (c) { c.style.opacity = '0.45'; c.style.pointerEvents = 'none'; });
+      } else {
+        if (existingWrap) existingWrap.style.display = 'none';
+        if (newTableWrap) newTableWrap.style.display = '';
+        pkCards.forEach(function (c) { c.style.opacity = ''; c.style.pointerEvents = ''; });
+      }
+    },
+
+    toggleField: function (header) {
+      var body = header ? header.nextElementSibling : null;
+      if (!body) return;
+      body.classList.toggle('open');
+    },
+
+    toggleSelectSource: function (sel) {
+      var wrap   = sel.closest('.nb-fp-full') || sel.closest('.nb-fp');
+      var panel  = wrap ? wrap.parentElement : sel.closest('.nb-fp-grid');
+      if (!panel) return;
+      var staticBlock = panel.querySelector('.nu-static-block');
+      var sqlBlock    = panel.querySelector('.nu-sql-block');
+      if (staticBlock) staticBlock.style.display = sel.value === 'static' ? '' : 'none';
+      if (sqlBlock)    sqlBlock.style.display    = sel.value === 'sql'    ? '' : 'none';
+    },
+
+    edit: function (form) {
+      if (!form) return;
+      var canvas = _el('formCanvas');
+      if (canvas) canvas.innerHTML = '';
+
+      var nameEl  = _el('builderFormName');
+      var codeEl  = _el('builderFormCode');
+      var tableEl = _el('builderFormTable');
+      var idEl    = _el('editFormId');
+
+      if (nameEl)  nameEl.value  = form.form_name  || '';
+      if (codeEl)  codeEl.value  = form.form_code  || '';
+      if (tableEl) tableEl.value = form.form_table || '';
+      if (idEl)    idEl.value    = form.form_id    || '';
+
+      // restore advanced form settings
+      var browseFields = {
+        formBrowseSql:               form.browse_sql              || '',
+        formBrowseColumns:           form.browse_columns          || '',
+        formBrowseSearchPlaceholder: form.browse_search_placeholder || '',
+        formBrowseSearchFields:      form.browse_search_fields    || '',
+        formBrowsePageSize:          form.browse_page_size        || 20,
+        formBrowseDefaultSort:       form.browse_default_sort     || '',
+        formCustomJs:                form.form_custom_js          || '',
+        formJsBeforeSave:            form.form_js_before_save     || '',
+        formJsAfterSave:             form.form_js_after_save      || '',
+        formCustomPhp:               form.form_custom_php         || '',
+        formCustomCss:               form.form_custom_css         || ''
+      };
+      Object.keys(browseFields).forEach(function (k) {
+        var el = _el(k);
+        if (el) el.value = browseFields[k];
+      });
+      var searchEnabledEl = _el('formBrowseSearchEnabled');
+      if (searchEnabledEl) searchEnabledEl.checked = !!form.browse_search_enabled;
+
+      // restore display mode
+      if (form.browse_display_mode) {
+        var dmRadio = document.querySelector('input[name="browseDisplayMode"][value="' + form.browse_display_mode + '"]');
+        if (dmRadio) {
+          dmRadio.checked = true;
+          var dmCard = dmRadio.closest('.nb-display-mode-card');
+          document.querySelectorAll('.nb-display-mode-card').forEach(function (c) { c.classList.remove('selected'); });
+          if (dmCard) dmCard.classList.add('selected');
+        }
+      }
+
+      // restore pk type and table mode
+      _restorePkType(form.form_pk_type || 'autoincrement');
+      _restoreTableMode(form.form_table_mode || 'new', form.form_table || '');
+
+      // restore fields onto canvas
+      var layout = [];
+      try { layout = JSON.parse(form.form_layout || '[]'); } catch (e) { layout = []; }
+      if (Array.isArray(layout)) {
+        layout.forEach(function (f) {
+          _addField(f.type || f.fieldtype || 'text', f.label || f.fieldlabel || '', f.name || f.fieldname || '', f.required || false, f);
+        });
+      }
+
+      _canvasEmpty();
+    }
+  };
+})();
