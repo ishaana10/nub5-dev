@@ -928,3 +928,23 @@ window.saveForm = async function () {
     NuApp.toast('Error: ' + err.message, 'error');
   }
 };
+
+// ─── Global window aliases ───────────────────────────────────────────────────
+// These are required because modules/forms/forms.php uses bare onclick="previewForm(...)"
+// and onclick="browseForm(...)" handlers which need global scope resolution.
+window.openFormBuilder = function ()           { return NuApp.openFormBuilder ? NuApp.openFormBuilder() : (window.nbFormBuilder ? window.nbFormBuilder.open() : null); };
+window.previewForm     = function (code)       { return NuApp.previewForm(code); };
+window.editForm        = function (id)         { return window.nbFormBuilder ? window.nbFormBuilder.edit(id) : null; };
+window.addRecord       = function (code)       { return NuApp.addRecord(code); };
+window.editRecord      = function (code, id)   { return NuApp.editRecord(code, id); };
+window.browseForm      = function (code, page, query) { return NuApp.browseForm(code, page, query); };
+window.browseFormPage  = function (code, page, query) { return NuApp.browseForm(code, page, query); };
+window.deleteForm      = function (id, name)   {
+  if (!confirm('Delete form ' + (name || '') + '?')) return;
+  NuApp.apiJson('api/crud.php?table=nu_forms&id=' + encodeURIComponent(id), {
+    method: 'DELETE', credentials: 'same-origin'
+  }).then(function (json) {
+    if (json.success) { NuApp.toast('Deleted'); NuApp.loadModule('forms'); }
+    else NuApp.toast(json.error || 'Failed', 'error');
+  }).catch(function (e) { NuApp.toast('Error: ' + e.message, 'error'); });
+};
