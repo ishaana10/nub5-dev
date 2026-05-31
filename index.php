@@ -140,7 +140,7 @@ function nu_asset(string $path): string {
 
 <?php else: ?>
 <!-- ════════════════════════════════ APP SHELL ════════════════════════════════ -->
-<div class="nu-app">
+<div class="nu-app" id="nuApp">
 
     <!-- Sidebar -->
     <aside class="nu-sidebar" id="sidebar">
@@ -271,8 +271,18 @@ function nu_asset(string $path): string {
     <!-- Main -->
     <main class="nu-main">
         <header class="nu-header">
-            <button class="nu-menu-btn" id="menuBtn"
-                    onclick="document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('open')">
+            <button class="nu-menu-btn" id="menuBtn" title="Toggle sidebar"
+                    onclick="(function(){
+                        var app = document.getElementById('nuApp');
+                        var isMobile = window.innerWidth <= 768;
+                        if (isMobile) {
+                            document.getElementById('sidebar').classList.toggle('open');
+                            document.getElementById('overlay').classList.toggle('open');
+                        } else {
+                            app.classList.toggle('sidebar-collapsed');
+                            try { localStorage.setItem('nu-sidebar-collapsed', app.classList.contains('sidebar-collapsed') ? '1' : '0'); } catch(e){}
+                        }
+                    })()">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="3" y1="12" x2="21" y2="12"/>
                     <line x1="3" y1="6" x2="21" y2="6"/>
@@ -317,9 +327,18 @@ function nu_asset(string $path): string {
 <script src="assets/js/nubuilder-next.js"></script>
 <script>
 (function () {
+    // Restore theme
     try {
         var t = localStorage.getItem('nu-theme');
         if (t) document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+
+    // Restore sidebar collapsed state
+    try {
+        if (localStorage.getItem('nu-sidebar-collapsed') === '1') {
+            var app = document.getElementById('nuApp');
+            if (app) app.classList.add('sidebar-collapsed');
+        }
     } catch (e) {}
 
     function _boot() {
