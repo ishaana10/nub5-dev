@@ -69,6 +69,7 @@ $userDisplay = 'User';
 if (is_array($currentUser)) {
     $userDisplay = $currentUser['usr_name'] ?? $currentUser['usr_username'] ?? 'User';
 }
+$isAdmin = strtolower((string)($currentUser['usr_role'] ?? '')) === 'admin';
 
 // ─── Asset helpers ──────────────────────────────────────────────────────────────────────
 function nu_asset(string $path): string {
@@ -231,6 +232,23 @@ function nu_asset(string $path): string {
                 </svg>
                 <span>Integrations</span>
             </a>
+
+            <?php if ($isAdmin): ?>
+            <!-- ── Admin-only divider ── -->
+            <div style="margin:10px 8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted,#888);padding:0 4px;">Admin</div>
+            <a href="#inspector" class="nu-nav-item" data-module="inspector"
+               onclick="NuApp.loadModule('inspector'); return false;"
+               style="color:var(--warning,#f59e0b);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                    <line x1="18" y1="18" x2="22" y2="22"/>
+                    <circle cx="18" cy="18" r="3"/>
+                </svg>
+                <span>DB &amp; Server Inspector</span>
+            </a>
+            <?php endif; ?>
         </nav>
 
         <div class="nu-sidebar-footer">
