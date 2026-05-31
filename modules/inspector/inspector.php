@@ -1,364 +1,356 @@
 <?php
-declare(strict_types=1);
-// Admin gate — checked server-side too
-if (!isset($auth) || !isset($currentUser)) {
-    require_once __DIR__ . '/../../config.php';
-    require_once __DIR__ . '/../../core/Auth.php';
-    $auth = NuAuth::getInstance();
-    $currentUser = $auth->getCurrentUser();
+/**
+ * modules/inspector/inspector.php
+ * Admin DB & Server Inspector — rendered by NuApp.loadModule('inspector')
+ * This file is fetched via XHR so it runs inside the app shell;
+ * it MUST bootstrap config + auth itself.
+ */
+if (!defined('NU_VERSION')) {
+    // Resolve project root (modules/inspector/ → ../../)
+    $nuRoot = realpath(__DIR__ . '/../../');
+    require_once $nuRoot . '/config.php';
+    require_once $nuRoot . '/core/Database.php';
+    require_once $nuRoot . '/core/Auth.php';
 }
-$role = strtolower((string)($currentUser['usr_role'] ?? ''));
-if ($role !== 'admin') {
-    echo '<div style="padding:40px;text-align:center;color:#c00;"><h3>&#x1F512; Admin access required</h3></div>';
+
+$_auth = NuAuth::getInstance();
+if (!$_auth->checkAuth()) {
+    echo '<div style="padding:24px;color:red;">Not authenticated.</div>';
+    return;
+}
+$_u    = $_auth->getCurrentUser();
+$_role = strtolower((string)($_u['usr_role'] ?? ''));
+if ($_role !== 'globeadmin' && $_role !== 'admin') {
+    echo '<div style="padding:24px;color:red;">Access denied — admin role required.</div>';
     return;
 }
 ?>
-<div id="nuInspector" style="font-family:inherit;">
-
-<!-- ── Tab Bar ────────────────────────────────────────────────────────────── -->
-<div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid var(--border-color,#ddd);padding-bottom:0;">
-  <?php
-  $tabs = [
-    ['id'=>'db',     'label'=>'&#128202; Database'],
-    ['id'=>'sql',    'label'=>'&#9881;&#65039; SQL Runner'],
-    ['id'=>'files',  'label'=>'&#128193; File Browser'],
-    ['id'=>'server', 'label'=>'&#128736;&#65039; Server Info'],
-  ];
-  foreach ($tabs as $i => $tab):
-  ?>
-  <button type="button"
-    class="nu-btn nu-btn-ghost nu-btn-sm nu-inspector-tab"
-    id="inspTab_<?= $tab['id'] ?>"
-    onclick="nuInspector.switchTab('<?= $tab['id'] ?>')"
-    style="border-radius:6px 6px 0 0;border-bottom:2px solid transparent;margin-bottom:-2px;<?= $i===0 ? 'border-bottom-color:var(--primary,#6366f1);font-weight:600;' : '' ?>">
-    <?= $tab['label'] ?>
-  </button>
-  <?php endforeach; ?>
-</div>
-
-<!-- ── DATABASE TAB ──────────────────────────────────────────────────────── -->
-<div id="inspPanel_db" class="nu-inspector-panel">
-  <div style="display:flex;gap:16px;height:72vh;">
-    <!-- Table list -->
-    <div style="width:220px;flex-shrink:0;border:1px solid var(--border-color,#ddd);border-radius:8px;overflow-y:auto;">
-      <div style="padding:10px 12px;font-weight:600;font-size:13px;border-bottom:1px solid var(--border-color,#ddd);background:var(--surface-2,#f5f5f5);">Tables</div>
-      <div id="inspTableList" style="padding:4px;"></div>
-    </div>
-    <!-- Column / data panel -->
-    <div style="flex:1;overflow:auto;border:1px solid var(--border-color,#ddd);border-radius:8px;">
-      <div id="inspTableDetail" style="padding:16px;color:#888;font-size:14px;">&#8592; Select a table</div>
-    </div>
-  </div>
-</div>
-
-<!-- ── SQL RUNNER TAB ────────────────────────────────────────────────────── -->
-<div id="inspPanel_sql" class="nu-inspector-panel" style="display:none;">
-  <div style="margin-bottom:10px;display:flex;gap:8px;align-items:flex-start;">
-    <textarea id="inspSqlInput" class="nu-input"
-      placeholder="SELECT * FROM nu_forms LIMIT 10"
-      rows="6"
-      style="flex:1;font-family:monospace;font-size:13px;resize:vertical;"></textarea>
-    <div style="display:flex;flex-direction:column;gap:6px;">
-      <button class="nu-btn nu-btn-primary" onclick="nuInspector.runSql()" title="Ctrl+Enter">&#9654; Run</button>
-      <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="document.getElementById('inspSqlInput').value=''">Clear</button>
-    </div>
-  </div>
-  <div style="font-size:11px;color:#888;margin-bottom:8px;">Tip: Ctrl+Enter to run &nbsp;|&nbsp; SELECT, SHOW, DESCRIBE, INSERT, UPDATE, DELETE, ALTER all supported</div>
-  <div id="inspSqlResult" style="overflow:auto;max-height:60vh;"></div>
-</div>
-
-<!-- ── FILE BROWSER TAB ──────────────────────────────────────────────────── -->
-<div id="inspPanel_files" class="nu-inspector-panel" style="display:none;">
-  <div style="display:flex;gap:16px;height:72vh;">
-    <!-- Directory tree -->
-    <div style="width:280px;flex-shrink:0;border:1px solid var(--border-color,#ddd);border-radius:8px;overflow-y:auto;">
-      <div style="padding:10px 12px;font-weight:600;font-size:13px;border-bottom:1px solid var(--border-color,#ddd);background:var(--surface-2,#f5f5f5);display:flex;align-items:center;gap:8px;">
-        <span id="inspFilePath" style="font-size:12px;font-weight:400;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">/</span>
-      </div>
-      <div id="inspFileList" style="padding:4px;"></div>
-    </div>
-    <!-- File content -->
-    <div style="flex:1;border:1px solid var(--border-color,#ddd);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;">
-      <div id="inspFileHeader" style="padding:8px 14px;font-size:12px;font-weight:600;background:var(--surface-2,#f5f5f5);border-bottom:1px solid var(--border-color,#ddd);">Select a file</div>
-      <pre id="inspFileContent" style="flex:1;overflow:auto;padding:14px;margin:0;font-size:12px;line-height:1.6;background:var(--surface-1,#fff);white-space:pre-wrap;word-break:break-all;">&#8592; Click a file to view its contents</pre>
-    </div>
-  </div>
-</div>
-
-<!-- ── SERVER INFO TAB ───────────────────────────────────────────────────── -->
-<div id="inspPanel_server" class="nu-inspector-panel" style="display:none;">
-  <div id="inspServerInfo" style="padding:8px;"><div class="nu-spinner" style="margin:40px auto;"></div></div>
-</div>
-
-</div><!-- #nuInspector -->
-
 <style>
-.nu-inspector-tab.active-tab { border-bottom-color: var(--primary,#6366f1) !important; font-weight:600; }
-.insp-table-btn { display:block; width:100%; text-align:left; padding:7px 10px; border:none;
-  background:none; cursor:pointer; border-radius:4px; font-size:13px; color:inherit; }
-.insp-table-btn:hover { background:var(--surface-2,#f5f5f5); }
-.insp-table-btn.active { background:var(--primary-alpha,rgba(99,102,241,.12)); color:var(--primary,#6366f1); font-weight:600; }
-.insp-file-btn { display:flex; align-items:center; gap:6px; width:100%; text-align:left;
-  padding:5px 10px; border:none; background:none; cursor:pointer; border-radius:4px;
-  font-size:12px; color:inherit; }
-.insp-file-btn:hover { background:var(--surface-2,#f5f5f5); }
-.insp-file-btn.active { background:var(--primary-alpha,rgba(99,102,241,.12)); color:var(--primary,#6366f1); }
-.insp-result-table { width:100%; border-collapse:collapse; font-size:12px; }
-.insp-result-table th { background:var(--surface-2,#f5f5f5); padding:6px 10px; text-align:left;
-  font-weight:600; border-bottom:2px solid var(--border-color,#ddd); position:sticky; top:0; }
-.insp-result-table td { padding:5px 10px; border-bottom:1px solid var(--border-color,#eee);
-  max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:top; }
-.insp-result-table tr:hover td { background:var(--surface-2,#f9f9f9); }
-.insp-info-grid { display:grid; grid-template-columns:200px 1fr; gap:1px; background:var(--border-color,#ddd); border:1px solid var(--border-color,#ddd); border-radius:8px; overflow:hidden; }
-.insp-info-label { background:var(--surface-2,#f5f5f5); padding:8px 12px; font-weight:600; font-size:13px; }
-.insp-info-value { background:var(--surface-1,#fff); padding:8px 12px; font-size:13px; word-break:break-all; }
+/* ── Inspector layout ──────────────────────────────────────────────────────── */
+#nuInspector { display:flex; flex-direction:column; height:100%; gap:0; font-size:14px; }
+
+/* tabs */
+.ni-tabs  { display:flex; gap:4px; padding:12px 16px 0; border-bottom:1px solid var(--border-color,#e2e8f0); flex-shrink:0; flex-wrap:wrap; }
+.ni-tab   { padding:8px 16px; border:none; background:none; cursor:pointer; font-size:13px; font-weight:500;
+            color:var(--text-muted,#64748b); border-bottom:3px solid transparent; margin-bottom:-1px; border-radius:4px 4px 0 0; transition:.15s; }
+.ni-tab.active, .ni-tab:hover { color:var(--primary,#0ea5e9); border-bottom-color:var(--primary,#0ea5e9); background:var(--bg-hover,rgba(14,165,233,.06)); }
+
+/* panels */
+.ni-panel      { display:none; flex:1; overflow:hidden; }
+.ni-panel.active { display:flex; }
+
+/* ── DB panel ──────────────────────────────────────────────────────────────── */
+#niDbPanel { flex-direction:row; overflow:hidden; }
+.ni-table-list { width:220px; min-width:160px; border-right:1px solid var(--border-color,#e2e8f0);
+                 overflow-y:auto; padding:8px; flex-shrink:0; }
+.ni-table-item { padding:7px 10px; border-radius:6px; cursor:pointer; font-size:13px;
+                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:.12s; }
+.ni-table-item:hover  { background:var(--bg-hover,rgba(0,0,0,.05)); }
+.ni-table-item.active { background:var(--primary,#0ea5e9); color:#fff; }
+.ni-schema { flex:1; overflow-y:auto; padding:16px; }
+.ni-schema table { width:100%; border-collapse:collapse; font-size:13px; }
+.ni-schema th,
+.ni-schema td   { padding:8px 10px; text-align:left; border-bottom:1px solid var(--border-color,#e2e8f0); }
+.ni-schema th   { font-weight:600; background:var(--bg-subtle,rgba(0,0,0,.03)); }
+.ni-badge { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:600;
+            background:var(--bg-subtle,#f1f5f9); color:var(--text-muted,#64748b); }
+.ni-badge.pri { background:#fef3c7; color:#92400e; }
+.ni-badge.nn  { background:#dcfce7; color:#166534; }
+
+/* ── SQL panel ─────────────────────────────────────────────────────────────── */
+#niSqlPanel { flex-direction:column; overflow:hidden; }
+.ni-sql-bar { display:flex; gap:8px; padding:12px 16px; align-items:flex-end; border-bottom:1px solid var(--border-color,#e2e8f0); flex-shrink:0; }
+.ni-sql-bar textarea { flex:1; font-family:monospace; font-size:13px; resize:vertical; min-height:80px;
+                       padding:8px 10px; border:1px solid var(--border-color,#e2e8f0); border-radius:6px;
+                       background:var(--input-bg,#fff); color:inherit; }
+.ni-sql-results { flex:1; overflow:auto; padding:16px; }
+.ni-sql-results table { width:100%; border-collapse:collapse; font-size:12px; }
+.ni-sql-results th,
+.ni-sql-results td { padding:6px 10px; border:1px solid var(--border-color,#e2e8f0); white-space:nowrap; }
+.ni-sql-results th { background:var(--bg-subtle,rgba(0,0,0,.03)); font-weight:600; }
+.ni-sql-results .ni-err { color:red; font-weight:600; }
+.ni-sql-results .ni-ok  { color:green; font-weight:600; }
+
+/* ── File panel ────────────────────────────────────────────────────────────── */
+#niFilePanel { flex-direction:row; overflow:hidden; }
+.ni-file-tree { width:260px; min-width:180px; border-right:1px solid var(--border-color,#e2e8f0);
+                overflow-y:auto; padding:8px; flex-shrink:0; }
+.ni-file-item { padding:5px 8px; border-radius:4px; cursor:pointer; font-size:12px;
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; gap:6px; align-items:center; }
+.ni-file-item:hover { background:var(--bg-hover,rgba(0,0,0,.05)); }
+.ni-file-content { flex:1; overflow:auto; padding:16px; }
+.ni-file-content pre { font-size:12px; font-family:monospace; white-space:pre-wrap; word-break:break-all;
+                        background:var(--bg-subtle,#f8fafc); padding:12px; border-radius:6px;
+                        border:1px solid var(--border-color,#e2e8f0); margin:0; }
+
+/* ── Server panel ──────────────────────────────────────────────────────────── */
+#niSrvPanel { flex-direction:column; overflow-y:auto; padding:20px; gap:16px; }
+.ni-srv-card { background:var(--bg-subtle,#f8fafc); border:1px solid var(--border-color,#e2e8f0);
+               border-radius:8px; padding:16px; }
+.ni-srv-card h4 { margin:0 0 12px; font-size:13px; font-weight:700; text-transform:uppercase;
+                  letter-spacing:.05em; color:var(--text-muted,#64748b); }
+.ni-srv-row { display:flex; justify-content:space-between; gap:12px; padding:6px 0;
+              border-bottom:1px solid var(--border-color,#e2e8f0); font-size:13px; }
+.ni-srv-row:last-child { border:none; }
+.ni-srv-label { color:var(--text-muted,#64748b); flex-shrink:0; }
+.ni-srv-val   { font-weight:600; word-break:break-all; text-align:right; }
+.ni-ext-list  { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+.ni-ext-badge { font-size:11px; padding:2px 7px; border-radius:10px;
+                background:var(--bg-subtle,#e2e8f0); color:var(--text-muted,#64748b); }
 </style>
 
+<div id="nuInspector">
+
+  <!-- Tabs -->
+  <div class="ni-tabs">
+    <button class="ni-tab active" onclick="niTab(this,'niDbPanel')">&#x1F5C4; Database</button>
+    <button class="ni-tab"       onclick="niTab(this,'niSqlPanel')">&#x2699;&#xFE0F; SQL Runner</button>
+    <button class="ni-tab"       onclick="niTab(this,'niFilePanel')">&#x1F4C1; File Browser</button>
+    <button class="ni-tab"       onclick="niTab(this,'niSrvPanel')">&#x1F5A5; Server Info</button>
+  </div>
+
+  <!-- DB Panel -->
+  <div class="ni-panel active" id="niDbPanel">
+    <div class="ni-table-list" id="niTableList"><div style="padding:8px;color:#999;font-size:12px;">Loading&hellip;</div></div>
+    <div class="ni-schema"    id="niSchema"><div style="padding:20px;color:#999;font-size:13px;">Select a table on the left.</div></div>
+  </div>
+
+  <!-- SQL Panel -->
+  <div class="ni-panel" id="niSqlPanel">
+    <div class="ni-sql-bar">
+      <textarea id="niSqlInput" placeholder="SELECT * FROM nu_users LIMIT 10;
+Ctrl+Enter to run"></textarea>
+      <button class="nu-btn nu-btn-primary" onclick="niRunSql()">&#x25B6; Run</button>
+    </div>
+    <div class="ni-sql-results" id="niSqlResults">
+      <p style="color:#999;font-size:13px;">Write a query above and press Run (or Ctrl+Enter).</p>
+    </div>
+  </div>
+
+  <!-- File Panel -->
+  <div class="ni-panel" id="niFilePanel">
+    <div class="ni-file-tree"    id="niFileTree"><div style="padding:8px;color:#999;font-size:12px;">Loading&hellip;</div></div>
+    <div class="ni-file-content" id="niFileContent"><p style="color:#999;font-size:13px;padding:20px;">Select a file on the left.</p></div>
+  </div>
+
+  <!-- Server Panel -->
+  <div class="ni-panel" id="niSrvPanel">
+    <div style="color:#999;font-size:13px;">Loading&hellip;</div>
+  </div>
+
+</div>
+
 <script>
-(function () {
-  var _currentTable = null;
-  var _currentPath  = '';
+(function(){
+  var _api = 'api/inspector.php';
 
-  window.nuInspector = {
-
-    switchTab: function (id) {
-      document.querySelectorAll('.nu-inspector-panel').forEach(function (p) { p.style.display = 'none'; });
-      document.querySelectorAll('.nu-inspector-tab').forEach(function (t) { t.style.borderBottomColor = 'transparent'; t.style.fontWeight = ''; });
-      var panel = document.getElementById('inspPanel_' + id);
-      var tab   = document.getElementById('inspTab_' + id);
-      if (panel) panel.style.display = '';
-      if (tab)   { tab.style.borderBottomColor = 'var(--primary,#6366f1)'; tab.style.fontWeight = '600'; }
-      if (id === 'db'     && !document.getElementById('inspTableList').children.length) this.loadTables();
-      if (id === 'files'  && !document.getElementById('inspFileList').children.length)  this.browseFiles('');
-      if (id === 'server')  this.loadServerInfo();
-    },
-
-    _api: async function (params) {
-      var qs = Object.keys(params).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
-      var res = await fetch('api/inspector.php?' + qs, { credentials: 'same-origin' });
-      return res.json();
-    },
-
-    _apiPost: async function (action, body) {
-      var res = await fetch('api/inspector.php?action=' + action, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      return res.json();
-    },
-
-    // ── Database tab ──────────────────────────────────────────────────────────
-    loadTables: async function () {
-      var el = document.getElementById('inspTableList');
-      el.innerHTML = '<div style="padding:8px;color:#888;font-size:12px;">Loading...</div>';
-      var json = await this._api({ action: 'tables' });
-      if (!json.success) { el.innerHTML = '<div style="padding:8px;color:#c00;">' + (json.error || 'Error') + '</div>'; return; }
-      el.innerHTML = '';
-      var self = this;
-      json.tables.forEach(function (t) {
-        var btn = document.createElement('button');
-        btn.className = 'insp-table-btn';
-        btn.textContent = t;
-        btn.onclick = function () { self.loadTableDetail(t); };
-        el.appendChild(btn);
-      });
-    },
-
-    loadTableDetail: async function (table) {
-      _currentTable = table;
-      document.querySelectorAll('.insp-table-btn').forEach(function (b) {
-        b.classList.toggle('active', b.textContent === table);
-      });
-      var detail = document.getElementById('inspTableDetail');
-      detail.innerHTML = '<div class="nu-spinner" style="margin:30px auto;"></div>';
-      var json = await this._api({ action: 'columns', table: table });
-      if (!json.success) { detail.innerHTML = '<div style="padding:16px;color:#c00;">' + (json.error||'Error') + '</div>'; return; }
-
-      var html = '<div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-color,#ddd);">';
-      html += '<h3 style="margin:0;font-size:15px;">' + table + '</h3>';
-      html += '<span style="font-size:12px;color:#888;">' + json.row_count + ' rows</span>';
-      html += '<button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuInspector.loadTableData(\'' + table + '\',0)">Preview Data &#8594;</button></div>';
-
-      html += '<div style="overflow:auto;"><table class="insp-result-table"><thead><tr>';
-      ['Field','Type','Null','Key','Default','Extra'].forEach(function (h) {
-        html += '<th>' + h + '</th>';
-      });
-      html += '</tr></thead><tbody>';
-      json.columns.forEach(function (col) {
-        html += '<tr>';
-        ['Field','Type','Null','Key','Default','Extra'].forEach(function (k) {
-          html += '<td>' + _esc(col[k] || '') + '</td>';
-        });
-        html += '</tr>';
-      });
-      html += '</tbody></table></div>';
-      detail.innerHTML = html;
-    },
-
-    loadTableData: async function (table, offset) {
-      var detail = document.getElementById('inspTableDetail');
-      detail.innerHTML = '<div class="nu-spinner" style="margin:30px auto;"></div>';
-      var json = await this._api({ action: 'data', table: table, limit: 100, offset: offset || 0 });
-      if (!json.success) { detail.innerHTML = '<div style="padding:16px;color:#c00;">' + (json.error||'Error') + '</div>'; return; }
-
-      var html = '<div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-color,#ddd);">';
-      html += '<div style="display:flex;gap:8px;align-items:center;"><button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuInspector.loadTableDetail(\'' + table + \')">&#8592; Schema</button><h3 style="margin:0;font-size:15px;">' + table + ' — Data</h3></div>';
-      html += '<span style="font-size:12px;color:#888;">Showing ' + (offset+1) + '–' + (offset + json.rows.length) + ' of ' + json.total + '</span></div>';
-
-      if (!json.rows.length) { detail.innerHTML += '<div style="padding:40px;text-align:center;color:#888;">No rows</div>'; return; }
-
-      html += '<div style="overflow:auto;"><table class="insp-result-table"><thead><tr>';
-      json.columns.forEach(function (c) { html += '<th>' + _esc(c) + '</th>'; });
-      html += '</tr></thead><tbody>';
-      json.rows.forEach(function (row) {
-        html += '<tr>';
-        json.columns.forEach(function (c) {
-          var v = row[c];
-          html += '<td title="' + _esc(String(v ?? '')) + '">' + _esc(String(v ?? '')) + '</td>';
-        });
-        html += '</tr>';
-      });
-      html += '</tbody></table></div>';
-
-      // Pagination
-      if (json.total > 100) {
-        html += '<div style="padding:10px 16px;display:flex;gap:6px;">';
-        if (offset > 0) html += '<button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuInspector.loadTableData(\'' + table + '\',' + (offset-100) + ')">&#8592; Prev</button>';
-        if (offset + 100 < json.total) html += '<button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuInspector.loadTableData(\'' + table + '\',' + (offset+100) + ')">Next &#8594;</button>';
-        html += '</div>';
-      }
-      detail.innerHTML = html;
-    },
-
-    // ── SQL Runner ────────────────────────────────────────────────────────────
-    runSql: async function () {
-      var sql = (document.getElementById('inspSqlInput').value || '').trim();
-      var res = document.getElementById('inspSqlResult');
-      if (!sql) { res.innerHTML = '<div style="color:#c00;padding:8px;">No SQL entered.</div>'; return; }
-      res.innerHTML = '<div class="nu-spinner" style="margin:20px auto;"></div>';
-      var t0 = Date.now();
-      var json = await this._apiPost('sql', { sql: sql });
-      var elapsed = Date.now() - t0;
-      if (!json.success) {
-        res.innerHTML = '<div style="padding:10px;background:#fee;border:1px solid #f88;border-radius:6px;color:#c00;font-family:monospace;font-size:13px;white-space:pre-wrap;">' + _esc(json.error || 'Error') + '</div>';
-        return;
-      }
-      if (json.type === 'write') {
-        res.innerHTML = '<div style="padding:10px;background:#efe;border:1px solid #8c8;border-radius:6px;font-size:13px;">&#10003; Query OK — ' + json.affected + ' row(s) affected &nbsp;<span style="color:#888;font-size:11px;">' + elapsed + 'ms</span></div>';
-        return;
-      }
-      if (!json.rows || !json.rows.length) {
-        res.innerHTML = '<div style="padding:10px;color:#888;">Query returned 0 rows &nbsp;<span style="font-size:11px;">' + elapsed + 'ms</span></div>';
-        return;
-      }
-      var cols = Object.keys(json.rows[0]);
-      var html = '<div style="font-size:11px;color:#888;margin-bottom:6px;">' + json.count + ' row(s) &nbsp;•&nbsp; ' + elapsed + 'ms</div>';
-      html += '<table class="insp-result-table"><thead><tr>';
-      cols.forEach(function (c) { html += '<th>' + _esc(c) + '</th>'; });
-      html += '</tr></thead><tbody>';
-      json.rows.forEach(function (row) {
-        html += '<tr>';
-        cols.forEach(function (c) { html += '<td title="' + _esc(String(row[c]??'')) + '">' + _esc(String(row[c]??'')) + '</td>'; });
-        html += '</tr>';
-      });
-      html += '</tbody></table>';
-      res.innerHTML = html;
-    },
-
-    // ── File browser ──────────────────────────────────────────────────────────
-    browseFiles: async function (path) {
-      _currentPath = path;
-      var list = document.getElementById('inspFileList');
-      var pathEl = document.getElementById('inspFilePath');
-      list.innerHTML = '<div style="padding:8px;color:#888;font-size:12px;">Loading...</div>';
-      var json = await this._api({ action: 'files', path: path });
-      if (!json.success) { list.innerHTML = '<div style="padding:8px;color:#c00;font-size:12px;">' + (json.error||'Error') + '</div>'; return; }
-      if (json.type === 'file') {
-        // Shouldn't happen via browseFiles, handled by viewFile
-        return;
-      }
-      if (pathEl) pathEl.textContent = json.path || '/';
-      list.innerHTML = '';
-      var self = this;
-      json.entries.forEach(function (e) {
-        var btn = document.createElement('button');
-        btn.className = 'insp-file-btn';
-        btn.innerHTML = (e.is_parent ? '&#x21A9;' : e.type === 'dir' ? '&#128193;' : '&#128196;') + ' <span>' + _esc(e.name) + '</span>';
-        if (e.type === 'dir') {
-          btn.onclick = function () { self.browseFiles(e.path); };
-        } else {
-          btn.style.color = 'var(--text,inherit)';
-          btn.onclick = function () {
-            document.querySelectorAll('.insp-file-btn').forEach(function (b) { b.classList.remove('active'); });
-            btn.classList.add('active');
-            self.viewFile(e.path, e.name);
-          };
-        }
-        list.appendChild(btn);
-      });
-    },
-
-    viewFile: async function (path, name) {
-      var header  = document.getElementById('inspFileHeader');
-      var content = document.getElementById('inspFileContent');
-      header.textContent  = name;
-      content.textContent = 'Loading...';
-      var json = await this._api({ action: 'files', path: path });
-      if (!json.success) { content.textContent = 'Error: ' + (json.error||'Unknown'); return; }
-      content.textContent = json.content || '(empty file)';
-    },
-
-    // ── Server info ───────────────────────────────────────────────────────────
-    loadServerInfo: async function () {
-      var el = document.getElementById('inspServerInfo');
-      el.innerHTML = '<div class="nu-spinner" style="margin:30px auto;"></div>';
-      var json = await this._api({ action: 'serverinfo' });
-      if (!json.success) { el.innerHTML = '<div style="color:#c00;padding:12px;">' + (json.error||'Error') + '</div>'; return; }
-      var fmt = function (bytes) {
-        if (!bytes) return 'n/a';
-        return (bytes / (1024*1024*1024)).toFixed(1) + ' GB';
-      };
-      var rows = [
-        ['PHP Version',     json.php_version],
-        ['MySQL Version',   json.db_version],
-        ['Server OS',       json.server_os],
-        ['App Root',        json.app_root],
-        ['Memory Limit',    json.memory_limit],
-        ['Upload Max',      json.upload_max],
-        ['Disk Free',       fmt(json.disk_free)],
-        ['Disk Total',      fmt(json.disk_total)],
-      ];
-      var html = '<div class="insp-info-grid">';
-      rows.forEach(function (r) {
-        html += '<div class="insp-info-label">' + r[0] + '</div><div class="insp-info-value">' + _esc(String(r[1]||'')) + '</div>';
-      });
-      html += '</div>';
-      html += '<h4 style="margin:16px 0 8px;">Loaded PHP Extensions</h4>';
-      html += '<div style="font-size:12px;display:flex;flex-wrap:wrap;gap:4px;">';
-      (json.extensions || []).sort().forEach(function (ext) {
-        html += '<span style="background:var(--surface-2,#f0f0f0);padding:2px 7px;border-radius:10px;">' + _esc(ext) + '</span>';
-      });
-      html += '</div>';
-      el.innerHTML = html;
-    }
+  /* ── Tab switcher ── */
+  window.niTab = function(btn, panelId) {
+    document.querySelectorAll('.ni-tab').forEach(function(t){t.classList.remove('active');});
+    document.querySelectorAll('.ni-panel').forEach(function(p){p.classList.remove('active');});
+    btn.classList.add('active');
+    document.getElementById(panelId).classList.add('active');
+    if (panelId === 'niSrvPanel'   && !niSrvPanel._loaded) { niLoadServer(); niSrvPanel._loaded=true; }
+    if (panelId === 'niFilePanel'  && !niFilePanel._loaded){ niLoadDir('/'); niFilePanel._loaded=true; }
   };
 
-  function _esc(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  /* ── DB: load table list ── */
+  function niLoadTables() {
+    fetch(_api + '?action=tables', {credentials:'same-origin'})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        var list = document.getElementById('niTableList');
+        if (!j.success) { list.innerHTML='<div style="color:red;padding:8px;">'+j.error+'</div>'; return; }
+        list.innerHTML = '';
+        (j.tables||[]).forEach(function(t){
+          var d = document.createElement('div');
+          d.className = 'ni-table-item';
+          d.textContent = t;
+          d.title = t;
+          d.onclick = function(){ niLoadTable(t, d); };
+          list.appendChild(d);
+        });
+      }).catch(function(e){ document.getElementById('niTableList').innerHTML='<div style="color:red;padding:8px;">'+e.message+'</div>'; });
   }
 
-  // Ctrl+Enter to run SQL
-  var sqlInput = document.getElementById('inspSqlInput');
-  if (sqlInput) {
-    sqlInput.addEventListener('keydown', function (e) {
-      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); nuInspector.runSql(); }
-    });
+  function niLoadTable(table, el) {
+    document.querySelectorAll('.ni-table-item').forEach(function(i){i.classList.remove('active');});
+    if(el) el.classList.add('active');
+    var schema = document.getElementById('niSchema');
+    schema.innerHTML = '<div style="padding:20px;color:#999;">Loading&hellip;</div>';
+    fetch(_api + '?action=columns&table=' + encodeURIComponent(table), {credentials:'same-origin'})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if (!j.success) { schema.innerHTML='<div style="color:red;padding:16px;">'+j.error+'</div>'; return; }
+        var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+          '<h3 style="margin:0;font-size:15px;">'+table+'</h3>' +
+          '<span style="font-size:12px;color:#888;">'+j.row_count+' rows &nbsp;' +
+          '<button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="niPreviewData(\'' + table + '\')">&#x1F441; Preview</button></span>' +
+          '</div>' +
+          '<table><thead><tr>' +
+          ['Field','Type','Null','Key','Default','Extra'].map(function(h){return '<th>'+h+'</th>';}).join('') +
+          '</tr></thead><tbody>';
+        (j.columns||[]).forEach(function(c){
+          html += '<tr>' +
+            '<td><strong>'+c.Field+'</strong></td>' +
+            '<td><code style="font-size:12px;">'+c.Type+'</code></td>' +
+            '<td>'+(c.Null==='YES'?'<span class="ni-badge">NULL</span>':'<span class="ni-badge nn">NOT NULL</span>')+'</td>' +
+            '<td>'+(c.Key==='PRI'?'<span class="ni-badge pri">PK</span>':(c.Key||''))+'</td>' +
+            '<td style="color:#888;font-size:12px;">'+(c.Default||'')+'</td>' +
+            '<td style="font-size:12px;color:#666;">'+c.Extra+'</td>' +
+            '</tr>';
+        });
+        html += '</tbody></table>';
+        schema.innerHTML = html;
+      });
   }
 
-  // Auto-load tables on DB tab (it's the default)
-  nuInspector.loadTables();
+  window.niPreviewData = function(table, offset) {
+    offset = offset || 0;
+    var schema = document.getElementById('niSchema');
+    schema.innerHTML = '<div style="padding:20px;color:#999;">Loading rows&hellip;</div>';
+    fetch(_api + '?action=data&table=' + encodeURIComponent(table) + '&offset=' + offset + '&limit=100', {credentials:'same-origin'})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if (!j.success) { schema.innerHTML='<div style="color:red;padding:16px;">'+j.error+'</div>'; return; }
+        var cols = j.columns || [];
+        var rows = j.rows    || [];
+        var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+          '<h3 style="margin:0;font-size:15px;">'+table+' &mdash; rows '+(offset+1)+'&ndash;'+(offset+rows.length)+' of '+j.total+'</h3>' +
+          '<div style="display:flex;gap:8px;">' +
+          '<button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="niLoadTable(\''+table+'\', null)">&#x21A9; Schema</button>' +
+          (offset > 0 ? '<button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="niPreviewData(\''+table+'\','+(offset-100)+')">&#x2190; Prev</button>' : '') +
+          (offset + rows.length < j.total ? '<button class="nu-btn nu-btn-primary nu-btn-sm" onclick="niPreviewData(\''+table+'\','+(offset+100)+')">Next &#x2192;</button>' : '') +
+          '</div></div>' +
+          '<div style="overflow-x:auto;"><table><thead><tr>';
+        cols.forEach(function(c){ html += '<th>'+c+'</th>'; });
+        html += '</tr></thead><tbody>';
+        if (!rows.length) { html += '<tr><td colspan="'+cols.length+'" style="text-align:center;padding:20px;color:#999;">No rows</td></tr>'; }
+        rows.forEach(function(row){
+          html += '<tr>';
+          cols.forEach(function(c){
+            var v = row[c];
+            html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+(v!=null?String(v).replace(/"/g,'&quot;'):'')+'">'+(v!=null?String(v):'<span style="color:#aaa;">NULL</span>')+'</td>';
+          });
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        schema.innerHTML = html;
+      });
+  };
+
+  /* ── SQL Runner ── */
+  window.niRunSql = function() {
+    var sql = (document.getElementById('niSqlInput')||{}).value || '';
+    if (!sql.trim()) return;
+    var out = document.getElementById('niSqlResults');
+    out.innerHTML = '<div style="padding:12px;color:#999;">Running&hellip;</div>';
+    fetch(_api + '?action=sql', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({sql:sql})
+    }).then(function(r){return r.json();})
+      .then(function(j){
+        if (!j.success) { out.innerHTML='<p class="ni-err">&#x274C; '+j.error+'</p>'; return; }
+        if (j.type === 'select') {
+          if (!j.rows.length) { out.innerHTML='<p class="ni-ok">&#x2705; Query OK &mdash; 0 rows</p>'; return; }
+          var cols = Object.keys(j.rows[0]);
+          var html = '<p class="ni-ok" style="margin-bottom:8px;">&#x2705; '+j.count+' row'+(j.count!==1?'s':'')+'</p><table><thead><tr>';
+          cols.forEach(function(c){html+='<th>'+c+'</th>';});
+          html += '</tr></thead><tbody>';
+          j.rows.forEach(function(row){
+            html += '<tr>';
+            cols.forEach(function(c){
+              var v=row[c]; html += '<td>'+(v!=null?String(v):'<em style="color:#aaa;">NULL</em>')+'</td>';
+            });
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+          out.innerHTML = html;
+        } else {
+          out.innerHTML = '<p class="ni-ok">&#x2705; Query OK &mdash; '+j.affected+' row'+(j.affected!==1?'s':'')+' affected</p>';
+        }
+      }).catch(function(e){ out.innerHTML='<p class="ni-err">&#x274C; '+e.message+'</p>'; });
+  };
+
+  /* Ctrl+Enter shortcut */
+  document.addEventListener('keydown', function(e){
+    if ((e.ctrlKey||e.metaKey) && e.key==='Enter') {
+      var inp = document.getElementById('niSqlInput');
+      if (inp && document.activeElement === inp) { e.preventDefault(); niRunSql(); }
+    }
+  });
+
+  /* ── File Browser ── */
+  function niLoadDir(path) {
+    var tree = document.getElementById('niFileTree');
+    tree.innerHTML = '<div style="padding:8px;color:#999;font-size:12px;">Loading&hellip;</div>';
+    fetch(_api + '?action=files&path=' + encodeURIComponent(path), {credentials:'same-origin'})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if (!j.success) { tree.innerHTML='<div style="color:red;padding:8px;">'+j.error+'</div>'; return; }
+        tree.innerHTML = '<div style="padding:4px 8px;font-size:11px;color:#999;border-bottom:1px solid var(--border-color,#e2e8f0);margin-bottom:4px;word-break:break-all;">'+j.path+'</div>';
+        (j.entries||[]).forEach(function(e){
+          var d = document.createElement('div');
+          d.className = 'ni-file-item';
+          d.innerHTML = (e.type==='dir' ? '&#x1F4C1;' : '&#x1F4C4;') + ' <span style="overflow:hidden;text-overflow:ellipsis;">'+e.name+'</span>';
+          d.title = e.name + (e.size!=null?' ('+Math.round(e.size/1024)+'KB)':'');
+          if (e.type==='dir') d.onclick = function(){ niLoadDir(e.path); };
+          else                d.onclick = function(){ niLoadFile(e.path); };
+          tree.appendChild(d);
+        });
+      }).catch(function(e){ tree.innerHTML='<div style="color:red;padding:8px;">'+e.message+'</div>'; });
+  }
+
+  function niLoadFile(path) {
+    var out = document.getElementById('niFileContent');
+    out.innerHTML = '<p style="padding:20px;color:#999;font-size:13px;">Loading&hellip;</p>';
+    fetch(_api + '?action=files&path=' + encodeURIComponent(path), {credentials:'same-origin'})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if (!j.success) { out.innerHTML='<div style="color:red;padding:16px;">'+j.error+'</div>'; return; }
+        var sz = j.size > 1024 ? Math.round(j.size/1024)+'KB' : j.size+'B';
+        out.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;padding:0 0 10px;margin-bottom:10px;border-bottom:1px solid var(--border-color,#e2e8f0);">' +
+          '<strong style="font-size:13px;">'+j.name+'</strong><span style="font-size:11px;color:#888;">'+sz+'</span></div>' +
+          '<pre>'+(j.content||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</pre>';
+      }).catch(function(e){ out.innerHTML='<div style="color:red;padding:16px;">'+e.message+'</div>'; });
+  }
+
+  /* ── Server Info ── */
+  function niLoadServer() {
+    var p = document.getElementById('niSrvPanel');
+    p.innerHTML = '<div style="color:#999;font-size:13px;">Loading&hellip;</div>';
+    fetch(_api + '?action=serverinfo', {credentials:'same-origin'})
+      .then(function(r){return r.json();})
+      .then(function(j){
+        if (!j.success) { p.innerHTML='<div style="color:red;">'+j.error+'</div>'; return; }
+        function card(title, rows) {
+          return '<div class="ni-srv-card"><h4>'+title+'</h4>'+
+            rows.map(function(r){ return '<div class="ni-srv-row"><span class="ni-srv-label">'+r[0]+'</span><span class="ni-srv-val">'+r[1]+'</span></div>'; }).join('')+
+            '</div>';
+        }
+        function fmt(b) { if (!b) return 'n/a'; var g=b/1073741824; return g>1?g.toFixed(1)+' GB':(b/1048576).toFixed(0)+' MB'; }
+        p.innerHTML =
+          card('Runtime', [
+            ['PHP', j.php_version],
+            ['MySQL', j.db_version],
+            ['OS', j.server_os],
+            ['App Root', j.app_root]
+          ]) +
+          card('Resources', [
+            ['Disk Free', fmt(j.disk_free)],
+            ['Disk Total', fmt(j.disk_total)],
+            ['Memory Limit', j.memory_limit],
+            ['Upload Max', j.upload_max]
+          ]) +
+          '<div class="ni-srv-card"><h4>Extensions ('+j.extensions.length+')</h4>' +
+          '<div class="ni-ext-list">'+ j.extensions.map(function(e){return '<span class="ni-ext-badge">'+e+'</span>';}).join('') +'</div></div>';
+      }).catch(function(e){ document.getElementById('niSrvPanel').innerHTML='<div style="color:red;">'+e.message+'</div>'; });
+  }
+
+  /* ── Boot ── */
+  niLoadTables();
+  niLoadDir('/');
 
 })();
 </script>
