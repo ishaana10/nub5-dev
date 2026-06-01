@@ -28,82 +28,199 @@ foreach ($forms as $f) {
 
 <style>
 /* ── Form Builder Styles ─────────────────────────────────────── */
-.nb-builder-wrap { display:flex; gap:20px; min-height:520px; }
+.nb-builder-wrap { display:flex; gap:16px; height:calc(100vh - 300px); min-height:500px; }
 
 /* Toolbox */
-.nb-toolbox { width:180px; flex-shrink:0; }
-.nb-toolbox-title { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-secondary); margin-bottom:10px; }
-.nb-tools-group { margin-bottom:14px; }
-.nb-tools-group-label { font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--text-tertiary); margin-bottom:6px; padding-left:2px; }
+.nb-toolbox {
+  width:160px; flex-shrink:0; display:flex; flex-direction:column;
+  overflow-y:auto; padding-right:4px;
+}
+.nb-toolbox::-webkit-scrollbar { width:4px; }
+.nb-toolbox::-webkit-scrollbar-thumb { background:var(--border-color); border-radius:4px; }
+.nb-toolbox-title { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-secondary); margin-bottom:8px; flex-shrink:0; }
+.nb-tools-group { margin-bottom:10px; }
+.nb-tools-group-label { font-size:9px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--text-tertiary); margin-bottom:4px; padding-left:2px; }
 .nb-tool {
-  display:flex; align-items:center; gap:7px; padding:7px 10px;
-  border-radius:8px; cursor:grab; font-size:12px; font-weight:500;
+  display:flex; align-items:center; gap:6px; padding:5px 8px;
+  border-radius:6px; cursor:grab; font-size:11px; font-weight:500;
   color:var(--text-primary); border:1px solid var(--border-color);
-  background:var(--bg-surface); margin-bottom:4px;
+  background:var(--bg-surface); margin-bottom:3px;
   transition:background .15s, border-color .15s, box-shadow .15s;
   user-select:none;
 }
-.nb-tool:hover { background:var(--bg-elevated); border-color:var(--color-primary); box-shadow:0 0 0 2px color-mix(in oklch,var(--color-primary) 18%,transparent); }
+.nb-tool:hover { background:var(--bg-elevated); border-color:var(--color-primary); box-shadow:0 0 0 2px color-mix(in oklch,var(--color-primary) 15%,transparent); }
 .nb-tool svg { flex-shrink:0; color:var(--text-secondary); }
 .nb-tool.dragging { opacity:.4; }
 
-/* Canvas */
-.nb-canvas-wrap { flex:1; display:flex; flex-direction:column; }
-.nb-canvas-title { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-secondary); margin-bottom:10px; }
-.nb-canvas {
-  flex:1; min-height:380px; border:2px dashed var(--border-color);
-  border-radius:12px; padding:12px; background:var(--bg-elevated);
-  transition:border-color .2s;
+/* Canvas wrapper */
+.nb-canvas-wrap { flex:1; display:flex; flex-direction:column; min-width:0; }
+.nb-canvas-topbar {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:8px; gap:8px;
 }
-.nb-canvas.drag-over { border-color:var(--color-primary); background:color-mix(in oklch,var(--color-primary) 5%,var(--bg-elevated)); }
-.nb-canvas-empty { text-align:center; padding:60px 20px; color:var(--text-tertiary); font-size:13px; pointer-events:none; }
+.nb-canvas-title { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-secondary); }
+.nb-canvas-topbar-actions { display:flex; gap:6px; align-items:center; }
 
-/* Canvas field card */
+/* Canvas scroll area */
+.nb-canvas {
+  flex:1; overflow-y:auto; border:2px dashed var(--border-color);
+  border-radius:10px; padding:10px; background:var(--bg-elevated);
+  transition:border-color .2s; position:relative;
+}
+.nb-canvas::-webkit-scrollbar { width:5px; }
+.nb-canvas::-webkit-scrollbar-thumb { background:var(--border-color); border-radius:4px; }
+.nb-canvas.drag-over { border-color:var(--color-primary); background:color-mix(in oklch,var(--color-primary) 4%,var(--bg-elevated)); }
+.nb-canvas-empty {
+  text-align:center; padding:60px 20px; color:var(--text-tertiary);
+  font-size:13px; pointer-events:none; position:absolute;
+  top:50%; left:50%; transform:translate(-50%,-50%); width:80%;
+}
+
+/* ── ROW ── */
+.nb-row {
+  border:1px solid var(--border-color); border-radius:8px;
+  margin-bottom:8px; background:var(--bg-surface);
+  transition:border-color .15s;
+}
+.nb-row:hover { border-color:color-mix(in oklch,var(--color-primary) 40%,var(--border-color)); }
+.nb-row.drag-row-over { border-color:var(--color-primary); border-style:dashed; background:color-mix(in oklch,var(--color-primary) 4%,var(--bg-surface)); }
+.nb-row-header {
+  display:flex; align-items:center; gap:6px; padding:5px 8px;
+  border-bottom:1px solid var(--border-color); cursor:default;
+  background:color-mix(in oklch,var(--bg-elevated) 60%,var(--bg-surface));
+  border-radius:7px 7px 0 0;
+}
+.nb-row-drag { cursor:grab; color:var(--text-tertiary); font-size:15px; line-height:1; user-select:none; padding:0 2px; }
+.nb-row-drag:active { cursor:grabbing; }
+.nb-row-label { font-size:10px; color:var(--text-tertiary); font-weight:600; letter-spacing:.05em; text-transform:uppercase; flex:1; }
+.nb-row-actions { display:flex; gap:4px; }
+.nb-row-btn {
+  padding:2px 7px; border-radius:5px; font-size:10px; font-weight:500;
+  border:1px solid var(--border-color); background:none; cursor:pointer;
+  color:var(--text-secondary); transition:all .15s;
+}
+.nb-row-btn:hover { background:var(--bg-elevated); border-color:var(--color-primary); color:var(--color-primary); }
+.nb-row-btn.del:hover { background:#fee; border-color:#e55; color:#c33; }
+
+/* Row body: 12-col grid */
+.nb-row-body {
+  display:grid;
+  grid-template-columns:repeat(12,1fr);
+  gap:6px;
+  padding:8px;
+  min-height:52px;
+  position:relative;
+}
+.nb-row-body.drag-col-over::after {
+  content:'';
+  position:absolute; inset:4px;
+  border:2px dashed var(--color-primary);
+  border-radius:6px; pointer-events:none;
+  background:color-mix(in oklch,var(--color-primary) 5%,transparent);
+}
+
+/* Drop zone when row is empty */
+.nb-row-drop-hint {
+  grid-column:1/-1; display:flex; align-items:center; justify-content:center;
+  color:var(--text-tertiary); font-size:11px; padding:8px;
+  border:1px dashed var(--border-color); border-radius:6px;
+  pointer-events:none;
+}
+
+/* ── FIELD CARD inside a row ── */
 .nb-cfield {
-  border:1px solid var(--border-color); border-radius:10px;
-  background:var(--bg-surface); margin-bottom:8px;
+  border:1px solid var(--border-color); border-radius:7px;
+  background:var(--bg-surface);
   transition:border-color .15s, box-shadow .15s;
+  min-width:0; overflow:hidden;
+  /* col-span set dynamically via style */
 }
-.nb-cfield:hover { border-color:var(--color-primary); }
-.nb-cfield.drag-source { opacity:.35; }
+.nb-cfield:hover { border-color:var(--color-primary); box-shadow:0 0 0 2px color-mix(in oklch,var(--color-primary) 12%,transparent); }
+.nb-cfield.drag-source { opacity:.3; }
 .nb-cfield-header {
-  display:flex; align-items:center; gap:8px; padding:9px 12px;
-  cursor:pointer;
+  display:flex; align-items:center; gap:5px; padding:6px 8px;
+  cursor:pointer; user-select:none;
 }
-.nb-cfield-drag { cursor:grab; color:var(--text-tertiary); font-size:16px; line-height:1; flex-shrink:0; }
+.nb-cfield-drag { cursor:grab; color:var(--text-tertiary); font-size:14px; flex-shrink:0; }
 .nb-cfield-drag:active { cursor:grabbing; }
 .nb-cfield-type-badge {
-  font-size:10px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
-  padding:2px 7px; border-radius:20px;
+  font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  padding:1px 6px; border-radius:20px; flex-shrink:0;
   background:color-mix(in oklch,var(--color-primary) 12%,transparent);
   color:var(--color-primary);
 }
-.nb-cfield-label { flex:1; font-size:13px; font-weight:500; }
-.nb-cfield-actions { display:flex; gap:4px; }
+.nb-cfield-label { flex:1; font-size:12px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.nb-cfield-span-badge {
+  font-size:9px; font-weight:600; color:var(--text-tertiary);
+  background:var(--bg-elevated); border:1px solid var(--border-color);
+  padding:1px 5px; border-radius:4px; flex-shrink:0;
+}
+.nb-cfield-actions { display:flex; gap:3px; flex-shrink:0; }
 .nb-cfield-btn {
-  padding:3px 7px; border-radius:6px; font-size:11px; font-weight:500;
+  padding:2px 6px; border-radius:5px; font-size:10px; font-weight:500;
   border:1px solid var(--border-color); background:none; cursor:pointer;
   color:var(--text-secondary); transition:all .15s;
 }
 .nb-cfield-btn:hover { background:var(--bg-elevated); border-color:var(--color-primary); color:var(--color-primary); }
 .nb-cfield-btn.del:hover { background:#fee; border-color:#e55; color:#c33; }
 
-/* Expand/collapse panel */
-.nb-cfield-body { display:none; padding:12px; border-top:1px solid var(--border-color); }
+/* Field expand/collapse body */
+.nb-cfield-body { display:none; padding:10px; border-top:1px solid var(--border-color); }
 .nb-cfield-body.open { display:block; }
 
+/* Column span bar */
+.nb-span-bar {
+  display:flex; align-items:center; gap:4px;
+  padding:6px 10px; border-bottom:1px solid var(--border-color);
+  background:color-mix(in oklch,var(--bg-elevated) 70%,var(--bg-surface));
+  flex-wrap:wrap;
+}
+.nb-span-bar-label { font-size:10px; color:var(--text-tertiary); font-weight:600; letter-spacing:.04em; text-transform:uppercase; margin-right:4px; flex-shrink:0; }
+.nb-span-btn {
+  width:22px; height:22px; border-radius:4px; border:1px solid var(--border-color);
+  font-size:10px; font-weight:600; cursor:pointer;
+  background:var(--bg-surface); color:var(--text-secondary);
+  display:flex; align-items:center; justify-content:center;
+  transition:all .15s; flex-shrink:0;
+}
+.nb-span-btn:hover { border-color:var(--color-primary); color:var(--color-primary); background:color-mix(in oklch,var(--color-primary) 8%,var(--bg-surface)); }
+.nb-span-btn.active { background:var(--color-primary); border-color:var(--color-primary); color:#fff; }
+.nb-span-preview {
+  margin-left:auto; font-size:10px; color:var(--text-tertiary);
+  padding:2px 8px; background:var(--bg-elevated); border-radius:4px;
+  border:1px solid var(--border-color); flex-shrink:0;
+}
+
 /* Inline label+input grid inside field body */
-.nb-fp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; }
-.nb-fp { display:flex; flex-direction:column; gap:4px; }
-.nb-fp label { font-size:11px; font-weight:600; color:var(--text-secondary); }
-.nb-fp input,.nb-fp select,.nb-fp textarea { font-size:12px; }
+.nb-fp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; }
+.nb-fp { display:flex; flex-direction:column; gap:3px; }
+.nb-fp label { font-size:10px; font-weight:600; color:var(--text-secondary); }
+.nb-fp input,.nb-fp select,.nb-fp textarea { font-size:11px; }
 .nb-fp-full { grid-column:1/-1; }
-.nb-fp-check { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--text-primary); }
+.nb-fp-check { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:500; color:var(--text-primary); }
+
+/* Row drop-between placeholder */
+.nb-row-placeholder {
+  height:4px; border-radius:4px;
+  background:var(--color-primary);
+  margin:2px 0; opacity:0; transition:opacity .15s;
+  pointer-events:none;
+}
+.nb-row-placeholder.visible { opacity:1; }
+
+/* Add row button row */
+.nb-add-row-btn {
+  width:100%; padding:7px; border-radius:7px;
+  border:1.5px dashed var(--border-color); background:none; cursor:pointer;
+  font-size:11px; font-weight:600; color:var(--text-tertiary);
+  transition:all .15s; margin-top:4px; display:flex; align-items:center; justify-content:center; gap:5px;
+}
+.nb-add-row-btn:hover { border-color:var(--color-primary); color:var(--color-primary); background:color-mix(in oklch,var(--color-primary) 4%,transparent); }
 
 /* Form-level tabs */
 .nb-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border-color); margin-bottom:16px; }
 .nb-tab {
-  padding:8px 16px; border-radius:8px 8px 0 0; font-size:12px; font-weight:600;
+  padding:7px 14px; border-radius:8px 8px 0 0; font-size:12px; font-weight:600;
   cursor:pointer; border:1px solid transparent; border-bottom:none;
   color:var(--text-secondary); background:none; transition:all .15s;
   position:relative; top:1px;
@@ -464,47 +581,53 @@ foreach ($forms as $f) {
 
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Basic</div>
-            <div class="nb-tool" data-type="text"     draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>Text</div>
-            <div class="nb-tool" data-type="textarea" draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>Textarea</div>
-            <div class="nb-tool" data-type="number"   draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 8h2v8M15 8h2v8M9 8h-2M17 8h-2M9 16h-2M17 16h-2"/></svg>Number</div>
-            <div class="nb-tool" data-type="email"    draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 7 10-7"/></svg>Email</div>
-            <div class="nb-tool" data-type="password" draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Password</div>
-            <div class="nb-tool" data-type="date"     draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Date</div>
-            <div class="nb-tool" data-type="datetime" draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M12 14v4l2 2"/></svg>DateTime</div>
-            <div class="nb-tool" data-type="time"     draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Time</div>
-            <div class="nb-tool" data-type="checkbox" draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>Checkbox</div>
-            <div class="nb-tool" data-type="file"     draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>File</div>
+            <div class="nb-tool" data-type="text"     draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>Text</div>
+            <div class="nb-tool" data-type="textarea" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>Textarea</div>
+            <div class="nb-tool" data-type="number"   draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 8h2v8M15 8h2v8"/></svg>Number</div>
+            <div class="nb-tool" data-type="email"    draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 7 10-7"/></svg>Email</div>
+            <div class="nb-tool" data-type="password" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Password</div>
+            <div class="nb-tool" data-type="date"     draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Date</div>
+            <div class="nb-tool" data-type="datetime" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M12 14v4l2 2"/></svg>DateTime</div>
+            <div class="nb-tool" data-type="time"     draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Time</div>
+            <div class="nb-tool" data-type="checkbox" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>Checkbox</div>
+            <div class="nb-tool" data-type="file"     draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>File</div>
           </div>
 
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Choice</div>
-            <div class="nb-tool" data-type="select"         draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>Select</div>
-            <div class="nb-tool" data-type="radio"          draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>Radio</div>
-            <div class="nb-tool" data-type="checkbox_group" draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Checkboxes</div>
+            <div class="nb-tool" data-type="select"         draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>Select</div>
+            <div class="nb-tool" data-type="radio"          draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>Radio</div>
+            <div class="nb-tool" data-type="checkbox_group" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Checks</div>
           </div>
 
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Advanced</div>
-            <div class="nb-tool" data-type="lookup"     draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>Lookup</div>
-            <div class="nb-tool" data-type="subform"    draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>Subform</div>
-            <div class="nb-tool" data-type="calculated" draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h8M4 17h12"/></svg>Calculated</div>
-            <div class="nb-tool" data-type="range"      draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="12" r="2"/><path d="M2 12h4M10 12h12"/></svg>Range</div>
-            <div class="nb-tool" data-type="color"      draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>Color</div>
+            <div class="nb-tool" data-type="lookup"     draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>Lookup</div>
+            <div class="nb-tool" data-type="subform"    draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>Subform</div>
+            <div class="nb-tool" data-type="calculated" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h8M4 17h12"/></svg>Calc</div>
+            <div class="nb-tool" data-type="range"      draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="12" r="2"/><path d="M2 12h4M10 12h12"/></svg>Range</div>
+            <div class="nb-tool" data-type="color"      draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>Color</div>
           </div>
 
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Layout</div>
-            <div class="nb-tool" data-type="html"    draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-5-6 5-6M15 6l5 6-5 6"/></svg>HTML</div>
-            <div class="nb-tool" data-type="divider" draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>Divider</div>
-            <div class="nb-tool" data-type="button"  draggable="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2"/></svg>Button</div>
+            <div class="nb-tool" data-type="html"    draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-5-6 5-6M15 6l5 6-5 6"/></svg>HTML</div>
+            <div class="nb-tool" data-type="divider" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>Divider</div>
+            <div class="nb-tool" data-type="button"  draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2"/></svg>Button</div>
           </div>
         </div>
 
         <!-- Canvas -->
         <div class="nb-canvas-wrap">
-          <div class="nb-canvas-title">Form Canvas</div>
+          <div class="nb-canvas-topbar">
+            <span class="nb-canvas-title">Form Layout</span>
+            <div class="nb-canvas-topbar-actions">
+              <span style="font-size:10px;color:var(--text-tertiary);">Drag fields into rows · resize with column buttons</span>
+              <button type="button" class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nbFormBuilder.addRow()" style="font-size:11px;padding:3px 10px;">+ Add Row</button>
+            </div>
+          </div>
           <div class="nb-canvas" id="formCanvas">
-            <div class="nb-canvas-empty" id="canvasEmpty">&#x2B06; Drag or click a field type to add it here</div>
+            <div class="nb-canvas-empty" id="canvasEmpty">&#x2B06; Drag a field here or click a field type · rows are created automatically</div>
           </div>
         </div>
 
