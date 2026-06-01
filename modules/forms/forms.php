@@ -525,14 +525,14 @@ foreach ($forms as $f) {
         </label>
       </div>
 
-      <!-- New table name input (shown when mode = new) -->
-      <div id="tableNewWrap">
+      <!-- New table name input — ID matches JS: newTableWrap -->
+      <div id="newTableWrap">
         <label class="nu-label">DB Table Name</label>
         <input type="text" id="builderFormTable" class="nu-input" placeholder="e.g. customers">
       </div>
 
-      <!-- Existing table dropdown (shown when mode = existing) -->
-      <div id="tableExistingWrap" style="display:none;">
+      <!-- Existing table dropdown — ID matches JS: existingTableWrap -->
+      <div id="existingTableWrap" style="display:none;">
         <label class="nu-label">Select Existing Table</label>
         <select id="builderFormTableExisting" class="nu-input" onchange="document.getElementById('builderFormTable').value=this.value">
           <option value="">-- choose a table --</option>
@@ -769,39 +769,11 @@ if (!window._nbFormsModuleInit) {
     if (browseNotice) browseNotice.style.display = isBrowseable ? 'none' : 'block';
   };
 
-  // ── Table mode toggle ────────────────────────────────────────────
-  nbFormBuilder.selectTableMode = function(mode, card) {
-    document.querySelectorAll('.nb-tmode-card').forEach(c => c.classList.remove('selected'));
-    if (card) card.classList.add('selected');
-    const radio = document.querySelector('input[name="formTableMode"][value="'+mode+'"]');
-    if (radio) radio.checked = true;
-    const isNew = mode === 'new';
-    document.getElementById('tableNewWrap').style.display      = isNew ? '' : 'none';
-    document.getElementById('tableExistingWrap').style.display = isNew ? 'none' : '';
-    document.getElementById('nbPkCards').style.opacity        = isNew ? '1' : '0.4';
-    document.getElementById('nbPkCards').style.pointerEvents  = isNew ? '' : 'none';
-    if (!isNew) {
-      const sel = document.getElementById('builderFormTableExisting');
-      if (sel && sel.value) document.getElementById('builderFormTable').value = sel.value;
-    }
-  };
-
-  // ── PK type toggle ───────────────────────────────────────────────
-  nbFormBuilder.selectPkType = function(type, card) {
-    document.querySelectorAll('.nb-pk-card').forEach(c => c.classList.remove('selected'));
-    if (card) card.classList.add('selected');
-    const radio = document.querySelector('input[name="formPkType"][value="'+type+'"]');
-    if (radio) radio.checked = true;
-  };
-
   // ── Extend open() to reset all fields ───────────────────────────
   const _nbOpen = nbFormBuilder.open.bind(nbFormBuilder);
   nbFormBuilder.open = function() {
     _nbOpen();
     nbFormBuilder.selectFormType('main', document.querySelector('.nb-ftype-card'));
-    nbFormBuilder.selectTableMode('new', document.querySelector('.nb-tmode-card'));
-    nbFormBuilder.selectPkType('autoincrement', document.querySelector('.nb-pk-card'));
-    document.getElementById('builderFormCode').value = '';
   };
 
   // ── Restore form type on edit ────────────────────────────────────
@@ -814,13 +786,19 @@ if (!window._nbFormsModuleInit) {
     }
   };
 
-  // ── Patch saveForm to include pk_type, table_mode, form_type ────
+  // Restore form type after edit() loads form data
+  const _nbEdit = nbFormBuilder.edit.bind(nbFormBuilder);
+  nbFormBuilder.edit = async function(id) {
+    await _nbEdit(id);
+    // After edit() resolves, restore the form type radio card UI
+    const ftype = document.querySelector('input[name="formType"]:checked')?.value || 'main';
+    window._nbRestoreFormType(ftype);
+  };
+
+  // ── Patch saveForm to include form_type ──────────────────────────
   const _origSaveForm = window.saveForm;
   window.saveForm = function() {
-    nbFormBuilder._pkType    = document.querySelector('input[name="formPkType"]:checked')?.value    || 'autoincrement';
-    nbFormBuilder._tableMode = document.querySelector('input[name="formTableMode"]:checked')?.value || 'new';
-    nbFormBuilder._formCode  = document.getElementById('builderFormCode').value.trim();
-    nbFormBuilder._formType  = document.querySelector('input[name="formType"]:checked')?.value      || 'main';
+    nbFormBuilder._formType = document.querySelector('input[name="formType"]:checked')?.value || 'main';
     if (typeof _origSaveForm === 'function') _origSaveForm();
   };
 }
