@@ -988,6 +988,16 @@ window.nbFormBuilder = (function () {
     return el ? el.checked : false;
   }
 
+  // ─── hide / show forms list when builder opens / closes ──────────────────────
+  function _hideFormsList() {
+    var list = document.getElementById('formsListSection');
+    if (list) list.style.display = 'none';
+  }
+  function _showFormsList() {
+    var list = document.getElementById('formsListSection');
+    if (list) list.style.display = '';
+  }
+
   return {
     _canvasEmpty: _canvasEmpty,
 
@@ -1089,8 +1099,15 @@ window.nbFormBuilder = (function () {
       var firstTab = document.querySelector('#nbTabsRow .nb-tab');
       if (firstTab) this.switchTab(firstTab);
 
+      // Hide the forms list so the builder has full room
+      _hideFormsList();
+
       card.style.display = 'block';
-      card.scrollIntoView({ behavior: 'smooth' });
+      // Scroll to top of content area so builder is immediately visible
+      var contentArea = document.getElementById('contentArea');
+      if (contentArea) contentArea.scrollTop = 0;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
       _initToolbox();
       _initCanvasDrop();
     },
@@ -1098,6 +1115,8 @@ window.nbFormBuilder = (function () {
     close: function () {
       var card = _el('formBuilderCard');
       if (card) card.style.display = 'none';
+      // Restore the forms list
+      _showFormsList();
     },
 
     save: function () {
@@ -1154,7 +1173,6 @@ window.nbFormBuilder = (function () {
         } catch (e) { console.error('layout parse error', e); }
 
         _canvasEmpty();
-        _el('formBuilderCard').scrollIntoView({ behavior: 'smooth' });
       } catch (e) {
         console.error('edit error', e);
         NuApp.toast('Error: ' + e.message, 'error');
