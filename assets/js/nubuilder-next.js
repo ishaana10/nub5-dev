@@ -836,7 +836,7 @@ window.nbFormBuilder = (function () {
     }
     if (type === 'calculated') {
       html += '<div class="nb-fp nb-fp-full"><label>Expression</label>' +
-        '<input type="text" class="nu-input nu-calc-expression" value="' + _esc(_val(extra, 'calculated')) + '" placeholder="getValue(\'qty\') * getValue(\'price\')"></div>';
+        '<input type="text" class="nu-calc-expression" value="' + _esc(_val(extra, 'calculated')) + '" placeholder="getValue(\'qty\') * getValue(\'price\')"></div>';
     }
     if (type === 'html') {
       html += '<div class="nb-fp nb-fp-full"><label>HTML Content</label>' +
@@ -903,6 +903,8 @@ window.nbFormBuilder = (function () {
     var canvas = _el('formCanvas');
     if (!canvas) return;
     var extra = extraData || {};
+    // FIX: if label is an object (old nb-form-edit.js bug), ignore it
+    if (typeof label !== 'string') label = '';
     if (!label) label = type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ') + ' Field';
     if (!name)  name  = type + '_' + Date.now();
     extra.label    = extra.label    !== undefined ? extra.label    : label;
@@ -1143,7 +1145,10 @@ window.nbFormBuilder = (function () {
         try {
           var layout = JSON.parse(form.form_layout || '[]');
           if (Array.isArray(layout) && layout.length) {
-            layout.forEach(function (f) { _addField(f.type || 'text', f.label, f.name, !!f.required, f); });
+            layout.forEach(function (f) {
+              // Always pass individual string args — never pass the full object as label
+              _addField(f.type || 'text', f.label || '', f.name || '', !!f.required, f);
+            });
           } else {
             _el('formCanvas').innerHTML = '<div class="nb-canvas-empty" id="canvasEmpty">&#x2B06; Drag or click a field type to add it here</div>';
           }
@@ -1160,7 +1165,8 @@ window.nbFormBuilder = (function () {
 
 })();
 
-// saveForm — reads live input values from each field card (not stale dataset attributes)
+// saveForm — reads live input values from each field card and POSTs to api/forms.php,
+// then calls api/form-setup.php with table_mode, pk_type and fields for DDL sync.
 window.saveForm = async function () {
   function _elv(eid) { var e = document.getElementById(eid); return e ? e.value : ''; }
   function _elc(eid) { var e = document.getElementById(eid); return e ? e.checked : false; }
@@ -1168,9 +1174,7 @@ window.saveForm = async function () {
     var el = document.querySelector('input[name="' + name + '"]:checked');
     return el ? el.value : null;
   }
-  // Read a text input value from inside a field card
   function _iv(card, cls) { var e = card.querySelector(cls); return e ? e.value : ''; }
-  // Read a checkbox state from inside a field card
   function _ib(card, cls) { var e = card.querySelector(cls); return e ? e.checked : false; }
 
   const id        = _elv('editFormId');
@@ -1181,8 +1185,10 @@ window.saveForm = async function () {
     ? formCodeRaw.toLowerCase().replace(/[^a-z0-9]+/g, '_')
     : formName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
 
+  // FIX: always read tableMode and pkType from the live radio buttons
   const tableMode = _radio('formTableMode') || 'new';
   const pkType    = _radio('formPkType')    || 'autoincrement';
+
   const formTable = tableMode === 'existing'
     ? (_elv('builderFormTableExisting') || '').trim()
     : (_elv('builderFormTable') || '').trim();
@@ -1193,7 +1199,6 @@ window.saveForm = async function () {
   document.querySelectorAll('.nu-builder-field').forEach(function (el, index) {
     const type = el.dataset.type || 'text';
 
-    // ── Read ALL properties directly from live DOM inputs ──────────────────────
     const field = {
       type:            type,
       label:           _iv(el, '.nu-builder-label'),
@@ -1221,7 +1226,6 @@ window.saveForm = async function () {
       legend:          _iv(el, '.nu-field-legend'),
       select2:         _ib(el, '.nu-field-select2') ? 1 : 0
     };
-    // ── End live-read block ────────────────────────────────────────────────────
 
     if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
       const sourceType = el.querySelector('.nu-select-source-type');
@@ -1283,6 +1287,7 @@ window.saveForm = async function () {
     fields.push(field);
   });
 
+  // FIX: payload now always includes form_code, form_table_mode, form_pk_type
   const payload = {
     form_name:                 formName,
     form_code:                 formCode,
@@ -1303,16 +1308,19 @@ window.saveForm = async function () {
     browse_search_fields:      _elv('formBrowseSearchFields'),
     browse_page_size:          _elv('formBrowsePageSize') || 20,
     browse_default_sort:       _elv('formBrowseDefaultSort'),
-    browse_display_mode:       _radio('browseDisplayMode') || 'inline'
+    browse_display_mode:       (function () {
+      var el = document.querySelector('input[name="browseDisplayMode"]:checked');
+      return el ? el.value : 'inline';
+    })()
   };
 
   try {
-    const endpoint = id
-      ? 'api/crud.php?table=nu_forms&id=' + encodeURIComponent(id)
-      : 'api/crud.php?table=nu_forms';
-    const method = id ? 'PUT' : 'POST';
-    const json = await NuApp.apiJson(endpoint, {
-      method: method,
+    const url = id
+      ? 'api/forms.php?action=update&id=' + encodeURIComponent(id)
+      : 'api/forms.php?action=create';
+
+    const json = await NuApp.apiJson(url, {
+      method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1320,53 +1328,35 @@ window.saveForm = async function () {
 
     if (!json.success) { NuApp.toast(json.error || 'Save failed', 'error'); return; }
 
-    const formId = id || json.id;
+    const savedId = json.id || id;
 
+    // ── FIX: call form-setup.php with table_mode and pk_type so DDL is correct ──
     if (formTable) {
       try {
-        const setupRes = await fetch('api/form-setup.php', {
+        await NuApp.apiJson('api/form-setup.php', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            form_id:    formId,
-            form_code:  formCode,
+            form_id:    savedId,
             form_table: formTable,
             table_mode: tableMode,
             pk_type:    pkType,
             fields:     fields
           })
         });
-        const setupJson = await setupRes.json();
-        if (!setupJson.success) NuApp.toast('Table setup: ' + setupJson.error, 'error');
       } catch (setupErr) {
-        console.error('Table setup error', setupErr);
+        console.warn('form-setup warning:', setupErr.message);
+        // Non-fatal — form is already saved; warn but continue
       }
     }
 
-    NuApp.toast('Form saved' + (formTable ? ' — table ' + formTable : ''));
-    const card = document.getElementById('formBuilderCard');
-    if (card) card.style.display = 'none';
+    NuApp.toast(id ? 'Form updated' : 'Form created');
+    nbFormBuilder.close();
     NuApp.loadModule('forms');
-  } catch (err) {
-    NuApp.toast('Error: ' + err.message, 'error');
-  }
-};
 
-// Global window aliases
-window.openFormBuilder = function ()                         { return NuApp.openFormBuilder ? NuApp.openFormBuilder() : (window.nbFormBuilder ? window.nbFormBuilder.open() : null); };
-window.previewForm     = function (code, label)              { return NuApp.previewForm(code, label); };
-window.editForm        = function (id)                       { return window.nbFormBuilder ? window.nbFormBuilder.edit(id) : null; };
-window.addRecord       = function (code, label)              { return NuApp.addRecord(code, label); };
-window.editRecord      = function (code, id, label, mode)    { return NuApp.editRecord(code, id, label, mode); };
-window.browseForm      = function (code, page, query, label, mode) { return NuApp.browseForm(code, page, query, label, mode); };
-window.browseFormPage  = function (code, page, query, label, mode) { return NuApp.browseForm(code, page, query, label, mode); };
-window.deleteForm      = function (id, name) {
-  if (!confirm('Delete form ' + (name || '') + '?')) return;
-  NuApp.apiJson('api/crud.php?table=nu_forms&id=' + encodeURIComponent(id), {
-    method: 'DELETE', credentials: 'same-origin'
-  }).then(function (json) {
-    if (json.success) { NuApp.toast('Deleted'); NuApp.loadModule('forms'); }
-    else NuApp.toast(json.error || 'Failed', 'error');
-  }).catch(function (e) { NuApp.toast('Error: ' + e.message, 'error'); });
+  } catch (e) {
+    console.error('saveForm error', e);
+    NuApp.toast('Error: ' + e.message, 'error');
+  }
 };
