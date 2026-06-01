@@ -729,7 +729,7 @@ window.submitNuForm = async function (formElement) {
   }
 };
 
-// ─── SAVE FORM — reads all builder fields including form_type, form_code, table_mode, pk_type ─
+// ─── SAVE FORM ────────────────────────────────────────────────────────────────
 window.saveForm = async function () {
   const formId    = (document.getElementById('editFormId')    || {}).value || '';
   const formName  = ((document.getElementById('builderFormName')  || {}).value || '').trim();
@@ -910,7 +910,7 @@ window.saveForm = async function () {
   }
 };
 
-// nbFormBuilder
+// ─── nbFormBuilder ────────────────────────────────────────────────────────────
 window.nbFormBuilder = (function () {
 
   function _esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
@@ -1037,7 +1037,6 @@ window.nbFormBuilder = (function () {
   // ─── FIELD CARD HTML ──────────────────────────────────────────────────────
   function _fieldCard(type, extra) {
     extra = extra || {};
-    // Ensure type is always a plain string, never an object
     type = String(type || 'text');
     var icons = {
       text:'T', textarea:'¶', number:'#', email:'@', phone:'☏', date:'📅',
@@ -1046,7 +1045,6 @@ window.nbFormBuilder = (function () {
       fieldset:'▭', html:'<>', button:'⬛', range:'⇔', hidden:'👁', password:'🔒',
     };
     var icon  = icons[type] || 'F';
-    // Prefer label/fieldlabel from extra, fall back to capitalised type
     var label = _val(extra, 'label', _val(extra, 'fieldlabel', type.charAt(0).toUpperCase() + type.slice(1)));
     var name  = _val(extra, 'name',  _val(extra, 'fieldname', ''));
     return '<div class="nb-cfield" data-type="' + _esc(type) + '" draggable="true">' +
@@ -1112,11 +1110,9 @@ window.nbFormBuilder = (function () {
       }
     },
 
-    // FIX: accept optional extra data so canvas rebuild restores saved field values
     addField: function (type, extra) {
       var canvas = _el('formCanvas');
       if (!canvas) return;
-      // Always coerce type to a plain string to prevent [object Object] rendering
       var safeType = String(type || 'text');
       canvas.insertAdjacentHTML('beforeend', _fieldCard(safeType, extra || {}));
       _canvasEmpty();
@@ -1150,20 +1146,100 @@ window.nbFormBuilder = (function () {
       if (sqlBlock)    sqlBlock.style.display    = sel.value === 'sql'    ? '' : 'none';
     },
 
-    // ─── SELECT TABLE MODE (new / existing) ─────────────────────────────────
+    // ─── selectTableMode — highlight chosen card, show/hide table inputs ──
     selectTableMode: function (mode, card) {
-      document.querySelectorAll('.nb-tmode-card').forEach(function (c) { c.classList.remove('selected'); });
-      if (card) card.classList.add('selected');
-      var newBlock      = _el('tableNewBlock');
-      var existingBlock = _el('tableExistingBlock');
-      if (newBlock)      newBlock.style.display      = mode === 'new'      ? '' : 'none';
-      if (existingBlock) existingBlock.style.display = mode === 'existing' ? '' : 'none';
+      // update card highlight
+      document.querySelectorAll('.nb-tmode-card').forEach(function (c) {
+        c.classList.toggle('nb-tmode-selected', c === card);
+      });
+      // show/hide correct table name input
+      var newWrap      = _el('tableNewWrap');
+      var existingWrap = _el('tableExistingWrap');
+      if (newWrap)      newWrap.style.display      = mode === 'new'      ? '' : 'none';
+      if (existingWrap) existingWrap.style.display = mode === 'existing' ? '' : 'none';
     },
 
-    // ─── SELECT PK TYPE ─────────────────────────────────────────────────────
+    // ─── selectPkType — highlight chosen card ────────────────────────────
     selectPkType: function (type, card) {
-      document.querySelectorAll('.nb-pk-card').forEach(function (c) { c.classList.remove('selected'); });
-      if (card) card.classList.add('selected');
+      document.querySelectorAll('.nb-pk-card').forEach(function (c) {
+        c.classList.toggle('nb-pk-selected', c === card);
+      });
     },
 
-    // ─── EDIT existing form — populate builder UI ─────
+    // ─── edit — load a saved form into the builder ───────────────────────
+    edit: function (form) {
+      if (!form) return;
+
+      // basic meta
+      if (_el('editFormId'))       _el('editFormId').value       = form.form_id   || '';
+      if (_el('builderFormName'))  _el('builderFormName').value  = form.form_name  || '';
+      if (_el('builderFormCode'))  _el('builderFormCode').value  = form.form_code  || '';
+      if (_el('builderFormTable')) _el('builderFormTable').value = form.form_table || '';
+
+      // table mode
+      var tableMode     = form.form_table_mode || 'new';
+      var tmRadio       = document.querySelector('input[name="formTableMode"][value="' + tableMode + '"]');
+      if (tmRadio) {
+        tmRadio.checked = true;
+        this.selectTableMode(tableMode, tmRadio.closest('.nb-tmode-card'));
+      }
+      // if existing table, also set the select
+      if (tableMode === 'existing') {
+        var existSel = _el('builderFormTableExisting');
+        if (existSel) existSel.value = form.form_table || '';
+      }
+
+      // pk type
+      var pkType   = form.form_pk_type || 'autoincrement';
+      var pkRadio  = document.querySelector('input[name="formPkType"][value="' + pkType + '"]');
+      if (pkRadio) {
+        pkRadio.checked = true;
+        this.selectPkType(pkType, pkRadio.closest('.nb-pk-card'));
+      }
+
+      // form type
+      var fType   = form.form_type || 'main';
+      var ftRadio = document.querySelector('input[name="formType"][value="' + fType + '"]');
+      if (ftRadio) ftRadio.checked = true;
+
+      // browse settings
+      if (_el('formBrowseSql'))               _el('formBrowseSql').value               = form.browse_sql                || '';
+      if (_el('formBrowseColumns'))           _el('formBrowseColumns').value           = form.browse_columns            || '';
+      if (_el('formBrowseSearchEnabled'))     _el('formBrowseSearchEnabled').checked   = String(form.browse_search_enabled) === '1';
+      if (_el('formBrowseSearchPlaceholder')) _el('formBrowseSearchPlaceholder').value = form.browse_search_placeholder || '';
+      if (_el('formBrowseSearchFields'))      _el('formBrowseSearchFields').value      = form.browse_search_fields      || '';
+      if (_el('formBrowsePageSize'))          _el('formBrowsePageSize').value          = form.browse_page_size          || 20;
+      if (_el('formBrowseDefaultSort'))       _el('formBrowseDefaultSort').value       = form.browse_default_sort       || '';
+
+      var bdm = form.browse_display_mode || 'inline';
+      var bdmRadio = document.querySelector('input[name="browseDisplayMode"][value="' + bdm + '"]');
+      if (bdmRadio) bdmRadio.checked = true;
+
+      // advanced
+      if (_el('formCustomJs'))    _el('formCustomJs').value    = form.form_custom_js    || '';
+      if (_el('formJsBeforeSave'))_el('formJsBeforeSave').value= form.form_js_before_save|| '';
+      if (_el('formJsAfterSave')) _el('formJsAfterSave').value = form.form_js_after_save || '';
+      if (_el('formCustomPhp'))   _el('formCustomPhp').value   = form.form_custom_php   || '';
+      if (_el('formCustomCss'))   _el('formCustomCss').value   = form.form_custom_css   || '';
+
+      // rebuild canvas from saved layout
+      var canvas = _el('formCanvas');
+      if (canvas) {
+        canvas.innerHTML = '';
+        var layout = [];
+        try {
+          layout = typeof form.form_layout === 'string'
+            ? JSON.parse(form.form_layout)
+            : (Array.isArray(form.form_layout) ? form.form_layout : []);
+        } catch (e) { layout = []; }
+        var self = this;
+        layout.forEach(function (f) {
+          self.addField(f.fieldtype || f.type || 'text', f);
+        });
+      }
+      _canvasEmpty();
+    },
+
+  };
+
+})();
