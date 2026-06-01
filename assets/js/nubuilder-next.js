@@ -1099,14 +1099,14 @@ window.nbFormBuilder = (function () {
       var firstTab = document.querySelector('#nbTabsRow .nb-tab');
       if (firstTab) this.switchTab(firstTab);
 
-      // Hide the forms list so the builder has full room
+      // Hide forms list and enter full-page mode so the builder has the entire viewport
       _hideFormsList();
+      NuApp._enterFullPage();
 
       card.style.display = 'block';
-      // Scroll to top of content area so builder is immediately visible
+      // Scroll to top so the builder header is immediately visible
       var contentArea = document.getElementById('contentArea');
       if (contentArea) contentArea.scrollTop = 0;
-      window.scrollTo({ top: 0, behavior: 'smooth' });
 
       _initToolbox();
       _initCanvasDrop();
@@ -1115,7 +1115,8 @@ window.nbFormBuilder = (function () {
     close: function () {
       var card = _el('formBuilderCard');
       if (card) card.style.display = 'none';
-      // Restore the forms list
+      // Exit full-page mode and restore the forms list
+      NuApp._exitFullPage();
       _showFormsList();
     },
 
