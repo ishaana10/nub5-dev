@@ -903,7 +903,7 @@ window.nbFormBuilder = (function () {
     var canvas = _el('formCanvas');
     if (!canvas) return;
     var extra = extraData || {};
-    // FIX: if label is an object (old nb-form-edit.js bug), ignore it
+    // if label is not a string (e.g. old bug passing full object), discard it
     if (typeof label !== 'string') label = '';
     if (!label) label = type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ') + ' Field';
     if (!name)  name  = type + '_' + Date.now();
@@ -1146,7 +1146,6 @@ window.nbFormBuilder = (function () {
           var layout = JSON.parse(form.form_layout || '[]');
           if (Array.isArray(layout) && layout.length) {
             layout.forEach(function (f) {
-              // Always pass individual string args — never pass the full object as label
               _addField(f.type || 'text', f.label || '', f.name || '', !!f.required, f);
             });
           } else {
@@ -1165,8 +1164,8 @@ window.nbFormBuilder = (function () {
 
 })();
 
-// saveForm — reads live input values from each field card and POSTs to api/forms.php,
-// then calls api/form-setup.php with table_mode, pk_type and fields for DDL sync.
+// saveForm — reads live input values from each field card and POSTs to api/forms.php?action=save.
+// The API distinguishes insert vs update by the presence of form_id in the JSON body.
 window.saveForm = async function () {
   function _elv(eid) { var e = document.getElementById(eid); return e ? e.value : ''; }
   function _elc(eid) { var e = document.getElementById(eid); return e ? e.checked : false; }
@@ -1185,7 +1184,6 @@ window.saveForm = async function () {
     ? formCodeRaw.toLowerCase().replace(/[^a-z0-9]+/g, '_')
     : formName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
 
-  // FIX: always read tableMode and pkType from the live radio buttons
   const tableMode = _radio('formTableMode') || 'new';
   const pkType    = _radio('formPkType')    || 'autoincrement';
 
@@ -1287,7 +1285,9 @@ window.saveForm = async function () {
     fields.push(field);
   });
 
-  // FIX: payload now always includes form_code, form_table_mode, form_pk_type
+  // Always POST to action=save. Insert vs update is determined by form_id in the body:
+  //   form_id present  → PHP runs UPDATE
+  //   form_id absent   → PHP runs INSERT
   const payload = {
     form_name:                 formName,
     form_code:                 formCode,
@@ -1314,12 +1314,14 @@ window.saveForm = async function () {
     })()
   };
 
-  try {
-    const url = id
-      ? 'api/forms.php?action=update&id=' + encodeURIComponent(id)
-      : 'api/forms.php?action=create';
+  // Include form_id in body only when editing an existing form
+  if (id) {
+    payload.form_id = id;
+  }
 
-    const json = await NuApp.apiJson(url, {
+  try {
+    // Single endpoint for both insert and update
+    const json = await NuApp.apiJson('api/forms.php?action=save', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -1328,9 +1330,10 @@ window.saveForm = async function () {
 
     if (!json.success) { NuApp.toast(json.error || 'Save failed', 'error'); return; }
 
-    const savedId = json.id || id;
+    // PHP returns form_id (not id) for both insert and update
+    const savedId = json.form_id || id;
 
-    // ── FIX: call form-setup.php with table_mode and pk_type so DDL is correct ──
+    // Call form-setup.php for DDL sync — non-fatal if it fails
     if (formTable) {
       try {
         await NuApp.apiJson('api/form-setup.php', {
@@ -1347,7 +1350,6 @@ window.saveForm = async function () {
         });
       } catch (setupErr) {
         console.warn('form-setup warning:', setupErr.message);
-        // Non-fatal — form is already saved; warn but continue
       }
     }
 
