@@ -69,23 +69,50 @@ class NuDatabase {
     }
 
     public function insert($table, $data) {
-        $cols        = implode(', ', array_keys($data));
+        $cols         = implode(', ', array_keys($data));
         $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($data)));
-        $params      = [];
+        $params       = [];
         foreach ($data as $k => $v) {
             $params[":$k"] = $v;
         }
-        $sql  = "INSERT INTO {$table} ({$cols}) VALUES ({$placeholders})";
-        $stmt = $this->query($sql, $params);
+        $sql = "INSERT INTO {$table} ({$cols}) VALUES ({$placeholders})";
+        $this->query($sql, $params);
         return (int)$this->pdo->lastInsertId();
     }
 
+    /**
+     * UPDATE a table row.
+     *
+     * $where must use named placeholders that do NOT collide with :set_* names.
+     * Example:  update('nu_forms', $row, 'form_id = :where_form_id', [':where_form_id' => 16])
+     *
+     * For convenience, if $whereParams is a plain positional array (e.g. [$id])
+     * AND $where contains exactly one '?' we auto-convert it to a named placeholder
+     * so PDO never sees mixed named + positional params.
+     */
     public function update($table, $data, $where, $whereParams = []) {
+        // Build named SET params (:set_colname = value)
         $sets   = implode(', ', array_map(fn($k) => "{$k} = :set_{$k}", array_keys($data)));
         $params = [];
         foreach ($data as $k => $v) {
             $params[":set_{$k}"] = $v;
         }
+
+        // Auto-convert a single positional '?' in $where to a named placeholder
+        // so we never mix named and positional params (PDO HY093).
+        if (!empty($whereParams) && array_keys($whereParams) === range(0, count($whereParams) - 1)) {
+            // Positional array detected — rewrite each '?' to :where_0, :where_1 …
+            $i = 0;
+            $where = preg_replace_callback('/\?/', function() use (&$i) {
+                return ':where_' . $i++;
+            }, $where);
+            $namedWhere = [];
+            foreach ($whereParams as $idx => $val) {
+                $namedWhere[':where_' . $idx] = $val;
+            }
+            $whereParams = $namedWhere;
+        }
+
         $sql  = "UPDATE {$table} SET {$sets} WHERE {$where}";
         $stmt = $this->query($sql, array_merge($params, $whereParams));
         return $stmt->rowCount();
