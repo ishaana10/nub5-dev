@@ -197,17 +197,19 @@ function nu_render_field($field, $value = '', $record = []) {
 
     if ($name === '' && !in_array($type, ['html','content','button','fieldset'], true)) return '';
 
-    $required     = !empty($field['required']) ? ' required' : '';
-    $phText       = $field['placeholder'] ?? '';
-    $placeholder  = $phText !== '' ? ' placeholder="' . nu_attr($phText) . '"' : '';
-    $helpText     = $field['help_text'] ?? ($field['helptext'] ?? '');
-    $cssClass     = trim('nu-input ' . ($field['css_class'] ?? ($field['cssclass'] ?? '')));
-    $styleWidth   = !empty($field['width']) ? 'width:' . nu_attr($field['width']) . ';' : '';
-    $wrapperStyle = 'margin-bottom:16px;' . $styleWidth;
+    $required    = !empty($field['required']) ? ' required' : '';
+    $phText      = $field['placeholder'] ?? '';
+    $placeholder = $phText !== '' ? ' placeholder="' . nu_attr($phText) . '"' : '';
+    $helpText    = $field['help_text'] ?? ($field['helptext'] ?? '');
+    $cssClass    = trim('nu-input ' . ($field['css_class'] ?? ($field['cssclass'] ?? '')));
 
-    $wrapStart = '<div class="nu-field-wrapper" data-field="' . nu_attr($name) . '" style="' . $wrapperStyle . '">';
+    // col span via 12-col grid — set on wrapper
+    $col = (int)($field['col'] ?? 12);
+    if ($col < 1 || $col > 12) $col = 12;
+
+    $wrapStart = '<div class="nu-field-wrapper" data-field="' . nu_attr($name) . '" style="grid-column:span ' . $col . ';min-width:0;">';
     $labelHtml = '<label style="display:block;font-weight:600;margin-bottom:6px;">' . nu_html($label) . '</label>';
-    $helpHtml  = $helpText !== '' ? '<div style="font-size:12px;color:#666;margin-top:4px;">' . nu_html($helpText) . '</div>' : '';
+    $helpHtml  = $helpText !== '' ? '<div style="font-size:12px;color:#888;margin-top:4px;">' . nu_html($helpText) . '</div>' : '';
 
     switch ($type) {
         case 'textarea':
@@ -291,7 +293,7 @@ function nu_render_field($field, $value = '', $record = []) {
             $accept   = !empty($field['accept'])          ? ' accept="' . nu_attr($field['accept']) . '"' : ($type === 'image' ? ' accept="image/*"' : '');
             $multiple = !empty($field['multiple_upload']) ? ' multiple' : '';
             $control  = '<input type="file" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $accept . $multiple . '>';
-            if (!empty($value)) $control .= '<div style="margin-top:6px;font-size:12px;color:#666;">Current: ' . nu_html($value) . '</div>';
+            if (!empty($value)) $control .= '<div style="margin-top:6px;font-size:12px;color:#888;">Current: ' . nu_html($value) . '</div>';
             break;
 
         case 'lookup':
@@ -329,7 +331,7 @@ function nu_render_field($field, $value = '', $record = []) {
                       . '<button type="button" class="nu-btn nu-btn-primary nu-btn-sm" onclick="nuSubform.addRow(this)">+ Add Row</button>'
                       . '</div>'
                       . '<div class="nu-subform-body" style="padding:0;">'
-                      . '<div class="nu-subform-loading" style="padding:20px;text-align:center;color:#666;font-size:13px;">Loading...</div>'
+                      . '<div class="nu-subform-loading" style="padding:20px;text-align:center;color:#888;font-size:13px;">Loading...</div>'
                       . '</div>'
                       . '</div>';
             break;
@@ -368,6 +370,123 @@ function nu_render_field($field, $value = '', $record = []) {
     return $wrapStart . $labelHtml . $control . $helpHtml . '</div>';
 }
 
+// ── Section colour palette (cycles if more than 5 sections) ─────────────────
+function nu_section_color($index) {
+    $palette = [
+        ['border'=>'#01696f','bg'=>'rgba(1,105,111,0.04)','head'=>'rgba(1,105,111,0.08)','text'=>'#01696f'],
+        ['border'=>'#7a39bb','bg'=>'rgba(122,57,187,0.04)','head'=>'rgba(122,57,187,0.08)','text'=>'#7a39bb'],
+        ['border'=>'#d19900','bg'=>'rgba(209,153,0,0.04)', 'head'=>'rgba(209,153,0,0.08)', 'text'=>'#9a7000'],
+        ['border'=>'#437a22','bg'=>'rgba(67,122,34,0.04)', 'head'=>'rgba(67,122,34,0.08)', 'text'=>'#437a22'],
+        ['border'=>'#a13544','bg'=>'rgba(161,53,68,0.04)', 'head'=>'rgba(161,53,68,0.08)', 'text'=>'#a13544'],
+    ];
+    return $palette[$index % count($palette)];
+}
+
+// ── Recursive layout renderer ────────────────────────────────────────────────
+function nu_render_layout_node($node, $record, $sectionIndex = 0) {
+    $type = $node['type'] ?? 'field';
+
+    // ── SECTION ──────────────────────────────────────────────────────────────
+    if ($type === 'section') {
+        $id         = nu_attr($node['id'] ?? ('sec_' . $sectionIndex));
+        $label      = nu_html($node['label'] ?? 'Section');
+        $collapsible= !empty($node['collapsible']);
+        $collapsed  = !empty($node['collapsed']);
+        $col        = nu_section_color($sectionIndex);
+        $bodyStyle  = $collapsed ? 'display:none;' : '';
+
+        $toggleBtn = '';
+        if ($collapsible) {
+            $icon = $collapsed ? '&#9654;' : '&#9660;';
+            $toggleBtn = '<button type="button" class="nu-section-toggle" data-target="' . $id . '-body" '
+                       . 'style="background:none;border:none;cursor:pointer;font-size:14px;color:' . $col['text'] . ';padding:0 6px 0 0;line-height:1;" '
+                       . 'onclick="nuToggleContainer(this)">' . $icon . '</button>';
+        }
+
+        $html  = '<div class="nu-section" id="' . $id . '" style="'
+               . 'border:1.5px solid ' . $col['border'] . ';'
+               . 'border-radius:10px;'
+               . 'margin-bottom:20px;'
+               . 'background:' . $col['bg'] . ';'
+               . 'overflow:hidden;">';
+        $html .= '<div class="nu-section-header" style="'
+               . 'display:flex;align-items:center;gap:6px;'
+               . 'padding:10px 16px;'
+               . 'background:' . $col['head'] . ';'
+               . 'border-bottom:1px solid ' . $col['border'] . ';'
+               . 'cursor:' . ($collapsible ? 'pointer' : 'default') . ';"'
+               . ($collapsible ? ' onclick="nuToggleContainer(this.querySelector(\'[data-target]\'))"' : '') . '>';
+        $html .= $toggleBtn;
+        $html .= '<span style="font-weight:700;font-size:14px;color:' . $col['text'] . ';">' . $label . '</span>';
+        $html .= '</div>';
+        $html .= '<div id="' . $id . '-body" class="nu-section-body" style="padding:16px;' . $bodyStyle . '">';
+
+        $si = 0;
+        foreach (($node['children'] ?? []) as $child) {
+            $html .= nu_render_layout_node($child, $record, $si++);
+        }
+
+        $html .= '</div></div>';
+        return $html;
+    }
+
+    // ── GROUP ────────────────────────────────────────────────────────────────
+    if ($type === 'group') {
+        $id         = nu_attr($node['id'] ?? ('grp_' . $sectionIndex));
+        $label      = nu_html($node['label'] ?? 'Group');
+        $collapsible= !empty($node['collapsible']);
+        $collapsed  = !empty($node['collapsed']);
+        $bodyStyle  = $collapsed ? 'display:none;' : '';
+
+        $toggleBtn = '';
+        if ($collapsible) {
+            $icon = $collapsed ? '&#9654;' : '&#9660;';
+            $toggleBtn = '<button type="button" class="nu-group-toggle" data-target="' . $id . '-body" '
+                       . 'style="background:none;border:none;cursor:pointer;font-size:13px;color:#666;padding:0 6px 0 0;line-height:1;" '
+                       . 'onclick="nuToggleContainer(this)">' . $icon . '</button>';
+        }
+
+        $html  = '<div class="nu-group" id="' . $id . '" style="border:1px solid #ddd;border-radius:8px;margin-bottom:16px;overflow:hidden;">';
+        $html .= '<div class="nu-group-header" style="'
+               . 'display:flex;align-items:center;gap:6px;'
+               . 'padding:8px 14px;'
+               . 'background:var(--bg-elevated,#f8f9fa);'
+               . 'border-bottom:1px solid #ddd;'
+               . 'cursor:' . ($collapsible ? 'pointer' : 'default') . ';"'
+               . ($collapsible ? ' onclick="nuToggleContainer(this.querySelector(\'[data-target]\'))"' : '') . '>';
+        $html .= $toggleBtn;
+        $html .= '<span style="font-weight:600;font-size:13px;color:var(--text,#333);">' . $label . '</span>';
+        $html .= '</div>';
+        $html .= '<div id="' . $id . '-body" class="nu-group-body" style="padding:14px;' . $bodyStyle . '">';
+
+        $gi = 0;
+        foreach (($node['children'] ?? []) as $child) {
+            $html .= nu_render_layout_node($child, $record, $gi++);
+        }
+
+        $html .= '</div></div>';
+        return $html;
+    }
+
+    // ── ROW (12-col CSS grid) ────────────────────────────────────────────────
+    if ($type === 'row') {
+        $html = '<div class="nu-form-row" style="display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-bottom:16px;">';
+        foreach (($node['children'] ?? []) as $field) {
+            $html .= nu_render_field($field, nu_field_value($record, $field), $record);
+        }
+        $html .= '</div>';
+        return $html;
+    }
+
+    // ── PLAIN FIELD (backward-compat: flat layout) ───────────────────────────
+    // Wrap solo field in a full-width single-col row
+    $col = (int)($node['col'] ?? 12);
+    $node['col'] = $col;
+    return '<div class="nu-form-row" style="display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-bottom:16px;">'
+         . nu_render_field($node, nu_field_value($record, $node), $record)
+         . '</div>';
+}
+
 function nu_render_form_html($form, $record = [], $recordId = null) {
     $c        = nu_form_columns();
     $layout   = nu_decode_layout($form);
@@ -381,10 +500,24 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
            . ' data-record-id="'  . nu_attr((string)$recordId) . '"'
            . ' data-is-new="'     . ($recordId ? '0' : '1') . '"'
            . ' onsubmit="event.preventDefault(); submitNuForm(this);">';
-    $html .= '<h3 style="margin-top:0;">' . nu_html($formName) . '</h3>';
+    $html .= '<h3 style="margin-top:0;margin-bottom:20px;">' . nu_html($formName) . '</h3>';
 
-    foreach ($layout as $field) {
-        $html .= nu_render_field($field, nu_field_value($record, $field), $record);
+    // Toggle helper — inline once per form
+    $html .= '<script>'
+           . 'if(!window.nuToggleContainer){'
+           . 'window.nuToggleContainer=function(btn){'
+           . 'var tid=btn.dataset.target;'
+           . 'var body=document.getElementById(tid);'
+           . 'if(!body)return;'
+           . 'var hidden=body.style.display==="none";'
+           . 'body.style.display=hidden?"":"none";'
+           . 'btn.innerHTML=hidden?"&#9660;":"&#9654;";'
+           . '}}'
+           . '</script>';
+
+    $si = 0;
+    foreach ($layout as $node) {
+        $html .= nu_render_layout_node($node, $record, $si++);
     }
 
     $html .= '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">';
@@ -393,6 +526,22 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
     $html .= '</div></form>';
 
     return $html;
+}
+
+// ── Flatten nested layout to extract saveable fields ─────────────────────────
+function nu_flatten_layout($layout) {
+    $fields = [];
+    foreach ($layout as $node) {
+        $t = $node['type'] ?? 'field';
+        if ($t === 'section' || $t === 'group') {
+            foreach (nu_flatten_layout($node['children'] ?? []) as $f) $fields[] = $f;
+        } elseif ($t === 'row') {
+            foreach (($node['children'] ?? []) as $f) $fields[] = $f;
+        } else {
+            $fields[] = $node;
+        }
+    }
+    return $fields;
 }
 
 /* ── Subform helpers ─────────────────────────────────────────────────── */
@@ -412,6 +561,7 @@ function nu_handle_subform_list() {
     $c      = nu_form_columns();
     $table  = nu_safe_ident($form[$c['table']] ?? '');
     $layout = nu_decode_layout($form);
+    $fields = nu_flatten_layout($layout);
 
     if ($table === '') nu_json(['success' => false, 'error' => 'No table for child form'], 400);
 
@@ -419,9 +569,8 @@ function nu_handle_subform_list() {
     $records = nu_q("SELECT * FROM `{$table}` WHERE `{$fk}` = ? ORDER BY `{$pk}` ASC", [$parentId])
                     ->fetchAll(PDO::FETCH_ASSOC);
 
-    // Resolve lookup display values
     foreach ($records as &$row) {
-        foreach ($layout as $field) {
+        foreach ($fields as $field) {
             if (nu_field_type($field) !== 'lookup') continue;
             $fname = nu_field_name($field);
             if ($fname === '' || !isset($row[$fname])) continue;
@@ -430,7 +579,7 @@ function nu_handle_subform_list() {
     }
     unset($row);
 
-    nu_json(['success' => true, 'data' => ['layout' => $layout, 'records' => $records, 'pk' => $pk]]);
+    nu_json(['success' => true, 'data' => ['layout' => $fields, 'records' => $records, 'pk' => $pk]]);
 }
 
 function nu_handle_subform_save() {
@@ -447,12 +596,12 @@ function nu_handle_subform_save() {
 
     $c      = nu_form_columns();
     $table  = nu_safe_ident($form[$c['table']] ?? '');
-    $layout = nu_decode_layout($form);
+    $fields = nu_flatten_layout(nu_decode_layout($form));
 
     if ($table === '') nu_json(['success' => false, 'error' => 'No table'], 400);
 
     $save = [];
-    foreach ($layout as $field) {
+    foreach ($fields as $field) {
         $name = nu_safe_ident(nu_field_name($field));
         if ($name === '') continue;
         $type = nu_field_type($field);
@@ -520,9 +669,9 @@ function nu_handle_fields() {
     if ($code === '') nu_json(['success' => false, 'error' => 'Missing code'], 400);
     $form   = nu_get_form($code);
     if (!$form) nu_json(['success' => false, 'error' => 'Form not found'], 404);
-    $layout = nu_decode_layout($form);
+    $fields = nu_flatten_layout(nu_decode_layout($form));
     $out    = [];
-    foreach ($layout as $field) {
+    foreach ($fields as $field) {
         $out[] = ['fieldname' => nu_field_name($field), 'fieldlabel' => nu_field_label($field), 'fieldtype' => nu_field_type($field)];
     }
     nu_json(['success' => true, 'data' => $out]);
@@ -552,7 +701,7 @@ function nu_handle_list() {
     $searchFields  = trim((string)($form[$c['browse_search_fields']] ?? ''));
     if ($searchEnabled && $q !== '') {
         $fields = array_filter(array_map('trim', explode(',', $searchFields)));
-        if (!$fields) { foreach ($layout as $field) { $fname = nu_safe_ident(nu_field_name($field)); if ($fname !== '') $fields[] = $fname; } }
+        if (!$fields) { foreach (nu_flatten_layout($layout) as $field) { $fname = nu_safe_ident(nu_field_name($field)); if ($fname !== '') $fields[] = $fname; } }
         $likes = [];
         foreach ($fields as $fieldName) { $fieldName = nu_safe_ident($fieldName); if ($fieldName === '') continue; $likes[] = "`{$fieldName}` LIKE ?"; $params[] = '%' . $q . '%'; }
         if ($likes) $where[] = '(' . implode(' OR ', $likes) . ')';
@@ -584,9 +733,9 @@ function nu_handle_save() {
     $c      = nu_form_columns();
     $table  = nu_safe_ident($form[$c['table']] ?? '');
     if ($table === '') nu_json(['success' => false, 'error' => 'No table configured'], 400);
-    $layout = nu_decode_layout($form);
+    $fields = nu_flatten_layout(nu_decode_layout($form));
     $save   = [];
-    foreach ($layout as $field) {
+    foreach ($fields as $field) {
         $name = nu_safe_ident(nu_field_name($field));
         if ($name === '') continue;
         $type = nu_field_type($field);
