@@ -912,28 +912,6 @@ window.nbFormBuilder = (function () {
     var card = document.createElement('div');
     card.className    = 'nb-cfield nu-builder-field';
     card.dataset.type = type;
-    card.dataset.width          = extra.width          || '100%';
-    card.dataset.default        = extra.default_value  || '';
-    card.dataset.placeholder    = extra.placeholder    || '';
-    card.dataset.help           = extra.help_text      || '';
-    card.dataset.cssClass       = extra.css_class      || '';
-    card.dataset.sortOrder      = extra.sort_order     || '';
-    card.dataset.rows           = extra.rows           || '3';
-    card.dataset.min            = extra.min            || '';
-    card.dataset.max            = extra.max            || '';
-    card.dataset.step           = extra.step           || '';
-    card.dataset.accept         = extra.accept         || '';
-    card.dataset.multipleUpload = extra.multiple_upload ? '1' : '0';
-    card.dataset.legend         = extra.legend         || '';
-    card.dataset.select2        = extra.select2        ? '1' : '0';
-    card.dataset.tab            = extra.tab            || '';
-    card.dataset.section        = extra.section        || '';
-    card.dataset.visibilityRule = extra.visibility_rule || '';
-    card.dataset.readonlyRule   = extra.readonly_rule   || '';
-    card.dataset.css            = extra.css            || '';
-    card.dataset.onchange       = extra.js_onchange    || '';
-    card.dataset.htmlContent    = extra.html_content   || '';
-    card.dataset.buttonAction   = extra.button_action  || '';
 
     var typeLabel = type.replace(/_/g, ' ');
     card.innerHTML =
@@ -981,11 +959,10 @@ window.nbFormBuilder = (function () {
     var card = radio.closest('.nb-tmode-card');
     if (card) card.classList.add('selected');
 
-    // toggle existing-table dropdown vs free-text input
-    var existingWrap = document.getElementById('existingTableWrap');
-    var newTableWrap = document.getElementById('newTableWrap');
+    var existingWrap   = document.getElementById('existingTableWrap');
+    var newTableWrap   = document.getElementById('newTableWrap');
     var existingSelect = document.getElementById('builderFormTableExisting');
-    var pkCards = document.querySelectorAll('.nb-pk-card');
+    var pkCards        = document.querySelectorAll('.nb-pk-card');
 
     if (tableMode === 'existing') {
       if (existingWrap) existingWrap.style.display = '';
@@ -997,6 +974,16 @@ window.nbFormBuilder = (function () {
       if (newTableWrap) newTableWrap.style.display = '';
       pkCards.forEach(function (c) { c.style.opacity = ''; c.style.pointerEvents = ''; });
     }
+  }
+
+  // ─── helper: read a value from a live input inside a field card ───────────────
+  function _iv(card, cls) {
+    var el = card.querySelector(cls);
+    return el ? el.value : '';
+  }
+  function _ib(card, cls) {
+    var el = card.querySelector(cls);
+    return el ? el.checked : false;
   }
 
   return {
@@ -1092,7 +1079,6 @@ window.nbFormBuilder = (function () {
       var chk = _el('formBrowseSearchEnabled'); if (chk) chk.checked = false;
       var ps  = _el('formBrowsePageSize');      if (ps)  ps.value   = '20';
 
-      // reset pk type and table mode to defaults
       _restorePkType('autoincrement');
       _restoreTableMode('new', '');
 
@@ -1150,7 +1136,6 @@ window.nbFormBuilder = (function () {
 
         nbFormBuilder.selectDisplayMode(form.browse_display_mode || 'inline');
 
-        // restore pk type and table mode from saved record
         _restorePkType(form.form_pk_type || 'autoincrement');
         _restoreTableMode(form.form_table_mode || 'new', form.form_table || '');
 
@@ -1175,7 +1160,7 @@ window.nbFormBuilder = (function () {
 
 })();
 
-// saveForm
+// saveForm — reads live input values from each field card (not stale dataset attributes)
 window.saveForm = async function () {
   function _elv(eid) { var e = document.getElementById(eid); return e ? e.value : ''; }
   function _elc(eid) { var e = document.getElementById(eid); return e ? e.checked : false; }
@@ -1183,17 +1168,19 @@ window.saveForm = async function () {
     var el = document.querySelector('input[name="' + name + '"]:checked');
     return el ? el.value : null;
   }
+  // Read a text input value from inside a field card
+  function _iv(card, cls) { var e = card.querySelector(cls); return e ? e.value : ''; }
+  // Read a checkbox state from inside a field card
+  function _ib(card, cls) { var e = card.querySelector(cls); return e ? e.checked : false; }
 
   const id        = _elv('editFormId');
   const formName  = (_elv('builderFormName') || '').trim();
 
-  // Read form code from the dedicated input; fall back to auto-deriving from formName
   const formCodeRaw = (_elv('builderFormCode') || '').trim();
   const formCode    = formCodeRaw
     ? formCodeRaw.toLowerCase().replace(/[^a-z0-9]+/g, '_')
     : formName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
 
-  // resolve table name: existing-table dropdown or free-text input
   const tableMode = _radio('formTableMode') || 'new';
   const pkType    = _radio('formPkType')    || 'autoincrement';
   const formTable = tableMode === 'existing'
@@ -1204,40 +1191,37 @@ window.saveForm = async function () {
 
   const fields = [];
   document.querySelectorAll('.nu-builder-field').forEach(function (el, index) {
-    const labelInput  = el.querySelector('.nu-builder-label');
-    const nameInput   = el.querySelector('.nu-builder-name');
-    const requiredBox = el.querySelector('.nu-field-required');
+    const type = el.dataset.type || 'text';
 
+    // ── Read ALL properties directly from live DOM inputs ──────────────────────
     const field = {
-      type:            el.dataset.type         || 'text',
-      label:           labelInput  ? labelInput.value  : '',
-      name:            nameInput   ? nameInput.value   : '',
-      required:        requiredBox ? requiredBox.checked : false,
-      width:           el.dataset.width          || '100%',
-      default_value:   el.dataset.default        || '',
-      placeholder:     el.dataset.placeholder    || '',
-      help_text:       el.dataset.help           || '',
-      css_class:       el.dataset.cssClass       || '',
-      sort_order:      parseInt(el.dataset.sortOrder || (index + 1), 10),
-      tab:             el.dataset.tab            || '',
-      section:         el.dataset.section        || '',
-      visibility_rule: el.dataset.visibilityRule || '',
-      readonly_rule:   el.dataset.readonlyRule   || '',
-      css:             el.dataset.css            || '',
-      js_onchange:     el.dataset.onchange       || '',
-      rows:            parseInt(el.dataset.rows  || 3, 10),
-      min:             el.dataset.min            || '',
-      max:             el.dataset.max            || '',
-      step:            el.dataset.step           || '',
-      accept:          el.dataset.accept         || '',
-      multiple_upload: el.dataset.multipleUpload === '1' ? 1 : 0,
-      html_content:    el.dataset.htmlContent    || '',
-      button_action:   el.dataset.buttonAction   || '',
-      legend:          el.dataset.legend         || '',
-      select2:         el.dataset.select2 === '1' ? 1 : 0
+      type:            type,
+      label:           _iv(el, '.nu-builder-label'),
+      name:            _iv(el, '.nu-builder-name'),
+      required:        _ib(el, '.nu-field-required'),
+      width:           _iv(el, '.nu-field-width')       || '100%',
+      default_value:   _iv(el, '.nu-field-default'),
+      placeholder:     _iv(el, '.nu-field-placeholder'),
+      help_text:       _iv(el, '.nu-field-help'),
+      css_class:       _iv(el, '.nu-field-cssclass'),
+      sort_order:      index + 1,
+      tab:             _iv(el, '.nu-field-tab'),
+      section:         _iv(el, '.nu-field-section'),
+      visibility_rule: _iv(el, '.nu-field-vis'),
+      readonly_rule:   _iv(el, '.nu-field-readonly'),
+      js_onchange:     _iv(el, '.nu-field-onchange'),
+      rows:            parseInt(_iv(el, '.nu-field-rows') || '3', 10),
+      min:             _iv(el, '.nu-field-min'),
+      max:             _iv(el, '.nu-field-max'),
+      step:            _iv(el, '.nu-field-step'),
+      accept:          _iv(el, '.nu-field-accept'),
+      multiple_upload: _ib(el, '.nu-field-multiple-upload') ? 1 : 0,
+      html_content:    _iv(el, '.nu-html-content'),
+      button_action:   _iv(el, '.nu-field-button-action'),
+      legend:          _iv(el, '.nu-field-legend'),
+      select2:         _ib(el, '.nu-field-select2') ? 1 : 0
     };
-
-    const type = field.type;
+    // ── End live-read block ────────────────────────────────────────────────────
 
     if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
       const sourceType = el.querySelector('.nu-select-source-type');
