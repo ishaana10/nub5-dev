@@ -136,7 +136,7 @@ window.NuApp = {
     document.dispatchEvent(new CustomEvent('nu:form:opened', { detail: { scope: box } }));
   },
 
-  // ─── BREADCRUMB HELPER ───────────────────────────────────────────────────────
+  // ─── BREADCRUMB HELPER ────────────────────────────────────────────────
   _renderBreadcrumb(crumbs) {
     const nav = document.createElement('nav');
     nav.setAttribute('aria-label', 'breadcrumb');
@@ -167,7 +167,7 @@ window.NuApp = {
     return nav;
   },
 
-  // ─── FULL-PAGE MODE HELPERS ──────────────────────────────────────────────────
+  // ─── FULL-PAGE MODE HELPERS ────────────────────────────────────────────
   _enterFullPage() {
     const sidebar = document.querySelector('.nu-sidebar, #sidebar, [class*="sidebar"]');
     const header  = document.querySelector('.nu-header, #header, header');
@@ -192,7 +192,7 @@ window.NuApp = {
     delete document.body.dataset.nuFullPage;
   },
 
-  // ─── PREVIEW FORM — resizable modal (compact / standard / full) ──────────────
+  // ─── PREVIEW FORM — resizable modal (compact / standard / full) ──────────
   async previewForm(code, formLabel) {
     try {
       const json = await this.apiJson(
@@ -292,7 +292,7 @@ window.NuApp = {
     }
   },
 
-  // ─── EDIT RECORD — modal with breadcrumb ─────────────────────────────────────
+  // ─── EDIT RECORD — modal with breadcrumb ─────────────────────────────────
   async editRecord(code, id, fromBrowseLabel, displayMode) {
     try {
       const json = await this.apiJson(
@@ -355,7 +355,7 @@ window.NuApp = {
     return this.previewForm(code, formLabel);
   },
 
-  // ─── BROWSE FORM — dispatches to inline / modal / fullpage ───────────────────
+  // ─── BROWSE FORM — dispatches to inline / modal / fullpage ───────────────
   async browseForm(code, page, query, formLabel, displayMode) {
     const mode = (displayMode || 'inline').toLowerCase();
     if (mode === 'modal') {
@@ -367,7 +367,7 @@ window.NuApp = {
     }
   },
 
-  // ─── Shared: fetch browse data ───────────────────────────────────────────────
+  // ─── Shared: fetch browse data ─────────────────────────────────────────────
   async _fetchBrowseData(code, page, query) {
     page  = page  || 1;
     query = query || '';
@@ -381,7 +381,7 @@ window.NuApp = {
     return json;
   },
 
-  // ─── Shared: build browse table DOM ─────────────────────────────────────────
+  // ─── Shared: build browse table DOM ──────────────────────────────────────
   _buildBrowseTable(json, code, page, query, label, displayMode, container, onEdit) {
     const data              = json.data || {};
     const layout            = Array.isArray(data.layout)  ? data.layout  : [];
@@ -512,7 +512,7 @@ window.NuApp = {
     }
   },
 
-  // ─── MODE 1: INLINE ──────────────────────────────────────────────────────────
+  // ─── MODE 1: INLINE ──────────────────────────────────────────────────
   async _browseInline(code, page, query, formLabel) {
     try {
       const json  = await this._fetchBrowseData(code, page, query);
@@ -563,7 +563,7 @@ window.NuApp = {
     }
   },
 
-  // ─── MODE 2: MODAL ───────────────────────────────────────────────────────────
+  // ─── MODE 2: MODAL ────────────────────────────────────────────────────
   async _browseModal(code, page, query, formLabel) {
     try {
       const json  = await this._fetchBrowseData(code, page, query);
@@ -628,7 +628,7 @@ window.NuApp = {
     }
   },
 
-  // ─── MODE 3: FULL PAGE ───────────────────────────────────────────────────────
+  // ─── MODE 3: FULL PAGE ──────────────────────────────────────────────────
   async _browseFullPage(code, page, query, formLabel) {
     try {
       const json  = await this._fetchBrowseData(code, page, query);
@@ -729,13 +729,15 @@ window.submitNuForm = async function (formElement) {
   }
 };
 
-// ─── SAVE FORM — reads all builder fields including form_code, table_mode, pk_type ─
+// ─── SAVE FORM — reads all builder fields including form_type, form_code, table_mode, pk_type ─
 window.saveForm = async function () {
   const formId    = (document.getElementById('editFormId')    || {}).value || '';
   const formName  = ((document.getElementById('builderFormName')  || {}).value || '').trim();
   const formCode  = ((document.getElementById('builderFormCode')  || {}).value || '').trim();
   const tableMode = (document.querySelector('input[name="formTableMode"]:checked') || {}).value || 'new';
   const pkType    = (document.querySelector('input[name="formPkType"]:checked')    || {}).value || 'autoincrement';
+  // ← FIX: read form_type from the radio cards
+  const formType  = (document.querySelector('input[name="formType"]:checked')      || {}).value || 'main';
 
   // resolve table name: existing-table select or new-table text input
   let formTable = '';
@@ -841,12 +843,13 @@ window.saveForm = async function () {
     fields.push(field);
   });
 
-  // build main payload
+  // build main payload — form_type is now included
   const payload = {
     form_id:                   formId   || null,
     form_name:                 formName,
     form_code:                 formCode || formName.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
     form_table:                formTable,
+    form_type:                 formType,          // ← FIX: was missing
     form_table_mode:           tableMode,
     form_pk_type:              pkType,
     form_layout:               JSON.stringify(fields),
@@ -966,391 +969,4 @@ window.nbFormBuilder = (function () {
       html += _row('Step', _inp('nu-field-step', extra, 'step', ''));
     }
     if (type === 'file') {
-      html += _row('Accept', _inp('nu-field-accept', extra, 'accept', '.pdf,.jpg,.png'));
-      html += '<div class="nb-fp">' + _chkLbl('nu-field-multiple-upload', extra, 'multiple_upload', 'Allow multiple files') + '</div>';
-    }
-    if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
-      var srcType = _val(extra, 'source_type', _val(extra, 'sourcetype', 'static'));
-      var opts    = (extra.options || []).map(function (o) { return (o.value || '') + '|' + (o.label || o.value || ''); }).join('\n');
-      var sqlVal  = _val(extra, 'sql_source', _val(extra, 'sqlsource', ''));
-      html += '<div class="nb-fp nb-fp-full"><label>Option Source</label>' +
-        '<select class="nu-input nu-select-source-type" onchange="nbFormBuilder.toggleSelectSource(this)">' +
-          '<option value="static"' + (srcType === 'static' ? ' selected' : '') + '>Static Options</option>' +
-          '<option value="sql"'    + (srcType === 'sql'    ? ' selected' : '') + '>SQL Query</option>' +
-        '</select></div>' +
-        '<div class="nb-fp nb-fp-full nu-static-block"' + (srcType !== 'static' ? ' style="display:none"' : '') + '>' +
-          '<label>Options <span style="font-weight:400;">(value|label per line)</span></label>' +
-          '<textarea class="nu-input nu-select-static" rows="4" placeholder="active|Active\npending|Pending">' + _esc(opts) + '</textarea>' +
-        '</div>' +
-        '<div class="nb-fp nb-fp-full nu-sql-block"' + (srcType !== 'sql' ? ' style="display:none"' : '') + '>' +
-          '<label>SQL Query</label>' +
-          '<textarea class="nu-input nu-select-sql" rows="3" placeholder="SELECT id, name FROM customers">' + _esc(sqlVal) + '</textarea>' +
-        '</div>';
-      if (type === 'select') {
-        html += '<div class="nb-fp">' + _chkLbl('nu-field-multiple', extra, 'multiple', 'Multi-select') + '</div>';
-        html += '<div class="nb-fp">' + _chkLbl('nu-field-select2',  extra, 'select2',  'Use Select2')  + '</div>';
-      }
-    }
-    if (type === 'lookup') {
-      var lk    = extra.lookup || {};
-      var lkSrc = lk.table ? lk.table + '.' + (lk.display_column || lk.displaycolumn || 'name') : '';
-      html += '<div class="nb-fp nb-fp-full"><label>Source (table.column)</label>' +
-        '<input type="text" class="nu-input nu-lookup-source" value="' + _esc(lkSrc) + '" placeholder="customers.name"></div>' +
-        _row('ID Column',    '<input type="text" class="nu-input nu-lookup-id"     value="' + _esc(lk.id_column || lk.idcolumn || 'id') + '" placeholder="id">') +
-        _row('Filter SQL',   '<input type="text" class="nu-input nu-lookup-filter" value="' + _esc(lk.filter || '')                    + '" placeholder="active=1">') +
-        '<div class="nb-fp nb-fp-full"><label>Extra Mapping (src:field, comma-sep)</label>' +
-        '<input type="text" class="nu-input nu-lookup-extra" value="' + _esc(lk.extra || '') + '" placeholder="dept_id:department"></div>';
-    }
-    if (type === 'subform') {
-      var sf  = extra.subform || {};
-      var sfv = sf.form_code ? sf.form_code + '.' + (sf.fk_field || '') : '';
-      html += '<div class="nb-fp nb-fp-full"><label>Config (form_code.fk_field)</label>' +
-        '<input type="text" class="nu-input nu-subform-config" value="' + _esc(sfv) + '" placeholder="order_items.order_id"></div>' +
-        '<div class="nb-fp"><label>View</label>' +
-        '<select class="nu-input nu-subform-view">' +
-          '<option value="grid"'   + ((sf.view || 'grid') === 'grid'   ? ' selected' : '') + '>Grid (table)</option>' +
-          '<option value="form"'   + (sf.view === 'form'               ? ' selected' : '') + '>Form (cards)</option>' +
-          '<option value="inline"' + (sf.view === 'inline'             ? ' selected' : '') + '>Inline (editable rows)</option>' +
-        '</select></div>';
-    }
-    if (type === 'calculated') {
-      html += '<div class="nb-fp nb-fp-full"><label>Expression</label>' +
-        '<input type="text" class="nu-input nu-calc-expression" value="' + _esc(_val(extra, 'calculated')) + '" placeholder="getValue(\'qty\') * getValue(\'price\')"></div>';
-    }
-    if (type === 'html') {
-      html += '<div class="nb-fp nb-fp-full"><label>HTML Content</label>' +
-        '<textarea class="nu-input nu-html-content" rows="4" placeholder="<strong>Section header</strong>">' + _esc(_val(extra, 'html_content')) + '</textarea></div>';
-    }
-    if (type === 'button') {
-      html += _row('Button Action', _inp('nu-field-button-action', extra, 'button_action', 'JS / procedure code'));
-      html += _row('Legend',        _inp('nu-field-legend',        extra, 'legend',        ''));
-    }
-    html += '</div>';
-    return html;
-  }
-
-  var _dragTool    = null;
-  var _dragField   = null;
-  // ─── dropEnabled flag — set false to lock canvas drag-and-drop reordering ────
-  var _dropEnabled = true;
-
-  function _initToolbox() {
-    document.querySelectorAll('#panelFields .nb-tool').forEach(function (tool) {
-      var t = tool.cloneNode(true);
-      tool.parentNode.replaceChild(t, tool);
-      t.addEventListener('dragstart', function (e) {
-        _dragTool = t.dataset.type;
-        t.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'copy';
-      });
-      t.addEventListener('dragend', function () { t.classList.remove('dragging'); });
-      t.addEventListener('click',   function () { _addField(t.dataset.type); });
-    });
-  }
-
-  function _initCanvasDrop() {
-    var canvas = _el('formCanvas');
-    if (!canvas) return;
-    canvas.addEventListener('dragover', function (e) {
-      // only accept palette tool drops when _dropEnabled is false (field reorder blocked but new drops still allowed)
-      e.preventDefault();
-      canvas.classList.add('drag-over');
-    });
-    canvas.addEventListener('dragleave', function () { canvas.classList.remove('drag-over'); });
-    canvas.addEventListener('drop', function (e) {
-      e.preventDefault();
-      canvas.classList.remove('drag-over');
-      if (_dragTool) { _addField(_dragTool); _dragTool = null; }
-    });
-  }
-
-  function _makeDraggable(el) {
-    el.setAttribute('draggable', 'true');
-    el.addEventListener('dragstart', function (e) {
-      if (!_dropEnabled) { e.preventDefault(); return; }
-      _dragField = el; el.classList.add('drag-source'); e.dataTransfer.effectAllowed = 'move';
-    });
-    el.addEventListener('dragend', function () {
-      el.classList.remove('drag-source');
-      document.querySelectorAll('.nb-cfield').forEach(function (f) { f.style.outline = ''; });
-      _dragField = null;
-    });
-    el.addEventListener('dragover', function (e) {
-      if (!_dropEnabled) return;       // ← reorder blocked when drop disabled
-      if (!_dragField || _dragField === el) return;
-      e.preventDefault();
-      var r = el.getBoundingClientRect();
-      var canvas = _el('formCanvas');
-      if (e.clientY > r.top + r.height / 2) canvas.insertBefore(_dragField, el.nextSibling);
-      else canvas.insertBefore(_dragField, el);
-    });
-  }
-
-  // ─── confirm before removing a field card ────────────────────────────────────
-  // Always confirms. Message adapts based on whether the form is already saved.
-  function _confirmFieldDelete(card) {
-    var editId  = _el('editFormId');
-    var isSaved = editId && editId.value && editId.value !== '';
-    var labelEl = card.querySelector('.nb-cfield-label');
-    var label   = labelEl ? (labelEl.textContent || '').trim() : 'this field';
-
-    var msg = isSaved
-      ? 'Remove field "' + label + '"?\n\nThis form has already been saved. The database column will be dropped when you save again. This cannot be undone.'
-      : 'Remove field "' + label + '"?\n\nThe field will be removed from the layout.';
-
-    return confirm(msg);
-  }
-
-  function _addField(type, label, name, required, extraData) {
-    var canvas = _el('formCanvas');
-    if (!canvas) return;
-    var extra = extraData || {};
-    if (!label) label = type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ') + ' Field';
-    if (!name)  name  = type + '_' + Date.now();
-    extra.label    = extra.label    !== undefined ? extra.label    : label;
-    extra.name     = extra.name     !== undefined ? extra.name     : name;
-    extra.required = extra.required !== undefined ? extra.required : (required || false);
-
-    var card = document.createElement('div');
-    card.className    = 'nb-cfield nu-builder-field';
-    card.dataset.type = type;
-    card.dataset.width          = extra.width          || '100%';
-    card.dataset.default        = extra.default_value  || '';
-    card.dataset.placeholder    = extra.placeholder    || '';
-    card.dataset.help           = extra.help_text      || '';
-    card.dataset.cssClass       = extra.css_class      || '';
-    card.dataset.sortOrder      = extra.sort_order     || '';
-    card.dataset.rows           = extra.rows           || '3';
-    card.dataset.min            = extra.min            || '';
-    card.dataset.max            = extra.max            || '';
-    card.dataset.step           = extra.step           || '';
-    card.dataset.accept         = extra.accept         || '';
-    card.dataset.multipleUpload = extra.multiple_upload ? '1' : '0';
-    card.dataset.legend         = extra.legend         || '';
-    card.dataset.select2        = extra.select2        ? '1' : '0';
-    card.dataset.tab            = extra.tab            || '';
-    card.dataset.section        = extra.section        || '';
-    card.dataset.visibilityRule = extra.visibility_rule || '';
-    card.dataset.readonlyRule   = extra.readonly_rule   || '';
-    card.dataset.css            = extra.css            || '';
-    card.dataset.onchange       = extra.js_onchange    || '';
-    card.dataset.htmlContent    = extra.html_content   || '';
-    card.dataset.buttonAction   = extra.button_action  || '';
-
-    var typeLabel = type.replace(/_/g, ' ');
-    card.innerHTML =
-      '<div class="nb-cfield-header" onclick="nbFormBuilder.toggleField(this)">' +
-        '<span class="nb-cfield-drag" title="Drag to reorder" onclick="event.stopPropagation()">&#x2807;</span>' +
-        '<span class="nb-cfield-type-badge">' + typeLabel + '</span>' +
-        '<span class="nb-cfield-label">' + _esc(extra.label) + '</span>' +
-        '<div class="nb-cfield-actions">' +
-          '<button type="button" class="nb-cfield-btn" onclick="event.stopPropagation();nbFormBuilder.toggleField(this.closest(\'.nb-cfield\').querySelector(\'.nb-cfield-header\'))">&#x2699;</button>' +
-          '<button type="button" class="nb-cfield-btn del" onclick="event.stopPropagation();nbFormBuilder._deleteField(this);">&#x2715;</button>' +
-        '</div>' +
-      '</div>' +
-      '<div class="nb-cfield-body">' + _fieldPanel(type, extra) + '</div>';
-
-    canvas.appendChild(card);
-    _canvasEmpty();
-    _makeDraggable(card);
-
-    var lInput = card.querySelector('.nu-builder-label');
-    if (lInput) {
-      lInput.addEventListener('input', function () {
-        card.querySelector('.nb-cfield-label').textContent = lInput.value || '(no label)';
-      });
-    }
-    if (canvas.querySelectorAll('.nb-cfield').length === 1) {
-      card.querySelector('.nb-cfield-body').classList.add('open');
-    }
-  }
-
-  // ─── helpers to restore pk/table-mode UI state ───────────────────────────────
-  function _restorePkType(pkType) {
-    var radio = document.querySelector('input[name="formPkType"][value="' + pkType + '"]');
-    if (!radio) return;
-    radio.checked = true;
-    document.querySelectorAll('.nb-pk-card').forEach(function (c) { c.classList.remove('selected'); });
-    var card = radio.closest('.nb-pk-card');
-    if (card) card.classList.add('selected');
-  }
-
-  function _restoreTableMode(tableMode, formTable) {
-    var radio = document.querySelector('input[name="formTableMode"][value="' + tableMode + '"]');
-    if (!radio) return;
-    radio.checked = true;
-    document.querySelectorAll('.nb-tmode-card').forEach(function (c) { c.classList.remove('selected'); });
-    var card = radio.closest('.nb-tmode-card');
-    if (card) card.classList.add('selected');
-
-    var existingWrap   = document.getElementById('existingTableWrap');
-    var newTableWrap   = document.getElementById('newTableWrap');
-    var existingSelect = document.getElementById('builderFormTableExisting');
-    var pkCards        = document.querySelectorAll('.nb-pk-card');
-
-    if (tableMode === 'existing') {
-      if (existingWrap)   existingWrap.style.display   = '';
-      if (newTableWrap)   newTableWrap.style.display   = 'none';
-      if (existingSelect && formTable) existingSelect.value = formTable;
-      pkCards.forEach(function (c) { c.style.opacity = '0.45'; c.style.pointerEvents = 'none'; });
-    } else {
-      if (existingWrap)   existingWrap.style.display   = 'none';
-      if (newTableWrap)   newTableWrap.style.display   = '';
-      pkCards.forEach(function (c) { c.style.opacity = ''; c.style.pointerEvents = ''; });
-    }
-  }
-
-  return {
-    _canvasEmpty: _canvasEmpty,
-
-    // ─── called by the delete (×) button on each field card ──────────────────
-    _deleteField: function (btn) {
-      var card = btn.closest('.nb-cfield');
-      if (!card) return;
-      if (!_confirmFieldDelete(card)) return;
-      card.remove();
-      _canvasEmpty();
-    },
-
-    _initAfterLoad: function () {
-      _initToolbox();
-      _initCanvasDrop();
-    },
-
-    // ─── dropEnabled public API ───────────────────────────────────────────────
-    // Call nbFormBuilder.setDropEnabled(false) to lock field reordering (e.g. preview mode)
-    // Call nbFormBuilder.setDropEnabled(true)  to re-enable it
-    setDropEnabled: function (val) {
-      _dropEnabled = !!val;
-      var canvas = _el('formCanvas');
-      if (!canvas) return;
-      canvas.querySelectorAll('.nb-cfield-drag').forEach(function (h) {
-        h.style.visibility = _dropEnabled ? 'visible' : 'hidden';
-        h.title = _dropEnabled ? 'Drag to reorder' : 'Reordering disabled';
-      });
-    },
-
-    selectDisplayMode: function (mode, clickedCard) {
-      var radio = clickedCard ? clickedCard.querySelector('input[type=radio]') : document.getElementById('browseDisplayMode' + mode.charAt(0).toUpperCase() + mode.slice(1));
-      if (radio) radio.checked = true;
-      document.querySelectorAll('.nb-display-mode-card').forEach(function (c) { c.classList.remove('selected'); });
-      if (clickedCard) {
-        clickedCard.classList.add('selected');
-      } else {
-        var target = document.querySelector('.nb-display-mode-card input[value="' + mode + '"]');
-        if (target) target.closest('.nb-display-mode-card').classList.add('selected');
-      }
-    },
-
-    selectPkType: function (pkType, clickedCard) {
-      var radio = clickedCard ? clickedCard.querySelector('input[type=radio]') :
-        document.querySelector('input[name="formPkType"][value="' + pkType + '"]');
-      if (radio) radio.checked = true;
-      document.querySelectorAll('.nb-pk-card').forEach(function (c) { c.classList.remove('selected'); });
-      var target = clickedCard || (radio ? radio.closest('.nb-pk-card') : null);
-      if (target) target.classList.add('selected');
-    },
-
-    selectTableMode: function (tableMode, clickedCard) {
-      var radio = clickedCard ? clickedCard.querySelector('input[type=radio]') :
-        document.querySelector('input[name="formTableMode"][value="' + tableMode + '"]');
-      if (radio) radio.checked = true;
-      document.querySelectorAll('.nb-tmode-card').forEach(function (c) { c.classList.remove('selected'); });
-      var target = clickedCard || (radio ? radio.closest('.nb-tmode-card') : null);
-      if (target) target.classList.add('selected');
-
-      var existingWrap   = document.getElementById('existingTableWrap');
-      var newTableWrap   = document.getElementById('newTableWrap');
-      var pkCards        = document.querySelectorAll('.nb-pk-card');
-
-      if (tableMode === 'existing') {
-        if (existingWrap) existingWrap.style.display = '';
-        if (newTableWrap) newTableWrap.style.display = 'none';
-        pkCards.forEach(function (c) { c.style.opacity = '0.45'; c.style.pointerEvents = 'none'; });
-      } else {
-        if (existingWrap) existingWrap.style.display = 'none';
-        if (newTableWrap) newTableWrap.style.display = '';
-        pkCards.forEach(function (c) { c.style.opacity = ''; c.style.pointerEvents = ''; });
-      }
-    },
-
-    toggleField: function (header) {
-      var body = header ? header.nextElementSibling : null;
-      if (!body) return;
-      body.classList.toggle('open');
-    },
-
-    toggleSelectSource: function (sel) {
-      var wrap   = sel.closest('.nb-fp-full') || sel.closest('.nb-fp');
-      var panel  = wrap ? wrap.parentElement : sel.closest('.nb-fp-grid');
-      if (!panel) return;
-      var staticBlock = panel.querySelector('.nu-static-block');
-      var sqlBlock    = panel.querySelector('.nu-sql-block');
-      if (staticBlock) staticBlock.style.display = sel.value === 'static' ? '' : 'none';
-      if (sqlBlock)    sqlBlock.style.display    = sel.value === 'sql'    ? '' : 'none';
-    },
-
-    edit: function (form) {
-      if (!form) return;
-      var canvas = _el('formCanvas');
-      if (canvas) canvas.innerHTML = '';
-
-      var nameEl  = _el('builderFormName');
-      var codeEl  = _el('builderFormCode');
-      var tableEl = _el('builderFormTable');
-      var idEl    = _el('editFormId');
-
-      if (nameEl)  nameEl.value  = form.form_name  || '';
-      if (codeEl)  codeEl.value  = form.form_code  || '';
-      if (tableEl) tableEl.value = form.form_table  || '';
-      if (idEl)    idEl.value    = form.form_id     || '';
-
-      // restore advanced form settings
-      var browseFields = {
-        formBrowseSql:               form.browse_sql               || '',
-        formBrowseColumns:           form.browse_columns           || '',
-        formBrowseSearchPlaceholder: form.browse_search_placeholder || '',
-        formBrowseSearchFields:      form.browse_search_fields      || '',
-        formBrowsePageSize:          form.browse_page_size          || 20,
-        formBrowseDefaultSort:       form.browse_default_sort       || '',
-        formCustomJs:                form.form_custom_js            || '',
-        formJsBeforeSave:            form.form_js_before_save       || '',
-        formJsAfterSave:             form.form_js_after_save        || '',
-        formCustomPhp:               form.form_custom_php           || '',
-        formCustomCss:               form.form_custom_css           || ''
-      };
-      Object.keys(browseFields).forEach(function (k) {
-        var el = _el(k);
-        if (el) el.value = browseFields[k];
-      });
-      var searchEnabledEl = _el('formBrowseSearchEnabled');
-      if (searchEnabledEl) searchEnabledEl.checked = !!form.browse_search_enabled;
-
-      // restore display mode
-      if (form.browse_display_mode) {
-        var dmRadio = document.querySelector('input[name="browseDisplayMode"][value="' + form.browse_display_mode + '"]');
-        if (dmRadio) {
-          dmRadio.checked = true;
-          var dmCard = dmRadio.closest('.nb-display-mode-card');
-          document.querySelectorAll('.nb-display-mode-card').forEach(function (c) { c.classList.remove('selected'); });
-          if (dmCard) dmCard.classList.add('selected');
-        }
-      }
-
-      // restore pk type and table mode (uses new columns form_pk_type, form_table_mode)
-      _restorePkType(form.form_pk_type || 'autoincrement');
-      _restoreTableMode(form.form_table_mode || 'new', form.form_table || '');
-
-      // restore fields onto canvas
-      var layout = [];
-      try { layout = JSON.parse(form.form_layout || '[]'); } catch (e) { layout = []; }
-      if (Array.isArray(layout)) {
-        layout.forEach(function (f) {
-          _addField(f.type || f.fieldtype || 'text', f.label || f.fieldlabel || '', f.name || f.fieldname || '', f.required || false, f);
-        });
-      }
-
-      _canvasEmpty();
-    }
-  };
-})();
+      html += _row('Accept', _inp('nu-field-accept
