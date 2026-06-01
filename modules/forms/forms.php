@@ -113,8 +113,39 @@ foreach ($forms as $f) {
 .nb-tab-panel { display:none; }
 .nb-tab-panel.active { display:block; }
 
-/* Form card header meta row */
+/* Form card meta */
 .nu-form-meta { font-size:12px; color:var(--text-tertiary); }
+
+/* ── Compact meta row inside form list cards ── */
+.nu-form-meta-row {
+  display:flex; flex-wrap:wrap; align-items:center;
+  gap:4px 12px; margin-bottom:10px;
+}
+.nu-form-meta-row .nu-form-meta {
+  display:flex; align-items:center; gap:4px; margin-bottom:0;
+  white-space:nowrap;
+}
+.nu-form-meta-row .nu-meta-sep {
+  color:var(--border-color); font-size:10px; user-select:none;
+}
+
+/* ── Forms list grid — multi-column compact cards ── */
+#formsGrid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));
+  gap:12px;
+}
+#formsGrid .nu-card {
+  padding:14px 16px;
+  display:flex;
+  flex-direction:column;
+}
+#formsGrid .nu-card-header {
+  margin-bottom:8px;
+}
+#formsGrid .nu-card > div:last-child {
+  margin-top:auto;
+}
 
 /* Drag ghost */
 .nb-drag-ghost {
@@ -257,8 +288,8 @@ foreach ($forms as $f) {
         $fType      = $f['form_type']       ?? 'main';
         $typeLabels = ['main'=>'Main','subform'=>'Subform','popup'=>'Popup','report'=>'Report'];
         $typeLabel  = $typeLabels[$fType] ?? ucfirst($fType);
-        // Show Preview/Browse only for main/popup, not subforms/reports in browse
         $isMain     = in_array($fType, ['main','popup']);
+        $pkLabel    = $pkType === 'uuid' ? 'UUID' : 'Auto-int';
       ?>
       <div class="nu-card" data-form-type="<?= htmlspecialchars($fType, ENT_QUOTES) ?>">
         <div class="nu-card-header" style="gap:8px;flex-wrap:wrap;">
@@ -266,14 +297,28 @@ foreach ($forms as $f) {
           <span class="nb-type-badge <?= htmlspecialchars($fType) ?>"><?= $typeLabel ?></span>
           <span class="nu-badge"><?= htmlspecialchars($f['form_code']) ?></span>
         </div>
-        <p class="nu-form-meta" style="margin-bottom:4px;">Table: <?= $f['form_table'] ? '<code>'.htmlspecialchars($f['form_table']).'</code>' : '<em>none</em>' ?></p>
-        <p class="nu-form-meta" style="margin-bottom:4px;"><?= $fieldCount ?> field<?= $fieldCount !== 1 ? 's' : '' ?></p>
-        <p class="nu-form-meta" style="margin-bottom:4px;">PK: <span style="font-weight:600;color:var(--color-primary);"><?= $pkType === 'uuid' ? 'NuBuilder UUID' : 'Auto-increment' ?></span></p>
-        <?php if ($isMain): ?>
-        <p class="nu-form-meta" style="margin-bottom:12px;">Browse: <span style="font-weight:600;color:var(--color-primary);"><?= htmlspecialchars(ucfirst($browseMode)) ?></span></p>
-        <?php else: ?>
-        <p class="nu-form-meta" style="margin-bottom:12px;">Type: <span style="font-weight:600;color:var(--color-primary);"><?= $typeLabel ?></span></p>
-        <?php endif; ?>
+
+        <!-- Compact inline meta row -->
+        <div class="nu-form-meta-row">
+          <span class="nu-form-meta">
+            🗄 <?= $f['form_table'] ? '<code>'.htmlspecialchars($f['form_table']).'</code>' : '<em style="color:var(--text-tertiary)">no table</em>' ?>
+          </span>
+          <span class="nu-meta-sep">·</span>
+          <span class="nu-form-meta">
+            📋 <strong style="color:var(--text-primary);"><?= $fieldCount ?></strong> field<?= $fieldCount !== 1 ? 's' : '' ?>
+          </span>
+          <span class="nu-meta-sep">·</span>
+          <span class="nu-form-meta">
+            🔑 <span style="font-weight:600;color:var(--color-primary);"><?= $pkLabel ?></span>
+          </span>
+          <?php if ($isMain): ?>
+          <span class="nu-meta-sep">·</span>
+          <span class="nu-form-meta">
+            👁 <span style="font-weight:600;color:var(--color-primary);"><?= htmlspecialchars(ucfirst($browseMode)) ?></span>
+          </span>
+          <?php endif; ?>
+        </div>
+
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <?php if ($isMain): ?>
           <button class="nu-btn nu-btn-primary nu-btn-sm" onclick="window.previewForm && previewForm('<?= $formCode ?>','<?= $formLabel ?>')">⊞ Preview</button>
