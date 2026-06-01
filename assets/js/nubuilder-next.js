@@ -1110,6 +1110,57 @@ window.nbFormBuilder = (function () {
       }
     },
 
+    // ─── open() — show the builder panel in "new form" state ─────────────
+    open: function () {
+      var listSection  = _el('formsListSection');
+      var builderCard  = _el('formBuilderCard');
+      var builderTitle = _el('builderTitle');
+      var editFormId   = _el('editFormId');
+      var canvas       = _el('formCanvas');
+
+      if (listSection)  listSection.style.display  = 'none';
+      if (builderCard)  builderCard.style.display   = '';
+      if (builderTitle) builderTitle.textContent    = 'New Form';
+      if (editFormId)   editFormId.value            = '';
+
+      // reset all meta inputs
+      ['builderFormName','builderFormCode','builderFormTable',
+       'formBrowseSql','formBrowseColumns','formBrowseSearchPlaceholder',
+       'formBrowseSearchFields','formBrowseDefaultSort',
+       'formCustomJs','formJsBeforeSave','formJsAfterSave',
+       'formCustomPhp','formCustomCss'].forEach(function(id) {
+        var el = _el(id);
+        if (el) el.value = '';
+      });
+      var pageSizeEl = _el('formBrowsePageSize');
+      if (pageSizeEl) pageSizeEl.value = '20';
+      var searchEnabled = _el('formBrowseSearchEnabled');
+      if (searchEnabled) searchEnabled.checked = false;
+
+      // clear canvas
+      if (canvas) {
+        canvas.innerHTML = '<div class="nb-canvas-empty" id="canvasEmpty">&#x2B06; Drag or click a field type to add it here</div>';
+      }
+
+      // reset to first tab
+      document.querySelectorAll('.nb-tab').forEach(function(t) { t.classList.remove('active'); });
+      document.querySelectorAll('.nb-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+      var firstTab   = document.querySelector('.nb-tab[data-panel="panelFields"]');
+      var firstPanel = _el('panelFields');
+      if (firstTab)   firstTab.classList.add('active');
+      if (firstPanel) firstPanel.classList.add('active');
+
+      this._initAfterLoad();
+    },
+
+    // ─── close() — hide builder, show list ───────────────────────────────
+    close: function () {
+      var listSection = _el('formsListSection');
+      var builderCard = _el('formBuilderCard');
+      if (listSection) listSection.style.display = '';
+      if (builderCard) builderCard.style.display  = 'none';
+    },
+
     addField: function (type, extra) {
       var canvas = _el('formCanvas');
       if (!canvas) return;
@@ -1146,13 +1197,20 @@ window.nbFormBuilder = (function () {
       if (sqlBlock)    sqlBlock.style.display    = sel.value === 'sql'    ? '' : 'none';
     },
 
+    switchTab: function (btn) {
+      var panelId = btn.dataset.panel;
+      document.querySelectorAll('.nb-tab').forEach(function(t) { t.classList.remove('active'); });
+      document.querySelectorAll('.nb-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+      btn.classList.add('active');
+      var panel = _el(panelId);
+      if (panel) panel.classList.add('active');
+    },
+
     // ─── selectTableMode — highlight chosen card, show/hide table inputs ──
     selectTableMode: function (mode, card) {
-      // update card highlight
       document.querySelectorAll('.nb-tmode-card').forEach(function (c) {
         c.classList.toggle('nb-tmode-selected', c === card);
       });
-      // show/hide correct table name input
       var newWrap      = _el('tableNewWrap');
       var existingWrap = _el('tableExistingWrap');
       if (newWrap)      newWrap.style.display      = mode === 'new'      ? '' : 'none';
@@ -1170,6 +1228,29 @@ window.nbFormBuilder = (function () {
     edit: function (form) {
       if (!form) return;
 
+      // if passed a numeric ID, fetch the form data first
+      if (typeof form === 'number' || (typeof form === 'string' && !isNaN(form))) {
+        var self = this;
+        NuApp.apiJson('api/forms.php?action=get&id=' + encodeURIComponent(form), { credentials: 'same-origin' })
+          .then(function(json) {
+            if (json && json.success && json.form) {
+              self.edit(json.form);
+            } else {
+              NuApp.toast((json && json.error) || 'Could not load form', 'error');
+            }
+          })
+          .catch(function(err) {
+            NuApp.toast('Error loading form: ' + err.message, 'error');
+          });
+        return;
+      }
+
+      // open the builder panel first
+      this.open();
+
+      var builderTitle = _el('builderTitle');
+      if (builderTitle) builderTitle.textContent = 'Edit Form: ' + (form.form_name || '');
+
       // basic meta
       if (_el('editFormId'))       _el('editFormId').value       = form.form_id   || '';
       if (_el('builderFormName'))  _el('builderFormName').value  = form.form_name  || '';
@@ -1183,7 +1264,6 @@ window.nbFormBuilder = (function () {
         tmRadio.checked = true;
         this.selectTableMode(tableMode, tmRadio.closest('.nb-tmode-card'));
       }
-      // if existing table, also set the select
       if (tableMode === 'existing') {
         var existSel = _el('builderFormTableExisting');
         if (existSel) existSel.value = form.form_table || '';
@@ -1216,11 +1296,11 @@ window.nbFormBuilder = (function () {
       if (bdmRadio) bdmRadio.checked = true;
 
       // advanced
-      if (_el('formCustomJs'))    _el('formCustomJs').value    = form.form_custom_js    || '';
-      if (_el('formJsBeforeSave'))_el('formJsBeforeSave').value= form.form_js_before_save|| '';
-      if (_el('formJsAfterSave')) _el('formJsAfterSave').value = form.form_js_after_save || '';
-      if (_el('formCustomPhp'))   _el('formCustomPhp').value   = form.form_custom_php   || '';
-      if (_el('formCustomCss'))   _el('formCustomCss').value   = form.form_custom_css   || '';
+      if (_el('formCustomJs'))     _el('formCustomJs').value     = form.form_custom_js     || '';
+      if (_el('formJsBeforeSave')) _el('formJsBeforeSave').value = form.form_js_before_save|| '';
+      if (_el('formJsAfterSave'))  _el('formJsAfterSave').value  = form.form_js_after_save || '';
+      if (_el('formCustomPhp'))    _el('formCustomPhp').value    = form.form_custom_php    || '';
+      if (_el('formCustomCss'))    _el('formCustomCss').value    = form.form_custom_css    || '';
 
       // rebuild canvas from saved layout
       var canvas = _el('formCanvas');
