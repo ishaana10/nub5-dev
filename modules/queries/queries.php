@@ -205,6 +205,9 @@ $queries = $db->fetchAll("SELECT * FROM nu_queries WHERE query_active = 1 ORDER 
 <script>
 /* ============================================================
    QB — Query Builder controller
+   API paths are root-relative (api/queries.php) because this
+   module is AJAX-loaded into index.php at the site root, so
+   relative paths like ../../api/ would resolve incorrectly.
    ============================================================ */
 const QB = (() => {
   let _mode     = 'visual'; // 'visual' | 'raw'
@@ -235,7 +238,7 @@ const QB = (() => {
   /* ── edit existing ─────────────────────────────────────── */
   async function edit(id) {
     try {
-      const r = await fetch(`../../api/queries.php?action=get&id=${id}`);
+      const r = await fetch(`api/queries.php?action=get&id=${id}`);
       const d = await r.json();
       if (!d.success) { toast(d.error, 'error'); return; }
       const q = d.query;
@@ -307,7 +310,7 @@ const QB = (() => {
   /* ── load tables ───────────────────────────────────────── */
   async function loadTables() {
     try {
-      const r = await fetch('../../api/queries.php?action=get_tables');
+      const r = await fetch('api/queries.php?action=get_tables');
       const d = await r.json();
       if (!d.success) return;
       _tables = d.tables;
@@ -328,7 +331,7 @@ const QB = (() => {
     const table = $('qbTable').value;
     if (!table) return;
     try {
-      const r = await fetch(`../../api/queries.php?action=get_columns&table=${encodeURIComponent(table)}`);
+      const r = await fetch(`api/queries.php?action=get_columns&table=${encodeURIComponent(table)}`);
       const d = await r.json();
       if (!d.success) return;
       _columns = d.columns;
@@ -513,7 +516,7 @@ const QB = (() => {
     };
 
     try {
-      const r = await fetch('../../api/queries.php?action=save', {
+      const r = await fetch('api/queries.php?action=save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -532,7 +535,7 @@ const QB = (() => {
   async function run(id) {
     try {
       // First get the query to check for params
-      const r1 = await fetch(`../../api/queries.php?action=get&id=${id}`);
+      const r1 = await fetch(`api/queries.php?action=get&id=${id}`);
       const d1 = await r1.json();
       if (!d1.success) { toast(d1.error, 'error'); return; }
       const q = d1.query;
@@ -591,7 +594,7 @@ const QB = (() => {
     try {
       const qs = new URLSearchParams({ action: 'run', code });
       Object.entries(params).forEach(([k, v]) => qs.set(k, v));
-      const r = await fetch('../../api/queries.php?' + qs.toString());
+      const r = await fetch('api/queries.php?' + qs.toString());
       const d = await r.json();
       if (!d.success) {
         $('qbResultsContent').innerHTML = `<div style="color:var(--color-danger);font-size:13px;padding:8px;">${esc(d.error)}</div>`;
@@ -627,14 +630,14 @@ const QB = (() => {
   /* ── export CSV ────────────────────────────────────────── */
   function exportCsv() {
     if (!_runCode) return;
-    window.open(`../../api/query.php?action=export&code=${_runCode}`, '_blank');
+    window.open(`api/query.php?action=export&code=${_runCode}`, '_blank');
   }
 
   /* ── delete ────────────────────────────────────────────── */
   async function del(id, name) {
     if (!confirm(`Delete query "${name}"? This cannot be undone.`)) return;
     try {
-      const r = await fetch(`../../api/queries.php?action=delete&id=${id}`);
+      const r = await fetch(`api/queries.php?action=delete&id=${id}`);
       const d = await r.json();
       if (!d.success) { toast(d.error, 'error'); return; }
       toast('Query deleted', 'success');
