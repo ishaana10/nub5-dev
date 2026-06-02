@@ -30,6 +30,7 @@
   --shadow-lg:         0 8px 32px rgba(0,0,0,.18);
   --transition:        .2s ease;
   --warning:           #f59e0b;
+  --error:             #ef4444;
 }
 [data-theme="dark"] {
   --bg-app:      #0f172a;
@@ -331,12 +332,13 @@ body {
   .nu-menu-btn { display: flex; } /* keep visible as collapse toggle */
 }
 
-/* ══ Form-builder canvas ════════════════════════════════════════════════════ */
+/* ══ Form-builder canvas — base field card ══════════════════════════════════ */
 .nb-cfield {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   margin-bottom: 8px;
   background: var(--bg-card);
+  min-width: 0;
 }
 .nb-cfield-header {
   display: flex; align-items: center; gap: 8px;
@@ -347,9 +349,10 @@ body {
 .nb-cfield-type-badge {
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
   background: var(--primary); color: #fff; padding: 2px 7px; border-radius: 10px;
+  flex-shrink: 0;
 }
 .nb-cfield-label  { flex: 1; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nb-cfield-actions { display: flex; gap: 4px; }
+.nb-cfield-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .nb-cfield-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 14px; padding: 2px 6px; border-radius: 4px; }
 .nb-cfield-btn:hover { background: var(--bg-hover); }
 .nb-cfield-btn.del:hover { background: rgba(239,68,68,.1); color: #ef4444; }
@@ -380,3 +383,284 @@ body {
 .nb-tab-panel { display: none; }
 .nb-tab-panel.active { display: block; }
 .nb-canvas.drag-over { border: 2px dashed var(--primary); background: rgba(14,165,233,.04); }
+
+/* ── col-span badge on field cards ──────────────────────────────────────────
+   Shows "col-6" etc. next to the type badge so the designer can see span at a
+   glance without opening the field panel.                                     */
+.nb-col-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  padding: 2px 6px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  margin-left: 2px;
+  user-select: none;
+}
+
+/* ── Canvas toolbar  (+ Row | + Section | + Group) ──────────────────────────
+   Sits above the canvas drop zone.                                            */
+.nb-canvas-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px dashed var(--border-color);
+  flex-wrap: wrap;
+}
+
+/* ── Drag states ─────────────────────────────────────────────────────────────*/
+.drag-source   { opacity: .45; }
+.drag-over     { outline: 2px dashed var(--primary); outline-offset: 2px; background: rgba(14,165,233,.04) !important; border-radius: var(--radius-sm); }
+
+/* ── Container drag handle ───────────────────────────────────────────────────
+   The ⠇ grip icon that appears in section / group / row headers.             */
+.nb-container-drag {
+  cursor: grab;
+  font-size: 18px;
+  line-height: 1;
+  color: inherit;
+  opacity: .6;
+  flex-shrink: 0;
+  user-select: none;
+}
+.nb-container-drag:active { cursor: grabbing; }
+
+/* ══ Builder canvas — ROW container ════════════════════════════════════════ */
+.nb-row {
+  border: 1.5px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  margin-bottom: 10px;
+  background: var(--bg-subtle);
+  transition: border-color var(--transition);
+}
+.nb-row:hover { border-color: var(--primary); }
+
+/* The actual 12-col CSS grid drop zone inside a row */
+.nb-row-drop {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 8px;
+  min-height: 52px;
+  align-items: start;
+}
+/* Field cards inside a row span their col value */
+.nb-row-drop > .nb-cfield {
+  /* col span is applied inline via dataset.col — handled via JS */
+  margin-bottom: 0;
+}
+
+/* ══ Builder canvas — SECTION container ════════════════════════════════════ */
+.nb-section {
+  border: 2px solid var(--primary);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  background: var(--bg-card);
+  overflow: hidden;
+  transition: box-shadow var(--transition);
+}
+.nb-section:focus-within { box-shadow: 0 0 0 3px rgba(14,165,233,.15); }
+
+.nb-section > div:first-child {
+  /* section header bar */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  cursor: default;
+  user-select: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.nb-section-body {
+  padding: 12px;
+}
+.nb-section-body.collapsed { display: none; }
+
+/* inline label input in the section header — looks like a heading */
+.nb-section-label {
+  flex: 1;
+  font-weight: 700;
+  font-size: 13px;
+  border: none !important;
+  background: transparent !important;
+  color: var(--primary);
+  padding: 0 !important;
+  box-shadow: none !important;
+  min-width: 0;
+}
+.nb-section-label::placeholder { color: color-mix(in srgb, var(--primary) 50%, transparent); }
+
+/* ══ Builder canvas — GROUP container ══════════════════════════════════════ */
+.nb-group {
+  border: 2px solid var(--warning, #f59e0b);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  background: var(--bg-card);
+  overflow: hidden;
+  transition: box-shadow var(--transition);
+}
+.nb-group:focus-within { box-shadow: 0 0 0 3px rgba(245,158,11,.15); }
+
+.nb-group > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: color-mix(in srgb, var(--warning, #f59e0b) 8%, transparent);
+  cursor: default;
+  user-select: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 25%, transparent);
+}
+
+.nb-group-body {
+  padding: 10px 12px;
+}
+.nb-group-body.collapsed { display: none; }
+
+.nb-group-label {
+  flex: 1;
+  font-weight: 700;
+  font-size: 13px;
+  border: none !important;
+  background: transparent !important;
+  color: var(--warning, #f59e0b);
+  padding: 0 !important;
+  box-shadow: none !important;
+  min-width: 0;
+}
+.nb-group-label::placeholder { color: color-mix(in srgb, var(--warning, #f59e0b) 50%, transparent); }
+
+/* ══ PREVIEW FORM — nu-generated-form ════════════════════════════════════════
+   Styles for the HTML produced by nu_render_form_html() / nu_render_layout_node()
+   These apply inside the preview modal and the edit-record modal.            */
+
+/* Every field wrapper sits inside a 12-col grid row.
+   grid-column:span N is set inline by the PHP renderer.                      */
+.nu-field-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.nu-field-wrapper label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #475569);
+  margin-bottom: 4px;
+  display: block;
+}
+
+/* Row: 12-col grid */
+.nu-form-row {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+  align-items: start;
+}
+
+/* ── Preview SECTION ─────────────────────────────────────────────────────────*/
+.nu-section {
+  border-radius: 10px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  background: var(--bg-card, #fff);
+}
+.nu-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  cursor: default;
+  user-select: none;
+}
+.nu-section-header[onclick] { cursor: pointer; }
+.nu-section-header:has([data-target]):hover { filter: brightness(.97); }
+
+.nu-section-body {
+  padding: 16px;
+}
+
+/* collapse/expand triangle button */
+.nu-section-toggle,
+.nu-group-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 4px 0 0;
+  flex-shrink: 0;
+  transition: transform .2s;
+}
+
+/* ── Preview GROUP ───────────────────────────────────────────────────────────*/
+.nu-group {
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  background: var(--bg-card, #fff);
+}
+.nu-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-subtle, #f8fafc);
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  cursor: default;
+  user-select: none;
+}
+.nu-group-header[onclick] { cursor: pointer; }
+
+.nu-group-body {
+  padding: 14px;
+}
+
+/* ── Inputs inside generated forms ──────────────────────────────────────────*/
+.nu-generated-form .nu-input {
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--input-bg, #fff);
+  color: var(--text-primary, #0f172a);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color .18s, box-shadow .18s;
+}
+.nu-generated-form .nu-input:focus {
+  outline: none;
+  border-color: var(--primary, #0ea5e9);
+  box-shadow: 0 0 0 3px rgba(14,165,233,.12);
+}
+
+/* Submit button row at bottom of generated form */
+.nu-generated-form > [type="submit"],
+.nu-generated-form .nu-form-footer {
+  margin-top: 20px;
+}
+
+/* ── Dark-mode overrides for preview form ───────────────────────────────────*/
+[data-theme="dark"] .nu-section,
+[data-theme="dark"] .nu-group {
+  background: var(--bg-card);
+}
+[data-theme="dark"] .nu-group-header {
+  background: var(--bg-subtle);
+  border-color: var(--border-color);
+}
+[data-theme="dark"] .nu-generated-form .nu-input {
+  background: var(--input-bg, #1e293b);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
