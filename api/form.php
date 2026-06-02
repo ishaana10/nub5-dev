@@ -153,15 +153,13 @@ function nu_field_value($record, $field) {
 function nu_attr($value) { return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); }
 function nu_html($value) { return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); }
 
-// ── Generate a v4 UUID (no external dependencies) ────────────────────────────
 function nu_generate_uuid() {
     $data = random_bytes(16);
-    $data[6] = chr((ord($data[6]) & 0x0f) | 0x40); // version 4
-    $data[8] = chr((ord($data[8]) & 0x3f) | 0x80); // variant RFC 4122
+    $data[6] = chr((ord($data[6]) & 0x0f) | 0x40);
+    $data[8] = chr((ord($data[8]) & 0x3f) | 0x80);
     return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
 }
 
-// ── Read form_pk_type from the form record ────────────────────────────────────
 function nu_form_pk_type($form) {
     $c = nu_form_columns();
     return strtolower(trim((string)($form[$c['pk_type']] ?? 'auto')));
@@ -343,26 +341,39 @@ function nu_render_field($field, $value = '', $record = []) {
             break;
 
         case 'subform':
-            $sf       = $field['subform'] ?? [];
-            $sfCode   = nu_safe_ident($sf['form_code'] ?? ($sf['formcode'] ?? ($name)));
-            $sfFk     = nu_safe_ident($sf['fk_field']  ?? ($sf['fkfield']  ?? ''));
-            $sfView   = in_array($sf['view'] ?? 'grid', ['grid','form','inline'], true) ? ($sf['view'] ?? 'grid') : 'grid';
-            // data-parent-id is empty on new records; nuSubform.js re-reads it at save time
-            $sfParent = nu_attr($record['id'] ?? '');
-            $control  = '<div class="nu-subform-container"'
-                      . ' data-subform-code="'   . nu_attr($sfCode)   . '"'
-                      . ' data-subform-fk="'     . nu_attr($sfFk)     . '"'
-                      . ' data-subform-view="'   . nu_attr($sfView)   . '"'
-                      . ' data-parent-id="'      . $sfParent          . '"'
-                      . ' style="border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
-                      . '<div class="nu-subform-toolbar" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-elevated,#f8f9fa);border-bottom:1px solid #ddd;">'
-                      . '<span style="font-weight:600;font-size:13px;">' . nu_html($label) . '</span>'
-                      . '<button type="button" class="nu-btn nu-btn-primary nu-btn-sm" onclick="nuSubform.addRow(this)">+ Add Row</button>'
-                      . '</div>'
-                      . '<div class="nu-subform-body" style="padding:0;">'
-                      . '<div class="nu-subform-loading" style="padding:20px;text-align:center;color:#888;font-size:13px;">Loading...</div>'
-                      . '</div>'
-                      . '</div>';
+            $sf     = $field['subform'] ?? [];
+            $sfCode = nu_safe_ident($sf['form_code'] ?? ($sf['formcode'] ?? $name));
+            $sfFk   = nu_safe_ident($sf['fk_field']  ?? ($sf['fkfield']  ?? ''));
+            $sfView = in_array($sf['view'] ?? 'grid', ['grid','form','inline'], true) ? ($sf['view'] ?? 'grid') : 'grid';
+
+            // ── FIX Bug 1 ──────────────────────────────────────────────────────
+            // Previously used $record['id'] which is wrong when the parent table
+            // has a PK column named anything other than 'id' (e.g. order_id).
+            // Now we look up the actual PK column name from the parent table.
+            $parentTable = nu_safe_ident($field['_parent_table'] ?? '');
+            if ($parentTable === '') {
+                // Derive from the record keys: prefer the key that ends in '_id' or equals 'id'
+                // Fallback: just use whatever is in $record as a best-effort
+                $parentPk = 'id';
+            } else {
+                $parentPk = nu_get_pk($parentTable);
+            }
+            $sfParent = nu_attr($record[$parentPk] ?? ($record['id'] ?? ''));
+
+            $control = '<div class="nu-subform-container"'
+                     . ' data-subform-code="'  . nu_attr($sfCode)  . '"'
+                     . ' data-subform-fk="'    . nu_attr($sfFk)    . '"'
+                     . ' data-subform-view="'  . nu_attr($sfView)  . '"'
+                     . ' data-parent-id="'     . $sfParent         . '"'
+                     . ' style="border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
+                     . '<div class="nu-subform-toolbar" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-elevated,#f8f9fa);border-bottom:1px solid #ddd;">'
+                     . '<span style="font-weight:600;font-size:13px;">' . nu_html($label) . '</span>'
+                     . '<button type="button" class="nu-btn nu-btn-primary nu-btn-sm" onclick="nuSubform.addRow(this)">+ Add Row</button>'
+                     . '</div>'
+                     . '<div class="nu-subform-body" style="padding:0;">'
+                     . '<div class="nu-subform-loading" style="padding:20px;text-align:center;color:#888;font-size:13px;">Loading...</div>'
+                     . '</div>'
+                     . '</div>';
             break;
 
         case 'fieldset':
@@ -431,7 +442,6 @@ function nu_toggle_script() {
 function nu_render_layout_node($node, $record, $sectionIndex = 0) {
     $type = $node['type'] ?? 'field';
 
-    // ── SECTION ──────────────────────────────────────────────────────────────
     if ($type === 'section') {
         $id         = 'sec_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $node['id'] ?? ('s' . $sectionIndex));
         $label      = nu_html($node['label'] ?? 'Section');
@@ -445,7 +455,6 @@ function nu_render_layout_node($node, $record, $sectionIndex = 0) {
                . 'border:1.5px solid ' . $col['border'] . ';'
                . 'border-radius:10px;margin-bottom:20px;'
                . 'background:' . $col['bg'] . ';overflow:hidden;">';
-
         $html .= '<div class="nu-section-header" style="'
                . 'display:flex;align-items:center;gap:6px;'
                . 'padding:10px 16px;'
@@ -454,7 +463,6 @@ function nu_render_layout_node($node, $record, $sectionIndex = 0) {
                . 'user-select:none;'
                . ($collapsible ? 'cursor:pointer;' : '') . '"'
                . ($collapsible ? ' onclick="nuToggleContainer(this.querySelector(\'.nu-section-toggle\'))"' : '') . '>';
-
         if ($collapsible) {
             $html .= '<button type="button" class="nu-section-toggle"'
                    . ' data-target="' . nu_attr($id) . '-body"'
@@ -463,21 +471,17 @@ function nu_render_layout_node($node, $record, $sectionIndex = 0) {
                    . 'color:' . $col['text'] . ';padding:0 6px 0 0;line-height:1;flex-shrink:0;">'
                    . $icon . '</button>';
         }
-
         $html .= '<span style="font-weight:700;font-size:14px;color:' . $col['text'] . ';">' . $label . '</span>';
         $html .= '</div>';
         $html .= '<div id="' . nu_attr($id) . '-body" class="nu-section-body" style="padding:16px;' . $bodyStyle . '">';
-
         $si = 0;
         foreach (($node['children'] ?? []) as $child) {
             $html .= nu_render_layout_node($child, $record, $si++);
         }
-
         $html .= '</div></div>';
         return $html;
     }
 
-    // ── GROUP ────────────────────────────────────────────────────────────────
     if ($type === 'group') {
         $id         = 'grp_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $node['id'] ?? ('g' . $sectionIndex));
         $label      = nu_html($node['label'] ?? 'Group');
@@ -495,7 +499,6 @@ function nu_render_layout_node($node, $record, $sectionIndex = 0) {
                . 'user-select:none;'
                . ($collapsible ? 'cursor:pointer;' : '') . '"'
                . ($collapsible ? ' onclick="nuToggleContainer(this.querySelector(\'.nu-group-toggle\'))"' : '') . '>';
-
         if ($collapsible) {
             $html .= '<button type="button" class="nu-group-toggle"'
                    . ' data-target="' . nu_attr($id) . '-body"'
@@ -504,21 +507,17 @@ function nu_render_layout_node($node, $record, $sectionIndex = 0) {
                    . 'color:#666;padding:0 6px 0 0;line-height:1;flex-shrink:0;">'
                    . $icon . '</button>';
         }
-
         $html .= '<span style="font-weight:600;font-size:13px;color:var(--text,#333);">' . $label . '</span>';
         $html .= '</div>';
         $html .= '<div id="' . nu_attr($id) . '-body" class="nu-group-body" style="padding:14px;' . $bodyStyle . '">';
-
         $gi = 0;
         foreach (($node['children'] ?? []) as $child) {
             $html .= nu_render_layout_node($child, $record, $gi++);
         }
-
         $html .= '</div></div>';
         return $html;
     }
 
-    // ── ROW (12-col CSS grid) ────────────────────────────────────────────────
     if ($type === 'row') {
         $html = '<div class="nu-form-row" style="display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-bottom:16px;align-items:start;">';
         foreach (($node['children'] ?? []) as $field) {
@@ -528,7 +527,7 @@ function nu_render_layout_node($node, $record, $sectionIndex = 0) {
         return $html;
     }
 
-    // ── PLAIN FIELD (backward-compat: flat layout) ───────────────────────────
+    // Plain field (backward-compat)
     $col = (int)($node['col'] ?? 12);
     $node['col'] = $col;
     return '<div class="nu-form-row" style="display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-bottom:16px;align-items:start;">'
@@ -564,7 +563,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
     return $html;
 }
 
-// ── Flatten nested layout to extract saveable fields ─────────────────────────
 function nu_flatten_layout($layout) {
     $fields = [];
     foreach ($layout as $node) {
@@ -582,11 +580,6 @@ function nu_flatten_layout($layout) {
 
 /* ── Subform helpers ─────────────────────────────────────── */
 
-/**
- * subform_fields — returns layout + pk for a child form.
- * Does NOT require parent_id. Used by nuSubform.addRow() so the modal
- * can open even when the parent record has not yet been saved.
- */
 function nu_handle_subform_fields() {
     $code = $_GET['code'] ?? '';
     if ($code === '') nu_json(['success' => false, 'error' => 'Missing code'], 400);
@@ -661,7 +654,6 @@ function nu_handle_subform_save() {
 
     $save = [];
 
-    // ── FIX: inject UUID into PK column for uuid-pk subforms on INSERT ────────
     if (!$id && $pkType === 'uuid') {
         $save[$pk] = nu_generate_uuid();
     }
@@ -672,7 +664,6 @@ function nu_handle_subform_save() {
         $type = nu_field_type($field);
         if (in_array($type, ['html','heading','divider','fieldset','subform','button'], true)) continue;
         if ($type === 'uuid') {
-            // Layout uuid field — skip on INSERT (PK already set above); preserve on UPDATE
             if (!$id) continue;
             if (!empty($data[$name])) $save[$name] = $data[$name];
             continue;
@@ -688,7 +679,6 @@ function nu_handle_subform_save() {
         $save[$fk] = $parentId;
     }
 
-    // Guard: must have at least one column beyond the PK itself
     $saveWithoutPk = array_filter($save, fn($k) => $k !== $pk, ARRAY_FILTER_USE_KEY);
     if (!$id && !$saveWithoutPk && !($pkType === 'uuid')) {
         nu_json(['success' => false, 'error' => 'No fields to save'], 400);
@@ -697,7 +687,6 @@ function nu_handle_subform_save() {
     if ($id) {
         $sets = []; $params = [];
         foreach ($save as $col => $val) {
-            // Never update the PK column itself
             if ($col === $pk) continue;
             $sets[] = "`{$col}` = ?"; $params[] = $val;
         }
@@ -823,7 +812,6 @@ function nu_handle_save() {
 
     $save = [];
 
-    // ── FIX Bug 1: inject UUID into the actual PK column on INSERT ────────────
     if (!$id && $pkType === 'uuid') {
         $save[$pk] = nu_generate_uuid();
     }
@@ -843,7 +831,6 @@ function nu_handle_save() {
         $save[$name] = ($type === 'checkbox') ? (!empty($data[$name]) ? 1 : 0) : ($data[$name] ?? null);
     }
 
-    // ── FIX Bug 2: guard moved to AFTER uuid PK injection ─────────────────────
     $saveWithoutPk = array_filter($save, fn($k) => $k !== $pk, ARRAY_FILTER_USE_KEY);
     if (!$id && empty($saveWithoutPk) && $pkType !== 'uuid') {
         nu_json(['success' => false, 'error' => 'No fields to save'], 400);
