@@ -2,12 +2,14 @@
 /**
  * api/email.php
  * REST API endpoint for email operations:
- *   POST /api/email.php  action=send          - Send email (direct or via template)
- *   POST /api/email.php  action=test          - Send test email to verify SMTP config
- *   GET  /api/email.php  action=templates     - List all email templates
- *   POST /api/email.php  action=save_template - Create or update a template
- *   POST /api/email.php  action=delete_template - Delete a template
- *   GET  /api/email.php  action=logs          - Retrieve email log
+ *   POST  action=send            - Send email (direct or via template)
+ *   POST  action=test            - Send test email to verify SMTP config
+ *   GET   action=templates       - List all email templates
+ *   POST  action=save_template   - Create or update a template
+ *   POST  action=delete_template - Delete a template
+ *   GET   action=logs            - Paginated email send log
+ *   GET   action=get_settings    - Retrieve DB email settings
+ *   POST  action=save_settings   - Persist email settings to DB
  */
 
 require_once __DIR__ . '/../config.php';
@@ -45,7 +47,6 @@ try {
 
             if (!$to) throw new \InvalidArgumentException('Recipient (to) is required.');
 
-            // If a template slug is given, render it
             if ($tplSlug) {
                 $rendered = EmailService::renderTemplate($tplSlug, $vars);
                 if (!$rendered) throw new \RuntimeException("Template '{$tplSlug}' not found or inactive.");
@@ -65,7 +66,7 @@ try {
             $to  = $input['to'] ?? ($_SESSION['user_email'] ?? '');
             if (!$to) throw new \InvalidArgumentException('Recipient email required.');
             $svc    = new EmailService();
-            $result = $svc->send($to, 'nub5-dev Email Test', '<h2>Email system working ✓</h2><p>Your nub5-dev email configuration is correct.</p>');
+            $result = $svc->send($to, 'nub5-dev Email Test', '<h2 style="font-family:sans-serif">Email system working ✓</h2><p style="font-family:sans-serif">Your nub5-dev email configuration is correct.</p>');
             echo json_encode($result);
             break;
 
@@ -119,6 +120,33 @@ try {
             while ($row = $rows->fetch_assoc()) $logs[] = $row;
             $total  = $db->query("SELECT COUNT(*) AS c FROM nu_email_log")->fetch_assoc()['c'];
             echo json_encode(['success' => true, 'data' => $logs, 'total' => $total]);
+            break;
+
+        // ------------------------------------------------------------------
+        case 'get_settings':
+            $rows   = $db->query("SELECT setting_key, setting_value FROM nu_email_settings");
+            $config = [];
+            while ($row = $rows->fetch_assoc()) {
+                $config[$row['setting_key']] = $row['setting_value'];
+            }
+            echo json_encode(['success' => true, 'data' => $config]);
+            break;
+
+        // ------------------------------------------------------------------
+        case 'save_settings':
+            $settings = $input['settings'] ?? [];
+            if (empty($settings)) throw new \InvalidArgumentException('No settings provided.');
+
+            foreach ($settings as $setting) {
+                $key   = $db->real_escape_string($setting['key']   ?? '');
+                $value = $db->real_escape_string($setting['value'] ?? '');
+                if (!$key) continue;
+                // UPSERT
+                $db->query("INSERT INTO nu_email_settings (setting_key, setting_value)
+                            VALUES ('{$key}', '{$value}')
+                            ON DUPLICATE KEY UPDATE setting_value='{$value}', updated_at=NOW()");
+            }
+            echo json_encode(['success' => true, 'message' => 'Settings saved.']);
             break;
 
         // ------------------------------------------------------------------

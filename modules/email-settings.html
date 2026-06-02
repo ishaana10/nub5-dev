@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email Settings — nub5-dev</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<style>
+/* ============================
+   DESIGN TOKENS
+============================ */
+:root, [data-theme="light"] {
+  --font-body: 'Satoshi', system-ui, sans-serif;
+  --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+  --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+  --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
+  --space-4: 1rem;    --space-5: 1.25rem; --space-6: 1.5rem;
+  --space-8: 2rem;    --space-10: 2.5rem; --space-12: 3rem;
+  --radius-sm: 0.375rem; --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;  --radius-xl: 1rem;
+  --color-bg:             #f7f6f2;
+  --color-surface:        #f9f8f5;
+  --color-surface-2:      #fbfbf9;
+  --color-surface-offset: #f3f0ec;
+  --color-divider:        #dcd9d5;
+  --color-border:         #d4d1ca;
+  --color-text:           #28251d;
+  --color-text-muted:     #7a7974;
+  --color-text-faint:     #bab9b4;
+  --color-primary:        #01696f;
+  --color-primary-hover:  #0c4e54;
+  --color-success:        #437a22;
+  --color-success-highlight: #d4dfcc;
+  --color-error:          #a12c7b;
+  --color-error-highlight: #e0ced7;
+  --color-warning:        #964219;
+  --color-warning-highlight: #ddcfc6;
+  --shadow-sm: 0 1px 2px oklch(0.2 0.01 80 / 0.06);
+  --shadow-md: 0 4px 12px oklch(0.2 0.01 80 / 0.08);
+  --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-theme="dark"] {
+  --color-bg:             #171614;
+  --color-surface:        #1c1b19;
+  --color-surface-2:      #201f1d;
+  --color-surface-offset: #1d1c1a;
+  --color-divider:        #262523;
+  --color-border:         #393836;
+  --color-text:           #cdccca;
+  --color-text-muted:     #797876;
+  --color-text-faint:     #5a5957;
+  --color-primary:        #4f98a3;
+  --color-primary-hover:  #227f8b;
+  --color-success:        #6daa45;
+  --color-success-highlight: #3a4435;
+  --color-error:          #d163a7;
+  --color-error-highlight: #4c3d46;
+  --color-warning:        #bb653b;
+  --color-warning-highlight: #564942;
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.2);
+  --shadow-md: 0 4px 12px oklch(0 0 0 / 0.3);
+}
+
+/* ============================
+   BASE
+============================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  color: var(--color-text);
+  background: var(--color-bg);
+  min-height: 100dvh;
+  transition: background var(--transition), color var(--transition);
+}
+input, select, textarea, button { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: none; }
+
+/* ============================
+   LAYOUT
+============================ */
+.page-shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100dvh;
+}
+.sidebar {
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+}
+.sidebar-brand {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-primary);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+  margin-bottom: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  transition: background var(--transition), color var(--transition);
+  cursor: pointer;
+}
+.nav-item:hover, .nav-item.active {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+}
+.nav-item.active { font-weight: 500; color: var(--color-primary); }
+.main-content {
+  padding: var(--space-8);
+  max-width: 860px;
+}
+.page-header {
+  margin-bottom: var(--space-8);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.page-title { font-size: var(--text-xl); font-weight: 700; line-height: 1.2; }
+.page-subtitle { font-size: var(--text-sm); color: var(--color-text-muted); margin-top: var(--space-1); }
+
+/* ============================
+   CARDS / SECTIONS
+============================ */
+.settings-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  margin-bottom: var(--space-6);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition);
+}
+.settings-section:hover { box-shadow: var(--shadow-md); }
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+}
+.section-title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.section-icon {
+  width: 28px; height: 28px;
+  background: color-mix(in oklab, var(--color-primary) 12%, var(--color-surface));
+  border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-primary);
+}
+
+/* ============================
+   FORM CONTROLS
+============================ */
+.field-row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  align-items: start;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+.field-row:last-child { border-bottom: none; }
+.field-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  padding-top: 10px;
+}
+.field-desc {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+.form-input, .form-select {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  transition: border-color var(--transition), box-shadow var(--transition);
+  outline: none;
+}
+.form-input:focus, .form-select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 15%, transparent);
+}
+.form-input[type="password"] { letter-spacing: 0.1em; }
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+.toggle-row:last-child { border-bottom: none; }
+.toggle-info { flex: 1; }
+.toggle-label { font-size: var(--text-sm); font-weight: 500; }
+.toggle-desc  { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 2px; }
+/* Toggle switch */
+.toggle {
+  position: relative; display: inline-flex;
+  width: 40px; height: 22px; flex-shrink: 0;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  position: absolute; inset: 0;
+  background: var(--color-border);
+  border-radius: var(--radius-full, 9999px);
+  transition: background var(--transition);
+  cursor: pointer;
+}
+.toggle input:checked + .toggle-track { background: var(--color-primary); }
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  left: 3px; top: 3px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: white;
+  transition: transform var(--transition);
+}
+.toggle input:checked + .toggle-track::after { transform: translateX(18px); }
+
+/* ============================
+   BUTTONS
+============================ */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm); font-weight: 500;
+  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
+  text-decoration: none;
+}
+.btn-primary {
+  background: var(--color-primary); color: white;
+  box-shadow: 0 1px 3px oklch(0.2 0.01 80 / 0.15);
+}
+.btn-primary:hover { background: var(--color-primary-hover); }
+.btn-secondary {
+  background: var(--color-surface-offset);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+.btn-secondary:hover { background: var(--color-divider); }
+.btn-ghost { color: var(--color-text-muted); padding: var(--space-2) var(--space-3); }
+.btn-ghost:hover { color: var(--color-text); background: var(--color-surface-offset); }
+.btn-sm { padding: var(--space-1) var(--space-3); font-size: var(--text-xs); }
+.btn-danger { background: var(--color-error); color: white; }
+
+/* ============================
+   BADGE / STATUS
+============================ */
+.badge {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full, 9999px);
+  font-size: var(--text-xs); font-weight: 500;
+}
+.badge-success { background: var(--color-success-highlight); color: var(--color-success); }
+.badge-error   { background: var(--color-error-highlight); color: var(--color-error); }
+.badge-warning { background: var(--color-warning-highlight); color: var(--color-warning); }
+
+/* ============================
+   ALERTS
+============================ */
+.alert {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.alert-success { background: var(--color-success-highlight); color: var(--color-success); }
+.alert-error   { background: var(--color-error-highlight);   color: var(--color-error); }
+.alert-info    { background: color-mix(in oklab, var(--color-primary) 10%, var(--color-surface)); color: var(--color-primary); }
+
+/* ============================
+   TEMPLATES TABLE
+============================ */
+.data-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.data-table th {
+  text-align: left; padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs); font-weight: 600;
+  color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--color-border);
+}
+.data-table td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-divider);
+  vertical-align: top;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--color-surface-offset); }
+code.slug {
+  background: var(--color-surface-offset);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--color-primary);
+}
+
+/* ============================
+   MODAL
+============================ */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: oklch(0.1 0 0 / 0.5);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  width: 680px;
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-md);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+}
+.modal-title { font-size: var(--text-base); font-weight: 600; }
+.modal-close {
+  width: 28px; height: 28px;
+  border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-text-muted);
+  transition: background var(--transition);
+}
+.modal-close:hover { background: var(--color-surface-offset); color: var(--color-text); }
+.modal-field { margin-bottom: var(--space-4); }
+.modal-field label { display: block; font-size: var(--text-sm); font-weight: 500; margin-bottom: var(--space-1); }
+.modal-field .field-hint { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: var(--space-1); }
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-divider);
+}
+
+/* ============================
+   LOG TABLE
+============================ */
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: var(--space-1);
+}
+.status-sent { background: var(--color-success); }
+.status-fail { background: var(--color-error); }
+
+/* ============================
+   DARK TOGGLE
+============================ */
+.theme-toggle {
+  margin-top: auto;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-divider);
+}
+
+/* ============================
+   TABS
+============================ */
+.tab-bar {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-6);
+  padding: var(--space-1);
+  background: var(--color-surface-offset);
+  border-radius: var(--radius-lg);
+  width: fit-content;
+}
+.tab-btn {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm); font-weight: 500;
+  color: var(--color-text-muted);
+  transition: all var(--transition);
+}
+.tab-btn.active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+.tab-btn:hover:not(.active) { color: var(--color-text); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+@media (max-width: 700px) {
+  .page-shell { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .field-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="page-shell">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-label="nub5-dev logo">
+        <rect x="2" y="3" width="20" height="14" rx="2"/>
+        <path d="M8 21h8M12 17v4"/>
+      </svg>
+      nub5-dev Admin
+    </div>
+    <a class="nav-item" href="../index.php">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Dashboard
+    </a>
+    <a class="nav-item" href="../index.php#forms">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>
+      Forms
+    </a>
+    <a class="nav-item active">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      Email Settings
+    </a>
+    <div class="theme-toggle">
+      <button class="nav-item" data-theme-toggle aria-label="Toggle dark mode" style="width:100%;">
+        <svg id="themeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        Toggle Theme
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Email Settings</h1>
+        <p class="page-subtitle">Configure SMTP, manage templates, and view send history.</p>
+      </div>
+      <div id="connectionStatus" style="display:none"></div>
+    </div>
+
+    <div id="alertArea"></div>
+
+    <!-- TABS -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('smtp')">SMTP Config</button>
+      <button class="tab-btn" onclick="switchTab('templates')">Templates</button>
+      <button class="tab-btn" onclick="switchTab('logs')">Send Log</button>
+    </div>
+
+    <!-- ============================================================
+         TAB 1: SMTP CONFIG
+    ============================================================ -->
+    <div class="tab-panel active" id="tab-smtp">
+
+      <div class="settings-section">
+        <div class="section-header">
+          <div class="section-title">
+            <div class="section-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            </div>
+            Mail Driver
+          </div>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <div class="toggle-label">Use SMTP Server</div>
+            <div class="toggle-desc">Send via external SMTP (recommended). When off, uses PHP mail().</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="useSmtp" onchange="toggleSmtpFields()">
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="section-header">
+          <div class="section-title">
+            <div class="section-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="m22 3-10 9L2 3"/></svg>
+            </div>
+            SMTP Connection
+          </div>
+        </div>
+        <div id="smtpFields">
+          <div class="field-row">
+            <div>
+              <div class="field-label">Host</div>
+              <div class="field-desc">SMTP server hostname</div>
+            </div>
+            <input class="form-input" id="smtpHost" placeholder="mail.yourdomain.com">
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Port</div>
+              <div class="field-desc">587 (TLS) or 465 (SSL)</div>
+            </div>
+            <input class="form-input" id="smtpPort" type="number" placeholder="587" style="max-width:120px">
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Encryption</div>
+              <div class="field-desc">TLS recommended</div>
+            </div>
+            <select class="form-select" id="smtpSecure" style="max-width:160px">
+              <option value="tls">TLS (STARTTLS)</option>
+              <option value="ssl">SSL</option>
+              <option value="">None</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Username</div>
+              <div class="field-desc">Usually your email address</div>
+            </div>
+            <input class="form-input" id="smtpUsername" placeholder="user@yourdomain.com">
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Password</div>
+              <div class="field-desc">SMTP account password</div>
+            </div>
+            <div style="position:relative">
+              <input class="form-input" id="smtpPassword" type="password" placeholder="••••••••">
+              <button onclick="togglePwd()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--color-text-muted);" title="Show/Hide">
+                <svg id="pwdIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="section-header">
+          <div class="section-title">
+            <div class="section-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            Sender Identity
+          </div>
+        </div>
+        <div class="field-row">
+          <div><div class="field-label">From Name</div><div class="field-desc">Display name shown to recipients</div></div>
+          <input class="form-input" id="fromName" placeholder="My App">
+        </div>
+        <div class="field-row">
+          <div><div class="field-label">From Email</div><div class="field-desc">Must match your SMTP account</div></div>
+          <input class="form-input" id="fromEmail" type="email" placeholder="noreply@yourdomain.com">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="saveSmtpSettings()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save Settings
+        </button>
+        <button class="btn btn-secondary" onclick="openTestModal()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Send Test Email
+        </button>
+      </div>
+
+      <div style="margin-top:var(--space-6);padding:var(--space-4);background:var(--color-surface-offset);border-radius:var(--radius-lg);">
+        <p style="font-size:var(--text-xs);color:var(--color-text-muted);line-height:1.7;">
+          <strong style="color:var(--color-text);">Note:</strong> These settings are saved to <code>nu_email_settings</code> in the database.
+          For production environments, you can also hard-code constants in <code>config.php</code> which take priority over DB values.
+          A2Hosting SMTP credentials are in <strong>cPanel &rarr; Email Accounts &rarr; Connect Devices</strong>.
+        </p>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         TAB 2: TEMPLATES
+    ============================================================ -->
+    <div class="tab-panel" id="tab-templates">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-4);">
+        <p style="font-size:var(--text-sm);color:var(--color-text-muted);">HTML email templates with <code>{{variable}}</code> placeholder support.</p>
+        <button class="btn btn-primary btn-sm" onclick="openTemplateModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Template
+        </button>
+      </div>
+      <div class="settings-section" style="padding:0;overflow:hidden;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Slug</th>
+              <th>Subject</th>
+              <th>Status</th>
+              <th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="templatesBody">
+            <tr><td colspan="5" style="text-align:center;padding:var(--space-8);color:var(--color-text-muted);">Loading templates&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         TAB 3: SEND LOG
+    ============================================================ -->
+    <div class="tab-panel" id="tab-logs">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-4);">
+        <p style="font-size:var(--text-sm);color:var(--color-text-muted);">Last 50 email send attempts.</p>
+        <button class="btn btn-secondary btn-sm" onclick="loadLogs()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+      </div>
+      <div class="settings-section" style="padding:0;overflow:hidden;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Recipient</th>
+              <th>Subject</th>
+              <th>Status</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody id="logsBody">
+            <tr><td colspan="5" style="text-align:center;padding:var(--space-8);color:var(--color-text-muted);">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ============================================================
+     MODAL: Send Test Email
+============================================================ -->
+<div class="modal-overlay" id="testModal">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-header">
+      <span class="modal-title">Send Test Email</span>
+      <button class="modal-close" onclick="closeModal('testModal')">&#10005;</button>
+    </div>
+    <div class="modal-field">
+      <label for="testEmailTo">Send to</label>
+      <input class="form-input" id="testEmailTo" type="email" placeholder="you@example.com">
+      <div class="field-hint">A test message will be sent to verify your SMTP settings.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('testModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="sendTestEmail()" id="testSendBtn">Send Test</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL: Create / Edit Template
+============================================================ -->
+<div class="modal-overlay" id="templateModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="modalTemplateTitle">New Template</span>
+      <button class="modal-close" onclick="closeModal('templateModal')">&#10005;</button>
+    </div>
+    <input type="hidden" id="tplId">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);">
+      <div class="modal-field">
+        <label for="tplName">Name</label>
+        <input class="form-input" id="tplName" placeholder="Welcome Email">
+      </div>
+      <div class="modal-field">
+        <label for="tplSlug">Slug <span style="font-size:var(--text-xs);color:var(--color-text-muted);">(unique key)</span></label>
+        <input class="form-input" id="tplSlug" placeholder="welcome_email">
+        <div class="field-hint">Used in PHP: EmailService::renderTemplate('slug', [...])</div>
+      </div>
+    </div>
+    <div class="modal-field">
+      <label for="tplSubject">Subject <span style="font-size:var(--text-xs);color:var(--color-text-muted);">supports {{variables}}</span></label>
+      <input class="form-input" id="tplSubject" placeholder="Hello {{user_name}}!">
+    </div>
+    <div class="modal-field">
+      <label for="tplDesc">Description</label>
+      <input class="form-input" id="tplDesc" placeholder="Optional internal note">
+    </div>
+    <div class="modal-field">
+      <label for="tplBody">Body (HTML) <span style="font-size:var(--text-xs);color:var(--color-text-muted);">supports {{variables}}</span></label>
+      <textarea class="form-input" id="tplBody" rows="10" style="font-family:monospace;font-size:13px;resize:vertical;" placeholder="<p>Hello {{user_name}},</p>&#10;<p>Your content here.</p>"></textarea>
+    </div>
+    <div class="modal-field">
+      <label style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer;">
+        <label class="toggle" style="margin:0">
+          <input type="checkbox" id="tplActive" checked>
+          <span class="toggle-track"></span>
+        </label>
+        <span>Active (visible to send functions)</span>
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('templateModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTemplate()">Save Template</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// THEME TOGGLE
+// ============================================================
+(function(){
+  const t=document.querySelector('[data-theme-toggle]'),r=document.documentElement;
+  let d=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+  r.setAttribute('data-theme',d);
+  const icon=document.getElementById('themeIcon');
+  t&&t.addEventListener('click',()=>{
+    d=d==='dark'?'light':'dark';
+    r.setAttribute('data-theme',d);
+  });
+})();
+
+// ============================================================
+// TAB SWITCHING
+// ============================================================
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+    const tabs=['smtp','templates','logs'];
+    b.classList.toggle('active', tabs[i]===name);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='templates') loadTemplates();
+  if(name==='logs')      loadLogs();
+}
+
+// ============================================================
+// ALERT HELPER
+// ============================================================
+function showAlert(msg, type='success', duration=4000) {
+  const area = document.getElementById('alertArea');
+  const icons = {
+    success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>',
+    error:   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+    info:    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+  };
+  area.innerHTML = `<div class="alert alert-${type}">${icons[type]||''} ${msg}</div>`;
+  if(duration) setTimeout(()=>area.innerHTML='', duration);
+}
+
+// ============================================================
+// SMTP SETTINGS
+// ============================================================
+function toggleSmtpFields() {
+  const on = document.getElementById('useSmtp').checked;
+  document.getElementById('smtpFields').style.opacity = on ? '1' : '0.4';
+  document.getElementById('smtpFields').style.pointerEvents = on ? 'auto' : 'none';
+}
+
+async function saveSmtpSettings() {
+  const driver = document.getElementById('useSmtp').checked ? 'smtp' : 'mail';
+  const settings = [
+    { key: 'driver',        value: driver },
+    { key: 'smtp_host',     value: document.getElementById('smtpHost').value },
+    { key: 'smtp_port',     value: document.getElementById('smtpPort').value || '587' },
+    { key: 'smtp_secure',   value: document.getElementById('smtpSecure').value },
+    { key: 'smtp_username', value: document.getElementById('smtpUsername').value },
+    { key: 'smtp_password', value: document.getElementById('smtpPassword').value },
+    { key: 'from_name',     value: document.getElementById('fromName').value },
+    { key: 'from_email',    value: document.getElementById('fromEmail').value },
+  ];
+
+  try {
+    const res = await fetch('../api/email.php', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 'save_settings', settings })
+    });
+    const data = await res.json();
+    if(data.success) showAlert('Settings saved successfully.', 'success');
+    else showAlert('Save failed: ' + data.message, 'error');
+  } catch(e) {
+    showAlert('Network error: ' + e.message, 'error');
+  }
+}
+
+async function loadSmtpSettings() {
+  try {
+    const res  = await fetch('../api/email.php?action=get_settings');
+    const data = await res.json();
+    if(!data.success) return;
+    const s = data.data;
+    document.getElementById('useSmtp').checked    = (s.driver === 'smtp');
+    document.getElementById('smtpHost').value     = s.smtp_host     || '';
+    document.getElementById('smtpPort').value     = s.smtp_port     || '587';
+    document.getElementById('smtpSecure').value   = s.smtp_secure   || 'tls';
+    document.getElementById('smtpUsername').value = s.smtp_username || '';
+    document.getElementById('smtpPassword').value = s.smtp_password || '';
+    document.getElementById('fromName').value     = s.from_name     || '';
+    document.getElementById('fromEmail').value    = s.from_email    || '';
+    toggleSmtpFields();
+  } catch(e) { console.warn('Could not load settings:', e); }
+}
+
+// ============================================================
+// TEST EMAIL
+// ============================================================
+function openTestModal() {
+  document.getElementById('testModal').classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+async function sendTestEmail() {
+  const to = document.getElementById('testEmailTo').value.trim();
+  if(!to) { showAlert('Please enter a recipient email.', 'error'); return; }
+  const btn = document.getElementById('testSendBtn');
+  btn.textContent = 'Sending...';
+  btn.disabled = true;
+  try {
+    const res  = await fetch('../api/email.php', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 'test', to })
+    });
+    const data = await res.json();
+    closeModal('testModal');
+    if(data.success) showAlert('Test email sent to ' + to, 'success');
+    else showAlert('Send failed: ' + data.message, 'error');
+  } catch(e) {
+    showAlert('Network error: ' + e.message, 'error');
+  }
+  btn.textContent = 'Send Test';
+  btn.disabled = false;
+}
+
+// ============================================================
+// TEMPLATES
+// ============================================================
+let templates = [];
+
+async function loadTemplates() {
+  try {
+    const res  = await fetch('../api/email.php?action=templates');
+    const data = await res.json();
+    templates  = data.success ? data.data : [];
+    renderTemplatesTable();
+  } catch(e) {
+    document.getElementById('templatesBody').innerHTML =
+      `<tr><td colspan="5" style="color:var(--color-error);padding:var(--space-4);">Failed to load: ${e.message}</td></tr>`;
+  }
+}
+
+function renderTemplatesTable() {
+  const tbody = document.getElementById('templatesBody');
+  if(!templates.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:var(--space-8);color:var(--color-text-muted);">No templates yet. Click <strong>New Template</strong> to create one.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = templates.map(t => `
+    <tr>
+      <td style="font-weight:500">${esc(t.name)}</td>
+      <td><code class="slug">${esc(t.slug)}</code></td>
+      <td style="color:var(--color-text-muted);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.subject)}</td>
+      <td>
+        ${t.is_active == 1
+          ? '<span class="badge badge-success">Active</span>'
+          : '<span class="badge badge-error">Inactive</span>'}
+      </td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick='editTemplate(${JSON.stringify(t).replace(/"/g,"&quot;")})'>Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--color-error)" onclick="deleteTemplate(${t.id})">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openTemplateModal() {
+  document.getElementById('modalTemplateTitle').textContent = 'New Template';
+  document.getElementById('tplId').value      = '';
+  document.getElementById('tplName').value    = '';
+  document.getElementById('tplSlug').value    = '';
+  document.getElementById('tplSubject').value = '';
+  document.getElementById('tplDesc').value    = '';
+  document.getElementById('tplBody').value    = '';
+  document.getElementById('tplActive').checked = true;
+  document.getElementById('templateModal').classList.add('open');
+}
+
+function editTemplate(t) {
+  document.getElementById('modalTemplateTitle').textContent = 'Edit Template';
+  document.getElementById('tplId').value      = t.id || '';
+  document.getElementById('tplName').value    = t.name || '';
+  document.getElementById('tplSlug').value    = t.slug || '';
+  document.getElementById('tplSubject').value = t.subject || '';
+  document.getElementById('tplDesc').value    = t.description || '';
+  document.getElementById('tplBody').value    = t.body || '';
+  document.getElementById('tplActive').checked = t.is_active == 1;
+  document.getElementById('templateModal').classList.add('open');
+}
+
+async function saveTemplate() {
+  const payload = {
+    action:      'save_template',
+    id:          document.getElementById('tplId').value || 0,
+    name:        document.getElementById('tplName').value,
+    slug:        document.getElementById('tplSlug').value,
+    subject:     document.getElementById('tplSubject').value,
+    description: document.getElementById('tplDesc').value,
+    body:        document.getElementById('tplBody').value,
+    is_active:   document.getElementById('tplActive').checked ? 1 : 0,
+  };
+  if(!payload.name||!payload.slug||!payload.subject||!payload.body) {
+    showAlert('Name, slug, subject, and body are required.', 'error'); return;
+  }
+  try {
+    const res  = await fetch('../api/email.php', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(data.success) {
+      closeModal('templateModal');
+      showAlert(payload.id ? 'Template updated.' : 'Template created.', 'success');
+      loadTemplates();
+    } else {
+      showAlert('Error: ' + data.message, 'error');
+    }
+  } catch(e) { showAlert('Network error: '+e.message,'error'); }
+}
+
+async function deleteTemplate(id) {
+  if(!confirm('Delete this template? This cannot be undone.')) return;
+  try {
+    const res  = await fetch('../api/email.php', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'delete_template', id })
+    });
+    const data = await res.json();
+    if(data.success) { showAlert('Template deleted.','success'); loadTemplates(); }
+    else showAlert('Error: '+data.message,'error');
+  } catch(e) { showAlert('Network error: '+e.message,'error'); }
+}
+
+// ============================================================
+// SEND LOG
+// ============================================================
+async function loadLogs() {
+  const tbody = document.getElementById('logsBody');
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:var(--space-4);color:var(--color-text-muted);">Loading&hellip;</td></tr>';
+  try {
+    const res  = await fetch('../api/email.php?action=logs&limit=50');
+    const data = await res.json();
+    if(!data.success || !data.data.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:var(--space-8);color:var(--color-text-muted);">No emails sent yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.data.map(row => `
+      <tr>
+        <td style="white-space:nowrap;color:var(--color-text-muted);font-size:var(--text-xs)">${esc(row.sent_at)}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(row.recipient)}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(row.subject)}</td>
+        <td>
+          ${ row.status==='SENT'
+            ? '<span class="badge badge-success"><span class="status-dot status-sent"></span>Sent</span>'
+            : '<span class="badge badge-error"><span class="status-dot status-fail"></span>Failed</span>' }
+        </td>
+        <td style="font-size:var(--text-xs);color:var(--color-error);max-width:160px">${esc(row.error_message||'')}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--color-error)">Error: ${e.message}</td></tr>`;
+  }
+}
+
+// ============================================================
+// PASSWORD SHOW/HIDE
+// ============================================================
+function togglePwd() {
+  const f = document.getElementById('smtpPassword');
+  f.type = f.type === 'password' ? 'text' : 'password';
+}
+
+// ============================================================
+// UTILS
+// ============================================================
+function esc(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Close modal on backdrop click
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if(e.target===m) m.classList.remove('open'); });
+});
+
+// ============================================================
+// INIT
+// ============================================================
+loadSmtpSettings();
+</script>
+</body>
+</html>
