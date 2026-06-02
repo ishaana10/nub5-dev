@@ -1767,9 +1767,17 @@ window.saveForm = async function () {
     browse_search_fields:      _elv('formBrowseSearchFields'),
     browse_page_size:          _elv('formBrowsePageSize') || 20,
     browse_default_sort:       _elv('formBrowseDefaultSort'),
+    /*browse_display_mode:       (function () {
+      var el = document.querySelector('input[name="browseDisplayMode"]:checked');
+      return el ? el.value : 'inline';
+    })()*/
     browse_display_mode:       (function () {
       var el = document.querySelector('input[name="browseDisplayMode"]:checked');
       return el ? el.value : 'inline';
+    })(),
+    form_type:                 (function () {
+      var el = document.querySelector('input[name="formType"]:checked');
+      return el ? el.value : 'main';
     })()
   };
 
