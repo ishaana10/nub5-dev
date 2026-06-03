@@ -50,7 +50,7 @@ function actionGet($db) {
     }
 }
 
-// ── LIST all forms ────────────────────────────────────────────────────────
+// ── LIST all active forms ─────────────────────────────────────────────────
 function actionList($db) {
     try {
         $forms = $db->fetchAll(
@@ -58,6 +58,7 @@ function actionList($db) {
                     form_table_mode, form_pk_type, browse_display_mode,
                     created_at, updated_at
              FROM nu_forms
+             WHERE form_active = 1
              ORDER BY updated_at DESC, form_name ASC'
         );
         echo json_encode(['success' => true, 'forms' => $forms]);
@@ -85,6 +86,7 @@ function actionSave($db) {
     }
     if (!$formCode) {
         $formCode = preg_replace('/[^a-z0-9]+/', '_', strtolower($formName));
+        $formCode = trim($formCode, '_');
     }
 
     // Encode layout if it's an array
@@ -93,27 +95,34 @@ function actionSave($db) {
         $formLayout = json_encode($formLayout);
     }
 
+    // Validate form_type
+    $allowedTypes = ['main', 'subform', 'popup', 'report'];
+    $formType = in_array($data['form_type'] ?? '', $allowedTypes, true)
+        ? $data['form_type']
+        : 'main';
+
     $row = [
-        'form_name'                => $formName,
-        'form_code'                => $formCode,
-        'form_table'               => $data['form_table']               ?? '',
-        'form_type'                => $data['form_type']                ?? 'main',
-        'form_table_mode'          => $data['form_table_mode']          ?? 'new',
-        'form_pk_type'             => $data['form_pk_type']             ?? 'autoincrement',
-        'form_layout'              => $formLayout,
-        'browse_sql'               => $data['browse_sql']               ?? '',
-        'browse_columns'           => $data['browse_columns']           ?? '',
-        'browse_search_enabled'    => isset($data['browse_search_enabled'])    ? (int)$data['browse_search_enabled']    : 0,
-        'browse_search_placeholder'=> $data['browse_search_placeholder'] ?? '',
-        'browse_search_fields'     => $data['browse_search_fields']     ?? '',
-        'browse_page_size'         => isset($data['browse_page_size'])  ? (int)$data['browse_page_size']  : 20,
-        'browse_default_sort'      => $data['browse_default_sort']      ?? '',
-        'browse_display_mode'      => $data['browse_display_mode']      ?? 'inline',
-        'form_custom_js'           => $data['form_custom_js']           ?? '',
-        'form_js_before_save'      => $data['form_js_before_save']      ?? '',
-        'form_js_after_save'       => $data['form_js_after_save']       ?? '',
-        'form_custom_php'          => $data['form_custom_php']          ?? '',
-        'form_custom_css'          => $data['form_custom_css']          ?? '',
+        'form_name'                 => $formName,
+        'form_code'                 => $formCode,
+        'form_table'                => $data['form_table']               ?? '',
+        'form_type'                 => $formType,
+        'form_table_mode'           => $data['form_table_mode']          ?? 'new',
+        'form_pk_type'              => $data['form_pk_type']             ?? 'autoincrement',
+        'form_layout'               => $formLayout,
+        'browse_sql'                => $data['browse_sql']               ?? '',
+        'browse_columns'            => $data['browse_columns']           ?? '',
+        'browse_search_enabled'     => isset($data['browse_search_enabled'])    ? (int)$data['browse_search_enabled']    : 0,
+        'browse_search_placeholder' => $data['browse_search_placeholder'] ?? '',
+        'browse_search_fields'      => $data['browse_search_fields']     ?? '',
+        'browse_page_size'          => isset($data['browse_page_size'])  ? max(1, (int)$data['browse_page_size'])  : 20,
+        'browse_default_sort'       => $data['browse_default_sort']      ?? '',
+        'browse_display_mode'       => in_array($data['browse_display_mode'] ?? '', ['inline','modal','fullpage'], true)
+                                           ? $data['browse_display_mode'] : 'inline',
+        'form_custom_js'            => $data['form_custom_js']           ?? '',
+        'form_js_before_save'       => $data['form_js_before_save']      ?? '',
+        'form_js_after_save'        => $data['form_js_after_save']       ?? '',
+        'form_custom_php'           => $data['form_custom_php']          ?? '',
+        'form_custom_css'           => $data['form_custom_css']          ?? '',
     ];
 
     try {
@@ -129,11 +138,13 @@ function actionSave($db) {
                 [$formCode]
             );
             if ($existing) {
-                echo json_encode(['success' => false, 'error' => 'Form code \'' . $formCode . '\' already exists']);
+                echo json_encode(['success' => false, 'error' => "Form code '{$formCode}' already exists"]);
                 return;
             }
-            $row['created_at'] = date('Y-m-d H:i:s');
-            $row['updated_at'] = date('Y-m-d H:i:s');
+            // FIX: Always set form_active=1 on insert so the form appears in listings
+            $row['form_active'] = 1;
+            $row['created_at']  = date('Y-m-d H:i:s');
+            $row['updated_at']  = date('Y-m-d H:i:s');
             $db->insert('nu_forms', $row);
             $newId = $db->lastInsertId();
             echo json_encode(['success' => true, 'form_id' => $newId]);
@@ -143,15 +154,26 @@ function actionSave($db) {
     }
 }
 
-// ── DELETE a form ─────────────────────────────────────────────────────────
+// ── DELETE (soft-delete) a form ───────────────────────────────────────────
 function actionDelete($db) {
-    $id = $_GET['id'] ?? '';
+    $id = intval($_GET['id'] ?? 0);
     if (!$id) {
-        echo json_encode(['success' => false, 'error' => 'Missing id']);
+        echo json_encode(['success' => false, 'error' => 'Missing or invalid id']);
         return;
     }
     try {
-        $db->query('DELETE FROM nu_forms WHERE form_id = ?', [$id]);
+        // FIX: Soft-delete — check form exists first, then mark inactive
+        $form = $db->fetchOne('SELECT form_id FROM nu_forms WHERE form_id = ?', [$id]);
+        if (!$form) {
+            echo json_encode(['success' => false, 'error' => 'Form not found']);
+            return;
+        }
+        $db->update(
+            'nu_forms',
+            ['form_active' => 0, 'updated_at' => date('Y-m-d H:i:s')],
+            'form_id = ?',
+            [$id]
+        );
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
