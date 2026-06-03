@@ -129,6 +129,14 @@ window.NuApp = {
     return json;
   },
 
+  // ─── PATCH 2 helper: stamp parent_id onto subform containers ────────────────
+  _stampSubformParentId(box, recordId) {
+    if (!recordId) return;
+    box.querySelectorAll('.nu-subform-container').forEach(function (el) {
+      el.dataset.parentId = String(recordId);
+    });
+  },
+
   _dispatchFormOpened(box) {
     if (window.nuSubform && typeof window.nuSubform.initAll === 'function') {
       window.nuSubform.initAll(box);
@@ -295,6 +303,8 @@ window.NuApp = {
       applySize(currentSize);
       overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
+      // PATCH 2: previewForm is always a new (no-id) form — no parent_id to stamp
+      // subform containers will start in pending-queue mode (parentId = '')
       this._dispatchFormOpened(box);
       if (window.nuForm && typeof window.nuForm.init === 'function') {
         const formEl = overlay.querySelector('.nu-generated-form');
@@ -353,6 +363,9 @@ window.NuApp = {
       overlay.appendChild(box);
       document.body.appendChild(overlay);
       overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+      // PATCH 2: stamp the known record id onto subform containers before initAll runs
+      this._stampSubformParentId(box, id);
 
       this._dispatchFormOpened(box);
       if (window.nuForm && typeof window.nuForm.init === 'function') {
@@ -702,6 +715,7 @@ window.closeNuForm = function (btn) {
   NuApp.loadModule('forms');
 };
 
+// ─── PATCH 1: submitNuForm dispatches nu:parent:saved after successful save ───
 window.submitNuForm = async function (formElement) {
   if (!formElement) { NuApp.toast('Form element not found', 'error'); return; }
   const formCode = formElement.dataset.formCode;
@@ -729,6 +743,18 @@ window.submitNuForm = async function (formElement) {
       body: JSON.stringify(data)
     });
     if (!json.success) { NuApp.toast(json.error || 'Save failed', 'error'); return; }
+
+    const savedId = (json.data && (json.data.id || json.data.record_id)) || recordId || '';
+
+    // PATCH 1: fire nu:parent:saved so nuSubform.onParentSaved() flushes pending rows
+    if (savedId) {
+      const overlay = formElement.closest('.nu-form-overlay');
+      const scope   = overlay || formElement.closest('[data-sf-scope]') || document;
+      document.dispatchEvent(new CustomEvent('nu:parent:saved', {
+        detail: { id: savedId, scope: scope }
+      }));
+    }
+
     NuApp.toast(recordId ? 'Updated' : 'Saved');
     const overlay = formElement.closest('.nu-form-overlay');
     if (overlay) overlay.remove();
@@ -1224,137 +1250,239 @@ window.nbFormBuilder = (function () {
     return body;
   }
 
-  // ── public helpers used by inline onclick attrs ────────────────────────────
-  function _addRowToContainer(bodyEl) {
-    if (!bodyEl) return;
-    _addRow(bodyEl);
-  }
-  function _addGroupToContainer(bodyEl) {
-    if (!bodyEl) return;
-    _addGroup(bodyEl);
-  }
+  // ── public helpers used by inline onclick handlers ──────────────────────────
   function _addFieldToRow(btn) {
     var rowBody = btn.closest('.nb-row').querySelector('.nb-row-body');
     if (rowBody) _addFieldTo(rowBody, 'text');
   }
+  function _addRowToContainer(body) { if (body) _addRow(body); }
+  function _addGroupToContainer(body) { if (body) _addGroup(body); }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // SERIALIZE — walks the canvas DOM and produces the layout JSON
-  // ─────────────────────────────────────────────────────────────────────────────
-  function _serializeField(card) {
-    var type = card.dataset.type || 'text';
-    var col  = parseInt(card.dataset.col, 10) || 12;
-    var body = card.querySelector('.nb-cfield-body');
-    if (!body) return { type: type, col: col };
-
-    function v(sel)  { var el = body.querySelector(sel); return el ? el.value.trim() : ''; }
-    function chk(sel){ var el = body.querySelector(sel); return el ? el.checked : false; }
-
-    var obj = {
-      type:     type,
-      col:      col,
-      label:    v('.nu-builder-label'),
-      name:     v('.nu-builder-name'),
-      required: chk('.nu-field-required')
-    };
-
-    var extras = [
-      ['default_value',  '.nu-field-default'],
-      ['placeholder',    '.nu-field-placeholder'],
-      ['help_text',      '.nu-field-help'],
-      ['css_class',      '.nu-field-cssclass'],
-      ['tab',            '.nu-field-tab'],
-      ['visibility_rule','.nu-field-vis'],
-      ['readonly_rule',  '.nu-field-readonly'],
-      ['js_onchange',    '.nu-field-onchange']
-    ];
-    extras.forEach(function (e) {
-      var val = v(e[1]);
-      if (val !== '') obj[e[0]] = val;
-    });
-
-    if (type === 'textarea') { var r = v('.nu-field-rows'); if (r) obj.rows = parseInt(r, 10); }
-    if (type === 'number' || type === 'range') {
-      var mn = v('.nu-field-min'); var mx = v('.nu-field-max'); var st = v('.nu-field-step');
-      if (mn) obj.min = mn; if (mx) obj.max = mx; if (st) obj.step = st;
-    }
-    if (type === 'file') {
-      var acc = v('.nu-field-accept'); if (acc) obj.accept = acc;
-      obj.multiple_upload = chk('.nu-field-multiple-upload');
-    }
-    if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
-      var srcType = v('.nu-select-source-type') || 'static';
-      obj.source_type = srcType;
-      if (srcType === 'sql') {
-        obj.sql_source = v('.nu-select-sql');
-      } else {
-        var lines = v('.nu-select-static').split('\n');
-        obj.options = lines.filter(function (l) { return l.trim(); }).map(function (l) {
-          var parts = l.split('|');
-          return { value: (parts[0] || '').trim(), label: (parts[1] || parts[0] || '').trim() };
-        });
-      }
-      if (type === 'select') {
-        obj.multiple = chk('.nu-field-multiple');
-        obj.select2  = chk('.nu-field-select2');
-      }
-    }
-    if (type === 'lookup') {
-      var src = v('.nu-lookup-source').split('.');
-      obj.lookup = {
-        table:          src[0] || '',
-        display_column: src[1] || 'name',
-        id_column:      v('.nu-lookup-id') || 'id',
-        filter:         v('.nu-lookup-filter'),
-        extra:          v('.nu-lookup-extra')
-      };
-    }
-    if (type === 'subform') {
-      var cfg = v('.nu-subform-config').split('.');
-      obj.subform = { form_code: cfg[0] || '', fk_field: cfg[1] || '', view: v('.nu-subform-view') || 'grid' };
-    }
-    if (type === 'calculated') { obj.calculated = v('.nu-calc-expression'); }
-    if (type === 'html')       { obj.html_content = v('.nu-html-content'); }
-    if (type === 'button')     { obj.button_action = v('.nu-field-button-action'); obj.legend = v('.nu-field-legend'); }
-
-    return obj;
+  // ── toggle field body open/closed ───────────────────────────────────────────
+  function toggleField(el) {
+    var body = el.classList && el.classList.contains('nb-cfield-body')
+      ? el
+      : (el.closest ? el.closest('.nb-cfield') : null);
+    if (!body) return;
+    var b = body.classList.contains('nb-cfield-body') ? body : body.querySelector('.nb-cfield-body');
+    if (!b) return;
+    b.style.display = b.style.display === 'none' ? 'block' : 'none';
   }
 
-  function _serializeContainer(el) {
-    if (el.classList.contains('nb-row')) {
-      var rowBody = el.querySelector('.nb-row-body');
-      var children = [];
-      if (rowBody) {
-        rowBody.querySelectorAll(':scope > .nb-cfield').forEach(function (c) { children.push(_serializeField(c)); });
-      }
-      return { type: 'row', children: children };
-    }
-    if (el.classList.contains('nb-section')) {
-      var secBody = el.querySelector('.nb-section-body');
-      var secChildren = [];
-      if (secBody) {
-        Array.from(secBody.children).forEach(function (child) {
-          if (child.classList.contains('nb-row'))   secChildren.push(_serializeContainer(child));
-          else if (child.classList.contains('nb-group')) secChildren.push(_serializeContainer(child));
-          else if (child.classList.contains('nb-cfield')) secChildren.push(_serializeField(child));
-        });
-      }
-      var labelInput = el.querySelector('.nb-section-label');
-      return {
-        type:        'section',
-        id:          el.dataset.id || ('s' + Date.now()),
-        label:       (labelInput ? labelInput.value : '') || 'Section',
-        collapsible: el.dataset.collapsible === '1',
-        collapsed:   el.dataset.collapsed   === '1',
-        children:    secChildren
+  // ── toggleSelectSource ───────────────────────────────────────────────────────
+  function toggleSelectSource(sel) {
+    var fp = sel.closest('.nb-fp-grid') || sel.closest('.nb-cfield-body');
+    if (!fp) return;
+    fp.querySelector('.nu-static-block').style.display = sel.value === 'static' ? '' : 'none';
+    fp.querySelector('.nu-sql-block').style.display    = sel.value === 'sql'    ? '' : 'none';
+  }
+
+  // ── serialize canvas to JSON ─────────────────────────────────────────────────
+  function serializeCanvas() {
+    var canvas = _el('formCanvas');
+    if (!canvas) return [];
+    var result = [];
+
+    function serializeField(card) {
+      var type  = card.dataset.type || 'text';
+      var body  = card.querySelector('.nb-cfield-body');
+      var label = body ? (body.querySelector('.nu-builder-label')  || {}).value || '' : '';
+      var name  = body ? (body.querySelector('.nu-builder-name')   || {}).value || '' : '';
+      var col   = parseInt(card.dataset.col, 10) || 12;
+
+      var f = {
+        type:            type,
+        label:           label,
+        name:            name,
+        col:             col,
+        default_value:   body ? ((body.querySelector('.nu-field-default')     || {}).value || '') : '',
+        placeholder:     body ? ((body.querySelector('.nu-field-placeholder') || {}).value || '') : '',
+        help_text:       body ? ((body.querySelector('.nu-field-help')        || {}).value || '') : '',
+        css_class:       body ? ((body.querySelector('.nu-field-cssclass')    || {}).value || '') : '',
+        tab:             body ? ((body.querySelector('.nu-field-tab')         || {}).value || '') : '',
+        visibility_rule: body ? ((body.querySelector('.nu-field-vis')         || {}).value || '') : '',
+        readonly_rule:   body ? ((body.querySelector('.nu-field-readonly')    || {}).value || '') : '',
+        js_onchange:     body ? ((body.querySelector('.nu-field-onchange')    || {}).value || '') : '',
+        required:        body ? !!(body.querySelector('.nu-field-required') || {}).checked : false
       };
+      if (type === 'textarea') {
+        f.rows = body ? parseInt((body.querySelector('.nu-field-rows') || {}).value || 3, 10) : 3;
+      }
+      if (type === 'number' || type === 'range') {
+        f.min  = body ? ((body.querySelector('.nu-field-min')  || {}).value || '') : '';
+        f.max  = body ? ((body.querySelector('.nu-field-max')  || {}).value || '') : '';
+        f.step = body ? ((body.querySelector('.nu-field-step') || {}).value || '') : '';
+      }
+      if (type === 'file') {
+        f.accept          = body ? ((body.querySelector('.nu-field-accept') || {}).value || '') : '';
+        f.multiple_upload = body ? !!(body.querySelector('.nu-field-multiple-upload') || {}).checked : false;
+      }
+      if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
+        var srcSel  = body ? body.querySelector('.nu-select-source-type') : null;
+        f.source_type = srcSel ? srcSel.value : 'static';
+        if (f.source_type === 'static') {
+          var raw = body ? ((body.querySelector('.nu-select-static') || {}).value || '') : '';
+          f.options = raw.split('\n').filter(Boolean).map(function (line) {
+            var parts = line.split('|');
+            return { value: parts[0].trim(), label: (parts[1] || parts[0]).trim() };
+          });
+        } else {
+          f.sql_source = body ? ((body.querySelector('.nu-select-sql') || {}).value || '') : '';
+        }
+        if (type === 'select') {
+          f.multiple = body ? !!(body.querySelector('.nu-field-multiple') || {}).checked : false;
+          f.select2  = body ? !!(body.querySelector('.nu-field-select2')  || {}).checked : false;
+        }
+      }
+      if (type === 'lookup') {
+        var src   = body ? ((body.querySelector('.nu-lookup-source') || {}).value || '') : '';
+        var parts = src.split('.');
+        f.lookup = {
+          table:          parts[0] || '',
+          display_column: parts[1] || 'name',
+          id_column:      body ? ((body.querySelector('.nu-lookup-id')     || {}).value || 'id') : 'id',
+          filter:         body ? ((body.querySelector('.nu-lookup-filter') || {}).value || '')   : '',
+          extra:          body ? ((body.querySelector('.nu-lookup-extra')  || {}).value || '')   : ''
+        };
+      }
+      if (type === 'subform') {
+        var cfg   = body ? ((body.querySelector('.nu-subform-config') || {}).value || '') : '';
+        var cfgParts = cfg.split('.');
+        var viewEl   = body ? body.querySelector('.nu-subform-view') : null;
+        f.subform = {
+          form_code: cfgParts[0] || '',
+          fk_field:  cfgParts[1] || '',
+          view:      viewEl ? viewEl.value : 'grid'
+        };
+      }
+      if (type === 'calculated') {
+        f.calculated = body ? ((body.querySelector('.nu-calc-expression') || {}).value || '') : '';
+      }
+      if (type === 'html') {
+        f.html_content = body ? ((body.querySelector('.nu-html-content') || {}).value || '') : '';
+      }
+      if (type === 'button') {
+        f.button_action = body ? ((body.querySelector('.nu-field-button-action') || {}).value || '') : '';
+        f.legend        = body ? ((body.querySelector('.nu-field-legend')        || {}).value || '') : '';
+      }
+      return f;
     }
-    if (el.classList.contains('nb-group')) {
-      var grpBody = el.querySelector('.nb-group-body');
-      var grpChildren = [];
-      if (grpBody) {
-        Array.from(grpBody.children).forEach(function (child) {
-          if (child.classList.contains('nb-row'))    grpChildren.push(_serializeContainer(child));
-          else if (child.classList.contains('nb-cfield')) grpChildren.push(_serializeField(child));
+
+    function serializeContainer(el) {
+      var type = el.classList.contains('nb-section') ? 'section'
+               : el.classList.contains('nb-group')   ? 'group'
+               : el.classList.contains('nb-row')      ? 'row'
+               : 'field';
+
+      if (type === 'field') return serializeField(el);
+
+      var obj = { type: type, children: [] };
+
+      if (type === 'section' || type === 'group') {
+        var labelInput = el.querySelector(type === 'section' ? '.nb-section-label' : '.nb-group-label');
+        obj.label       = labelInput ? labelInput.value : '';
+        obj.id          = el.dataset.id || '';
+        obj.collapsible = el.dataset.collapsible === '1';
+        obj.collapsed   = el.dataset.collapsed   === '1';
+      }
+
+      var bodyEl = el.querySelector(
+        type === 'section' ? '.nb-section-body' :
+        type === 'group'   ? '.nb-group-body'   :
+                             '.nb-row-body'
+      );
+      if (bodyEl) {
+        bodyEl.querySelectorAll(':scope > .nb-cfield, :scope > .nb-section, :scope > .nb-group, :scope > .nb-row').forEach(function (child) {
+          obj.children.push(serializeContainer(child));
         });
       }
+      return obj;
+    }
+
+    canvas.querySelectorAll(':scope > .nb-cfield, :scope > .nb-section, :scope > .nb-group, :scope > .nb-row').forEach(function (el) {
+      result.push(serializeContainer(el));
+    });
+    return result;
+  }
+
+  // ── deserialize (load) canvas from JSON ─────────────────────────────────────
+  function loadCanvas(layout) {
+    var canvas = _el('formCanvas');
+    if (!canvas) return;
+    canvas.innerHTML = '';
+    _injectCanvasToolbar(canvas);
+
+    (layout || []).forEach(function (item) {
+      var type = item.type || 'text';
+      if (type === 'section') {
+        _addSection(canvas, item);
+      } else if (type === 'group') {
+        _addGroup(canvas, item);
+      } else if (type === 'row') {
+        _addRow(canvas, item);
+      } else {
+        _addField(type, item);
+      }
+    });
+    _canvasEmpty();
+  }
+
+  // ── save form to server ──────────────────────────────────────────────────────
+  async function saveForm() {
+    var code = (_el('formCode') || {}).value || '';
+    var name = (_el('formName') || {}).value || '';
+    if (!code) { NuApp.toast('Form code is required', 'error'); return; }
+
+    var layout   = serializeCanvas();
+    var settings = {};
+    document.querySelectorAll('.nb-form-setting').forEach(function (el) {
+      settings[el.dataset.setting] = el.type === 'checkbox' ? (el.checked ? 1 : 0) : el.value;
+    });
+
+    var btn = _el('saveFormBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+    try {
+      var json = await NuApp.apiJson('api/form.php?action=save_form', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code, name: name, layout: layout, settings: settings })
+      });
+      if (!json.success) {
+        NuApp.toast(json.error || 'Save failed', 'error');
+      } else {
+        NuApp.toast('Form saved');
+      }
+    } catch (e) {
+      NuApp.toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save Form'; }
+    }
+  }
+
+  // ── init after module load ───────────────────────────────────────────────────
+  function _initAfterLoad() {
+    _initToolbox();
+    _initCanvasDrop();
+    _canvasEmpty();
+  }
+
+  return {
+    _canvasEmpty:        _canvasEmpty,
+    toggleField:         toggleField,
+    toggleSelectSource:  toggleSelectSource,
+    serializeCanvas:     serializeCanvas,
+    loadCanvas:          loadCanvas,
+    saveForm:            saveForm,
+    _initAfterLoad:      _initAfterLoad,
+    _addFieldToRow:      _addFieldToRow,
+    _addRowToContainer:  _addRowToContainer,
+    _addGroupToContainer:_addGroupToContainer,
+    _addRow:             _addRow,
+    _addSection:         _addSection,
+    _addGroup:           _addGroup,
+    _addField:           _addField,
+    _addFieldTo:         _addFieldTo
+  };
+}());
