@@ -204,12 +204,35 @@ function nu_render_lookup_display($field, $value) {
     } catch (Throwable $e) { return ''; }
 }
 
+// ── Field flag helpers ────────────────────────────────────────────────────────
+// is_fk          — this field is the foreign key linking child to parent.
+//                  It always renders as <input type="hidden"> and is never
+//                  editable by the user.
+// hide_in_grid   — suppress this field from the subform browse grid columns.
+//                  The value is still saved; it just does not appear as a column.
+// server_readonly — PHP will ignore any POST value for this field and will
+//                  always write the injected parent ID (for FK fields) or
+//                  simply skip the field entirely (for other readonly fields).
+
+function nu_field_is_fk($field)           { return !empty($field['is_fk']); }
+function nu_field_hide_in_grid($field)     { return !empty($field['hide_in_grid']); }
+function nu_field_server_readonly($field)  { return !empty($field['server_readonly']); }
+
 function nu_render_field($field, $value = '', $record = []) {
     $type  = nu_field_type($field);
     $name  = nu_field_name($field);
     $label = nu_field_label($field);
 
     if ($name === '' && !in_array($type, ['html','content','button','fieldset'], true)) return '';
+
+    // ── is_fk: always render as hidden input, regardless of field type ─────────
+    if (nu_field_is_fk($field)) {
+        return '<input type="hidden"'
+             . ' data-field="' . nu_attr($name) . '"'
+             . ' name="'       . nu_attr($name) . '"'
+             . ' data-is-fk="1"'
+             . ' value="'      . nu_attr($value) . '">';
+    }
 
     $required    = !empty($field['required']) ? ' required' : '';
     $phText      = $field['placeholder'] ?? '';
@@ -346,14 +369,8 @@ function nu_render_field($field, $value = '', $record = []) {
             $sfFk   = nu_safe_ident($sf['fk_field']  ?? ($sf['fkfield']  ?? ''));
             $sfView = in_array($sf['view'] ?? 'grid', ['grid','form','inline'], true) ? ($sf['view'] ?? 'grid') : 'grid';
 
-            // ── FIX Bug 1 ──────────────────────────────────────────────────────
-            // Previously used $record['id'] which is wrong when the parent table
-            // has a PK column named anything other than 'id' (e.g. order_id).
-            // Now we look up the actual PK column name from the parent table.
             $parentTable = nu_safe_ident($field['_parent_table'] ?? '');
             if ($parentTable === '') {
-                // Derive from the record keys: prefer the key that ends in '_id' or equals 'id'
-                // Fallback: just use whatever is in $record as a best-effort
                 $parentPk = 'id';
             } else {
                 $parentPk = nu_get_pk($parentTable);
@@ -542,6 +559,9 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
     $formTable= $form[$c['table']] ?? '';
     $formName = $form[$c['name']]  ?? $formCode;
 
+    // Inject _parent_table into every subform field so it can resolve the PK
+    $layout = nu_inject_parent_table($layout, $formTable);
+
     $html  = '<form class="nu-generated-form"'
            . ' data-form-code="'  . nu_attr($formCode)   . '"'
            . ' data-table="'      . nu_attr($formTable)  . '"'
@@ -563,6 +583,24 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
     return $html;
 }
 
+// ── Inject _parent_table into subform field nodes so nu_render_field()
+//    can resolve the correct parent PK column name. ──────────────────────────
+function nu_inject_parent_table(array $layout, string $parentTable): array {
+    foreach ($layout as &$node) {
+        $t = $node['type'] ?? 'field';
+        if ($t === 'subform') {
+            $node['_parent_table'] = $parentTable;
+        } elseif (in_array($t, ['section', 'group', 'row'], true) && isset($node['children'])) {
+            $node['children'] = nu_inject_parent_table($node['children'], $parentTable);
+        }
+    }
+    unset($node);
+    return $layout;
+}
+
+// ── Flatten layout into a plain field list. ──────────────────────────────────
+// IMPORTANT: preserves all field-level flags (is_fk, hide_in_grid,
+// server_readonly) so downstream handlers can act on them correctly.
 function nu_flatten_layout($layout) {
     $fields = [];
     foreach ($layout as $node) {
@@ -576,6 +614,16 @@ function nu_flatten_layout($layout) {
         }
     }
     return $fields;
+}
+
+// ── Flatten layout excluding fields that should be hidden in grid views. ─────
+// Used by nu_handle_subform_list() so FK and other hide_in_grid fields
+// never appear as table columns in the subform browse grid.
+function nu_flatten_layout_for_grid($layout) {
+    return array_values(array_filter(
+        nu_flatten_layout($layout),
+        fn($f) => !nu_field_hide_in_grid($f)
+    ));
 }
 
 /* ── Subform helpers ─────────────────────────────────────── */
@@ -610,7 +658,12 @@ function nu_handle_subform_list() {
     $c      = nu_form_columns();
     $table  = nu_safe_ident($form[$c['table']] ?? '');
     $layout = nu_decode_layout($form);
-    $fields = nu_flatten_layout($layout);
+
+    // All fields for save/lookup resolution (keeps FK for value injection)
+    $allFields = nu_flatten_layout($layout);
+
+    // Grid-visible fields only (hide_in_grid:true fields excluded)
+    $gridFields = nu_flatten_layout_for_grid($layout);
 
     if ($table === '') nu_json(['success' => false, 'error' => 'No table for child form'], 400);
 
@@ -619,7 +672,7 @@ function nu_handle_subform_list() {
                     ->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($records as &$row) {
-        foreach ($fields as $field) {
+        foreach ($allFields as $field) {
             if (nu_field_type($field) !== 'lookup') continue;
             $fname = nu_field_name($field);
             if ($fname === '' || !isset($row[$fname])) continue;
@@ -628,7 +681,15 @@ function nu_handle_subform_list() {
     }
     unset($row);
 
-    nu_json(['success' => true, 'data' => ['layout' => $fields, 'records' => $records, 'pk' => $pk]]);
+    // Return gridFields as the layout so the JS grid only builds visible columns.
+    // allFields is returned separately so the JS row-edit form can render all fields
+    // (including hidden FK inputs) when opening a row for editing.
+    nu_json(['success' => true, 'data' => [
+        'layout'     => $gridFields,
+        'all_fields' => $allFields,
+        'records'    => $records,
+        'pk'         => $pk,
+    ]]);
 }
 
 function nu_handle_subform_save() {
@@ -662,12 +723,24 @@ function nu_handle_subform_save() {
         $name = nu_safe_ident(nu_field_name($field));
         if ($name === '') continue;
         $type = nu_field_type($field);
+
+        // Skip non-data field types
         if (in_array($type, ['html','heading','divider','fieldset','subform','button'], true)) continue;
+
+        // Skip uuid on new records (already handled above)
         if ($type === 'uuid') {
             if (!$id) continue;
             if (!empty($data[$name])) $save[$name] = $data[$name];
             continue;
         }
+
+        // ── server_readonly / is_fk: never accept from POST ───────────────────
+        // FK fields are always injected from $parentId below.
+        // Other server_readonly fields are simply skipped (not written).
+        if (nu_field_server_readonly($field) || nu_field_is_fk($field)) {
+            continue;
+        }
+
         if ($type === 'checkbox') {
             $save[$name] = !empty($data[$name]) ? 1 : 0;
         } else {
@@ -675,6 +748,9 @@ function nu_handle_subform_save() {
         }
     }
 
+    // ── Always inject FK from the trusted URL param, not from POST ────────────
+    // This is tamper-proof: even if a malicious client sends a different
+    // parent_id in the POST body, we always use the server-side $parentId.
     if ($parentId !== '' && $fk !== '') {
         $save[$fk] = $parentId;
     }
@@ -742,7 +818,14 @@ function nu_handle_fields() {
     $fields = nu_flatten_layout(nu_decode_layout($form));
     $out    = [];
     foreach ($fields as $field) {
-        $out[] = ['fieldname' => nu_field_name($field), 'fieldlabel' => nu_field_label($field), 'fieldtype' => nu_field_type($field)];
+        $out[] = [
+            'fieldname'       => nu_field_name($field),
+            'fieldlabel'      => nu_field_label($field),
+            'fieldtype'       => nu_field_type($field),
+            'is_fk'           => nu_field_is_fk($field),
+            'hide_in_grid'    => nu_field_hide_in_grid($field),
+            'server_readonly' => nu_field_server_readonly($field),
+        ];
     }
     nu_json(['success' => true, 'data' => $out]);
 }
@@ -827,6 +910,9 @@ function nu_handle_save() {
             if (!empty($data[$name])) $save[$name] = $data[$name];
             continue;
         }
+
+        // server_readonly fields are never written from POST in parent form saves either
+        if (nu_field_server_readonly($field)) continue;
 
         $save[$name] = ($type === 'checkbox') ? (!empty($data[$name]) ? 1 : 0) : ($data[$name] ?? null);
     }
