@@ -147,6 +147,13 @@
       if (el) el.checked = !!(Number(val) || val === true);
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // _rebuildCanvas
+    // After calling addField() for each saved field we stamp the full
+    // field-object JSON onto the card element as data-field-json.
+    // This is what _readSubformData() reads in nb-subform-fk-builder.js
+    // to restore the Child Form / FK Field dropdowns on next edit.
+    // ─────────────────────────────────────────────────────────────────
     function _rebuildCanvas(layoutJson) {
       const canvas = document.getElementById('formCanvas');
       const empty  = document.getElementById('canvasEmpty');
@@ -169,12 +176,41 @@
       if (empty) empty.style.display = 'none';
 
       fields.forEach(function (f) {
-        // nbFormBuilder.addField() creates and appends a card — call it with the
-        // field type then immediately populate the inputs from saved data.
-        if (typeof window.nbFormBuilder.addField === 'function') {
-          window.nbFormBuilder.addField(f.type || f.fieldtype || 'text', f);
-        } else {
+        if (typeof window.nbFormBuilder.addField !== 'function') {
           console.warn('nbFormBuilder.addField not available; canvas not rebuilt');
+          return;
+        }
+
+        // Snapshot the card count BEFORE adding so we can identify the new card.
+        const beforeCount = canvas.querySelectorAll('.nb-cfield').length;
+
+        window.nbFormBuilder.addField(f.type || f.fieldtype || 'text', f);
+
+        // ── FIX: stamp data-field-json onto the newly added card ──────
+        // _readSubformData() in nb-subform-fk-builder.js uses this as
+        // its fallback source for subform.form_code and subform.fk_field.
+        // We also stamp the fast-path data-sf-* attributes directly so
+        // the primary branch in _readSubformData fires immediately.
+        if ((f.type || f.fieldtype || '') === 'subform') {
+          const allCards = canvas.querySelectorAll('.nb-cfield');
+          // The newly added card is whichever appeared at index beforeCount
+          const newCard = allCards[beforeCount] || allCards[allCards.length - 1];
+          if (newCard) {
+            // Fallback path: full JSON blob
+            try {
+              newCard.dataset.fieldJson = JSON.stringify(f);
+            } catch (e) {}
+
+            // Fast path: explicit data-sf-* attributes
+            var sf = (f.subform && typeof f.subform === 'object') ? f.subform : {};
+            var sfFormCode = sf.form_code || sf.formcode || '';
+            var sfFkField  = sf.fk_field  || sf.fkfield  || '';
+            if (sfFormCode) newCard.dataset.sfFormCode       = sfFormCode;
+            if (sfFkField)  newCard.dataset.sfFkField        = sfFkField;
+            if (f.is_fk)           newCard.dataset.sfIsFk           = '1';
+            if (f.hide_in_grid)    newCard.dataset.sfHideInGrid     = '1';
+            if (f.server_readonly) newCard.dataset.sfServerReadonly = '1';
+          }
         }
       });
     }

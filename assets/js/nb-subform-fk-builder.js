@@ -11,6 +11,8 @@
  *
  * GAP 2 — layout serialiser (_readFieldCard)
  *   Persists new flags when collecting layout JSON.
+ *   Also writes data-sf-* back onto the card element after serialising
+ *   so the fast-path in _readSubformData fires cleanly on next edit.
  *
  * GAP 3 — createFkField()
  *   Auto-adds a hidden FK field to the child form's layout.
@@ -161,38 +163,54 @@
         .catch(function () {});
     }
 
-    /* Read existing subform config from card data attributes
-       Supports both data-sf-* attributes AND nested subform{} JSON
-       stored in data-field-json (set by _rebuildCanvas). */
+    // ─────────────────────────────────────────────────────────────────
+    // _readSubformData
+    // 3-tier fallback to read saved subform config from a card element:
+    //   1. data-sf-* attributes  (fast path — written by _augmentSubformData
+    //      after serialise, and by _rebuildCanvas in nb-form-edit.js)
+    //   2. data-field-json blob  (written by _rebuildCanvas on edit load)
+    //   3. data-subform-*/data-form-code etc. legacy attributes
+    // ─────────────────────────────────────────────────────────────────
     function _readSubformData(card) {
-      /* Try data-sf-* first (written back by our serialiser on prior saves) */
-      var fromAttrs = {
-        form_code:       card.dataset.sfFormCode       || '',
-        fk_field:        card.dataset.sfFkField        || '',
-        is_fk:           card.dataset.sfIsFk           === '1',
-        hide_in_grid:    card.dataset.sfHideInGrid     === '1',
-        server_readonly: card.dataset.sfServerReadonly === '1',
-      };
-      if (fromAttrs.form_code) return fromAttrs;
+      /* 1. Fast path: data-sf-* (set by serialiser write-back and by _rebuildCanvas) */
+      var sfFormCode = card.dataset.sfFormCode || '';
+      if (sfFormCode) {
+        return {
+          form_code:       sfFormCode,
+          fk_field:        card.dataset.sfFkField        || '',
+          is_fk:           card.dataset.sfIsFk           === '1',
+          hide_in_grid:    card.dataset.sfHideInGrid     === '1',
+          server_readonly: card.dataset.sfServerReadonly === '1',
+        };
+      }
 
-      /* Fallback: try data-field-json which _rebuildCanvas may set */
+      /* 2. Fallback: full field JSON blob stamped by _rebuildCanvas */
       var raw = card.dataset.fieldJson || card.dataset.fieldData || '';
       if (raw) {
         try {
           var obj = JSON.parse(raw);
-          var sf  = obj.subform || {};
-          return {
-            form_code:       sf.form_code  || sf.formcode  || '',
-            fk_field:        sf.fk_field   || sf.fkfield   || '',
-            is_fk:           !!obj.is_fk,
-            hide_in_grid:    !!obj.hide_in_grid,
-            server_readonly: !!obj.server_readonly,
-          };
+          var sf  = (obj.subform && typeof obj.subform === 'object') ? obj.subform : {};
+          var fc  = sf.form_code || sf.formcode || '';
+          var fk  = sf.fk_field  || sf.fkfield  || '';
+          if (fc) {
+            /* Promote to data-sf-* so fast path works next time */
+            card.dataset.sfFormCode = fc;
+            if (fk)            card.dataset.sfFkField        = fk;
+            if (obj.is_fk)           card.dataset.sfIsFk           = '1';
+            if (obj.hide_in_grid)    card.dataset.sfHideInGrid     = '1';
+            if (obj.server_readonly) card.dataset.sfServerReadonly = '1';
+            return {
+              form_code:       fc,
+              fk_field:        fk,
+              is_fk:           !!obj.is_fk,
+              hide_in_grid:    !!obj.hide_in_grid,
+              server_readonly: !!obj.server_readonly,
+            };
+          }
         } catch (e) {}
       }
 
-      /* Last resort: scan data-* attributes for any subform-related keys
-         e.g. data-subform-form-code, data-form-code, data-fk-field */
+      /* 3. Last resort: legacy attribute names */
       return {
         form_code:       card.dataset.subformFormCode || card.dataset.formCode || '',
         fk_field:        card.dataset.subformFkField  || card.dataset.fkField  || '',
@@ -265,6 +283,10 @@
 
     /* ══════════════════════════════════════════════════════════════════
        GAP 2 — patch layout serialiser
+       After writing subform config into fieldObj, we also write the
+       values back onto the card element as data-sf-* attributes.
+       This means the NEXT time edit() is called, _readSubformData()
+       fast-path fires immediately without needing to parse JSON.
     ═══════════════════════════════════════════════════════════════════ */
     function _augmentSubformData(fieldObj, card) {
       if ((fieldObj.type || fieldObj.fieldtype || '') !== 'subform') return fieldObj;
@@ -277,12 +299,23 @@
       var srvRoChk    = panel.querySelector('.nb-sf-server-readonly');
       var formCode    = formCodeSel ? (formCodeSel.value || '') : '';
       var fkField     = fkFieldSel  ? (fkFieldSel.value  || '') : '';
+
       if (!fieldObj.subform) fieldObj.subform = {};
       if (formCode) fieldObj.subform.form_code = formCode;
       if (fkField)  fieldObj.subform.fk_field  = fkField;
       if (isFkChk)  { if (isFkChk.checked)  fieldObj.is_fk           = true; else delete fieldObj.is_fk;           }
       if (hideChk)  { if (hideChk.checked)   fieldObj.hide_in_grid    = true; else delete fieldObj.hide_in_grid;    }
       if (srvRoChk) { if (srvRoChk.checked)  fieldObj.server_readonly = true; else delete fieldObj.server_readonly; }
+
+      // ── FIX: write data-sf-* back onto the card element ──────────────
+      // This means _readSubformData() fast-path fires on the NEXT edit
+      // without relying on data-field-json being present.
+      if (formCode) card.dataset.sfFormCode       = formCode;
+      if (fkField)  card.dataset.sfFkField        = fkField;
+      card.dataset.sfIsFk           = isFkChk  && isFkChk.checked  ? '1' : '0';
+      card.dataset.sfHideInGrid     = hideChk   && hideChk.checked  ? '1' : '0';
+      card.dataset.sfServerReadonly = srvRoChk  && srvRoChk.checked ? '1' : '0';
+
       return fieldObj;
     }
 
