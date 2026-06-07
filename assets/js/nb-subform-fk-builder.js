@@ -16,6 +16,16 @@
  *
  * GAP 3 — createFkField()
  *   Auto-adds a hidden FK field to the child form's layout.
+ *
+ * FIX (2026-06-07) — saveForm intercept
+ *   The _serializerNames array was patching method names that don't exist
+ *   on nbFormBuilder (getLayout, collectLayout, etc. are not real methods).
+ *   The actual save path calls window.saveForm() which reads the canvas
+ *   directly via its own internal walker. We now also intercept
+ *   window.saveForm and post-process the layout JSON string inside the
+ *   payload before the fetch fires, guaranteeing subform.form_code and
+ *   subform.fk_field are always present. The serialiser name intercept is
+ *   kept as a secondary safety net.
  */
 (function () {
   'use strict';
@@ -307,9 +317,7 @@
       if (hideChk)  { if (hideChk.checked)   fieldObj.hide_in_grid    = true; else delete fieldObj.hide_in_grid;    }
       if (srvRoChk) { if (srvRoChk.checked)  fieldObj.server_readonly = true; else delete fieldObj.server_readonly; }
 
-      // ── FIX: write data-sf-* back onto the card element ──────────────
-      // This means _readSubformData() fast-path fires on the NEXT edit
-      // without relying on data-field-json being present.
+      // ── write data-sf-* back onto the card element ──────────────────
       if (formCode) card.dataset.sfFormCode       = formCode;
       if (fkField)  card.dataset.sfFkField        = fkField;
       card.dataset.sfIsFk           = isFkChk  && isFkChk.checked  ? '1' : '0';
@@ -319,29 +327,127 @@
       return fieldObj;
     }
 
-    var _serializerNames = ['getLayout','collectLayout','_serializeCanvas','serializeLayout','_getLayout'];
+    // ─────────────────────────────────────────────────────────────────
+    // _injectSubformDataIntoLayout
+    // Given a layout array (already parsed from JSON), walks every
+    // subform node and merges the current panel state from the canvas
+    // card that matches by name. Returns the mutated layout array.
+    // This is the core routine called by both the serialiser patch and
+    // the saveForm intercept.
+    // ─────────────────────────────────────────────────────────────────
+    function _injectSubformDataIntoLayout(layout) {
+      if (!Array.isArray(layout)) return layout;
+      var canvas = document.getElementById('formCanvas');
+      if (!canvas) return layout;
+      var cards = canvas.querySelectorAll('.nb-cfield[data-type="subform"], .nb-cfield[data-fieldtype="subform"]');
+      layout.forEach(function (fieldObj) {
+        if ((fieldObj.type || '') !== 'subform') return;
+        var fname = fieldObj.name || fieldObj.fieldname || '';
+        var matchCard = null;
+        cards.forEach(function (c) {
+          if ((c.dataset.fieldName || c.dataset.name || '') === fname) matchCard = c;
+        });
+        // If only one subform card exists, always match it (handles unnamed/auto-named cards)
+        if (!matchCard && cards.length === 1) matchCard = cards[0];
+        if (matchCard) _augmentSubformData(fieldObj, matchCard);
+      });
+      return layout;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Serialiser method name intercept (secondary safety net).
+    // We patch every plausible method name that nbFormBuilder might
+    // expose. The primary fix is the saveForm intercept below.
+    // ─────────────────────────────────────────────────────────────────
+    var _serializerNames = [
+      'getLayout', 'collectLayout', '_serializeCanvas', 'serializeLayout', '_getLayout',
+      'readLayout', 'buildLayout', 'exportLayout', 'toJSON', 'getFieldLayout'
+    ];
     _serializerNames.forEach(function (methodName) {
       if (typeof fb[methodName] !== 'function') return;
       var _orig = fb[methodName].bind(fb);
       fb[methodName] = function () {
         var layout = _orig.apply(fb, arguments);
-        if (!Array.isArray(layout)) return layout;
-        var canvas = document.getElementById('formCanvas');
-        if (!canvas) return layout;
-        var cards = canvas.querySelectorAll('.nb-cfield[data-type="subform"]');
-        layout.forEach(function (fieldObj) {
-          if ((fieldObj.type || '') !== 'subform') return;
-          var fname = fieldObj.name || fieldObj.fieldname || '';
-          var matchCard = null;
-          cards.forEach(function (c) {
-            if ((c.dataset.fieldName || c.dataset.name || '') === fname) matchCard = c;
-          });
-          if (!matchCard && cards.length === 1) matchCard = cards[0];
-          if (matchCard) _augmentSubformData(fieldObj, matchCard);
-        });
-        return layout;
+        return _injectSubformDataIntoLayout(layout);
       };
     });
+
+    /* ══════════════════════════════════════════════════════════════════
+       PRIMARY FIX — intercept window.saveForm
+       saveForm() is the single entry point for all form saves. It
+       assembles a payload object containing form_layout (a JSON string
+       of the canvas field array) and POSTs it to api/forms.php?action=save.
+       We wrap saveForm so that immediately before the fetch fires, we
+       parse form_layout, inject subform data, and re-serialise it.
+       This is 100% reliable regardless of what the internal serialiser
+       method is called.
+    ═══════════════════════════════════════════════════════════════════ */
+    function _installSaveFormIntercept() {
+      if (!window.saveForm || window._nbSfSaveFormPatched) return;
+      window._nbSfSaveFormPatched = true;
+
+      var _origSaveForm = window.saveForm;
+
+      window.saveForm = function () {
+        // Patch window.fetch to intercept the next api/forms.php?action=save call
+        var _origFetch = window.fetch;
+        var _intercepted = false;
+
+        window.fetch = function (url, options) {
+          // Only intercept the save action once
+          if (!_intercepted && typeof url === 'string' && url.indexOf('forms.php') !== -1 && url.indexOf('action=save') !== -1) {
+            _intercepted = true;
+            window.fetch = _origFetch; // restore immediately
+
+            try {
+              if (options && options.body) {
+                var body = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+                if (body && body.form_layout) {
+                  var layoutArr;
+                  try {
+                    layoutArr = typeof body.form_layout === 'string'
+                      ? JSON.parse(body.form_layout)
+                      : body.form_layout;
+                  } catch (e) { layoutArr = null; }
+                  if (Array.isArray(layoutArr)) {
+                    layoutArr = _injectSubformDataIntoLayout(layoutArr);
+                    body.form_layout = JSON.stringify(layoutArr);
+                    options = Object.assign({}, options, { body: JSON.stringify(body) });
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('[nb-subform-fk-builder] saveForm intercept error:', e);
+            }
+
+            return _origFetch.call(window, url, options);
+          }
+
+          return _origFetch.apply(window, arguments);
+        };
+
+        return _origSaveForm.apply(this, arguments);
+      };
+
+      console.log('[nb-subform-fk-builder] saveForm intercept installed.');
+    }
+
+    // Install immediately if saveForm already exists, otherwise poll for it
+    if (window.saveForm) {
+      _installSaveFormIntercept();
+    } else {
+      var _sfPollCount = 0;
+      var _sfPoll = setInterval(function () {
+        _sfPollCount++;
+        if (window.saveForm) {
+          clearInterval(_sfPoll);
+          _installSaveFormIntercept();
+        } else if (_sfPollCount > 100) {
+          clearInterval(_sfPoll);
+          console.warn('[nb-subform-fk-builder] saveForm not found after polling; save intercept not installed.');
+        }
+      }, 100);
+    }
 
     /* ══════════════════════════════════════════════════════════════════
        Auto-upgrade: find every subform card and inject the panel
@@ -373,7 +479,6 @@
     function attachObserver() {
       var canvas = document.getElementById('formCanvas');
       if (!canvas) return;
-      /* disconnect any existing observation first to avoid duplicates */
       try { _obs.disconnect(); } catch(e) {}
       _obs.observe(canvas, { childList: true, subtree: true });
     }
@@ -384,10 +489,11 @@
 
     /* ── Re-attach + upgrade every time the forms module opens ─────── */
     document.addEventListener('nu:form:opened', function () {
-      /* Small delay gives _rebuildCanvas time to finish painting the DOM */
       setTimeout(function () {
         attachObserver();
         upgradeAllSubformCards();
+        // Re-check saveForm in case the module re-declares it
+        _installSaveFormIntercept();
       }, 150);
     });
 
@@ -396,7 +502,6 @@
       var _origRebuild = fb._rebuildCanvas.bind(fb);
       fb._rebuildCanvas = function () {
         var result = _origRebuild.apply(fb, arguments);
-        /* _rebuildCanvas may be async or sync; cover both */
         setTimeout(function () {
           attachObserver();
           upgradeAllSubformCards();
@@ -421,6 +526,7 @@
         setTimeout(function () {
           attachObserver();
           upgradeAllSubformCards();
+          _installSaveFormIntercept();
         }, 200);
         return result;
       };
