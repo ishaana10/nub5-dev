@@ -4,7 +4,7 @@
  * and restores ALL builder fields: name, code, table, form_type,
  * table_mode, pk_type, browse settings, events, php/css, and field canvas.
  *
- * Loaded after nubuilder-next.js.
+ * Depends on: nubuilder-next.js, nb-sf-data.js
  */
 (function () {
   'use strict';
@@ -24,7 +24,7 @@
       if (!formId) { NuApp.toast('No form ID', 'error'); return; }
 
       try {
-        const res  = await NuApp.apiJson(
+        const res = await NuApp.apiJson(
           'api/forms.php?action=get&id=' + encodeURIComponent(formId),
           { credentials: 'same-origin' }
         );
@@ -35,44 +35,32 @@
 
         const f = res.form;
 
-        // 1. Open the builder UI (reset then overwrite)
+        // 1. Open the builder UI
         window.nbFormBuilder.open();
-
-        // Give the DOM a tick to finish rendering open()
         await new Promise(r => setTimeout(r, 0));
 
-        // 2. Set hidden edit ID
+        // 2. Hidden edit ID + title
         const editIdEl = document.getElementById('editFormId');
         if (editIdEl) editIdEl.value = f.form_id || formId;
-
-        // Update builder title
         const titleEl = document.getElementById('builderTitle');
         if (titleEl) titleEl.textContent = 'Edit Form';
 
         // 3. Name + Code
         const nameEl = document.getElementById('builderFormName');
         if (nameEl) nameEl.value = f.form_name || '';
-
         const codeEl = document.getElementById('builderFormCode');
         if (codeEl) codeEl.value = f.form_code || '';
 
         // 4. Form Type
         const ftype = f.form_type || 'main';
         const ftypeRadio = document.querySelector('input[name="formType"][value="' + ftype + '"]');
-        if (ftypeRadio) {
-          const ftypeCard = ftypeRadio.closest('.nb-ftype-card');
-          window.nbFormBuilder.selectFormType(ftype, ftypeCard);
-        }
+        if (ftypeRadio) window.nbFormBuilder.selectFormType(ftype, ftypeRadio.closest('.nb-ftype-card'));
 
         // 5. Table Mode
         const tableMode = f.form_table_mode || 'new';
         const tModeRadio = document.querySelector('input[name="formTableMode"][value="' + tableMode + '"]');
-        if (tModeRadio) {
-          const tModeCard = tModeRadio.closest('.nb-tmode-card');
-          window.nbFormBuilder.selectTableMode(tableMode, tModeCard);
-        }
+        if (tModeRadio) window.nbFormBuilder.selectTableMode(tableMode, tModeRadio.closest('.nb-tmode-card'));
 
-        // Set table name in the correct input
         const tableVal = f.form_table || '';
         const tableNewEl = document.getElementById('builderFormTable');
         if (tableNewEl) tableNewEl.value = tableVal;
@@ -81,7 +69,6 @@
           const tableExistEl = document.getElementById('builderFormTableExisting');
           if (tableExistEl) {
             tableExistEl.value = tableVal;
-            // If option not present (table removed from DB), add it
             if (tableExistEl.value !== tableVal && tableVal) {
               const opt = document.createElement('option');
               opt.value = tableVal;
@@ -95,38 +82,30 @@
         // 6. PK Type
         const pkType = f.form_pk_type || 'autoincrement';
         const pkRadio = document.querySelector('input[name="formPkType"][value="' + pkType + '"]');
-        if (pkRadio) {
-          const pkCard = pkRadio.closest('.nb-pk-card');
-          window.nbFormBuilder.selectPkType(pkType, pkCard);
-        }
+        if (pkRadio) window.nbFormBuilder.selectPkType(pkType, pkRadio.closest('.nb-pk-card'));
 
-        // 7. Browse tab settings
-        _setVal('formBrowseSql',               f.browse_sql               || '');
-        _setVal('formBrowseColumns',            f.browse_columns           || '');
-        _setVal('formBrowsePageSize',           f.browse_page_size         || 20);
-        _setVal('formBrowseDefaultSort',        f.browse_default_sort      || '');
-        _setVal('formBrowseSearchPlaceholder',  f.browse_search_placeholder|| '');
-        _setVal('formBrowseSearchFields',       f.browse_search_fields     || '');
+        // 7. Browse tab
+        _setVal('formBrowseSql',               f.browse_sql                || '');
+        _setVal('formBrowseColumns',            f.browse_columns            || '');
+        _setVal('formBrowsePageSize',           f.browse_page_size          || 20);
+        _setVal('formBrowseDefaultSort',        f.browse_default_sort       || '');
+        _setVal('formBrowseSearchPlaceholder',  f.browse_search_placeholder || '');
+        _setVal('formBrowseSearchFields',       f.browse_search_fields      || '');
         _setChk('formBrowseSearchEnabled',      f.browse_search_enabled);
 
-        // Browse display mode
         const bdm = f.browse_display_mode || 'inline';
         const bdmRadio = document.querySelector('input[name="browseDisplayMode"][value="' + bdm + '"]');
-        if (bdmRadio) {
-          const bdmCard = bdmRadio.closest('.nb-display-mode-card');
-          if (window.nbFormBuilder.selectDisplayMode) {
-            window.nbFormBuilder.selectDisplayMode(bdm, bdmCard);
-          }
-        }
+        if (bdmRadio && window.nbFormBuilder.selectDisplayMode)
+          window.nbFormBuilder.selectDisplayMode(bdm, bdmRadio.closest('.nb-display-mode-card'));
 
         // 8. Events / JS tab
-        _setVal('formCustomJs',      f.form_custom_js       || '');
-        _setVal('formJsBeforeSave',  f.form_js_before_save  || '');
-        _setVal('formJsAfterSave',   f.form_js_after_save   || '');
+        _setVal('formCustomJs',     f.form_custom_js      || '');
+        _setVal('formJsBeforeSave', f.form_js_before_save || '');
+        _setVal('formJsAfterSave',  f.form_js_after_save  || '');
 
         // 9. PHP / CSS tab
-        _setVal('formCustomPhp',     f.form_custom_php      || '');
-        _setVal('formCustomCss',     f.form_custom_css      || '');
+        _setVal('formCustomPhp', f.form_custom_php || '');
+        _setVal('formCustomCss', f.form_custom_css || '');
 
         // 10. Rebuild field canvas
         _rebuildCanvas(f.form_layout);
@@ -147,33 +126,17 @@
       if (el) el.checked = !!(Number(val) || val === true);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // _rebuildCanvas
-    //
-    // KEY FIX (2026-06-08):
-    // The MutationObserver in nb-subform-fk-builder.js calls
-    // upgradeSubformPanel() synchronously the moment addField() inserts
-    // the card into the canvas. At that instant, data-sf-* attributes
-    // haven't been stamped yet, so _readSubformData() returns empty data
-    // and the panel renders blank. The card then has _sfPanelUpgraded=true
-    // locked in, so re-running upgradeAllSubformCards() later has no effect.
-    //
-    // Fix: stamp ALL data-sf-* attributes on the card BEFORE addField()
-    // is called by pre-inserting a sentinel data attribute that
-    // upgradeSubformPanel can read. We do this by setting the attributes
-    // on a temporary object keyed by field index and hooking into the
-    // canvas mutation.
-    //
-    // Simpler approach used here: call addField(), stamp the attributes,
-    // then DELETE _sfPanelUpgraded so nb-subform-fk-builder's
-    // upgradeAllSubformCards() re-runs the panel with correct data.
+    // ── _rebuildCanvas ─────────────────────────────────────────────────
+    // Restores all canvas fields from saved layout JSON.
+    // Uses window._nbSfData.write() (from nb-sf-data.js) to stamp
+    // data-sf-* attributes, then clears _sfPanelUpgraded so
+    // nb-subform-fk-builder re-upgrades the panel with correct data.
     // ─────────────────────────────────────────────────────────────────
     function _rebuildCanvas(layoutJson) {
       const canvas = document.getElementById('formCanvas');
       const empty  = document.getElementById('canvasEmpty');
       if (!canvas) return;
 
-      // Clear everything except the empty-placeholder
       canvas.querySelectorAll('.nb-cfield').forEach(function (el) { el.remove(); });
 
       let fields = [];
@@ -195,45 +158,38 @@
           return;
         }
 
-        // Snapshot the card count BEFORE adding so we can identify the new card.
         const beforeCount = canvas.querySelectorAll('.nb-cfield').length;
-
         window.nbFormBuilder.addField(f.type || f.fieldtype || 'text', f);
 
         if ((f.type || f.fieldtype || '') === 'subform') {
           const allCards = canvas.querySelectorAll('.nb-cfield');
-          const newCard = allCards[beforeCount] || allCards[allCards.length - 1];
+          const newCard  = allCards[beforeCount] || allCards[allCards.length - 1];
           if (newCard) {
-            // Stamp full JSON blob (fallback path for _readSubformData)
+            // Stamp full JSON blob as belt-and-braces fallback
             try { newCard.dataset.fieldJson = JSON.stringify(f); } catch (e) {}
 
-            // Stamp fast-path data-sf-* attributes
+            // Use shared utility to write data-sf-* attributes
             const sf = (f.subform && typeof f.subform === 'object') ? f.subform : {};
-            const sfFormCode = sf.form_code || sf.formcode || '';
-            const sfFkField  = sf.fk_field  || sf.fkfield  || '';
-            if (sfFormCode) newCard.dataset.sfFormCode       = sfFormCode;
-            if (sfFkField)  newCard.dataset.sfFkField        = sfFkField;
-            if (f.is_fk)           newCard.dataset.sfIsFk           = '1';
-            if (f.hide_in_grid)    newCard.dataset.sfHideInGrid     = '1';
-            if (f.server_readonly) newCard.dataset.sfServerReadonly = '1';
+            if (window._nbSfData) {
+              window._nbSfData.write(newCard, {
+                form_code:       sf.form_code || sf.formcode || '',
+                fk_field:        sf.fk_field  || sf.fkfield  || '',
+                is_fk:           !!f.is_fk,
+                hide_in_grid:    !!f.hide_in_grid,
+                server_readonly: !!f.server_readonly
+              });
+            }
 
-            // KEY FIX: clear the upgrade lock so upgradeSubformPanel()
-            // in nb-subform-fk-builder re-runs now that attributes are set.
-            // upgradeAllSubformCards() is called after a short delay by
-            // nb-subform-fk-builder's own post-rebuild hook.
+            // Clear upgrade lock so nb-subform-fk-builder re-runs with
+            // correct data now that attributes are stamped.
             delete newCard._sfPanelUpgraded;
           }
         }
       });
 
-      // Signal nb-subform-fk-builder to re-upgrade all subform cards.
-      // It listens for this event in its nu:form:opened handler, and also
-      // has its own MutationObserver, but dispatching here ensures the
-      // re-upgrade fires after _rebuildCanvas fully completes.
+      // Trigger re-upgrade of all subform panels after canvas is complete.
       setTimeout(function () {
-        if (typeof window._nbSfUpgradeAll === 'function') {
-          window._nbSfUpgradeAll();
-        }
+        if (typeof window._nbSfUpgradeAll === 'function') window._nbSfUpgradeAll();
       }, 80);
     }
 
