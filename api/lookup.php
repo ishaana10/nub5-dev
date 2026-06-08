@@ -10,11 +10,15 @@ if (!$auth->checkAuth()) {
     exit;
 }
 
-$table = $_GET['table'] ?? '';
-$idCol = $_GET['id'] ?? $_GET['id_column'] ?? '';
-$displayCol = $_GET['display'] ?? $_GET['display_column'] ?? 'name';
-$filter = $_GET['filter'] ?? '';
-$extra = $_GET['extra'] ?? '';
+header('Content-Type: application/json');
+
+// Accept id_col / id_column / id  (JS sends id_col)
+$table      = $_GET['table']       ?? '';
+$idCol      = $_GET['id_col']      ?? $_GET['id_column'] ?? $_GET['id'] ?? '';
+$displayCol = $_GET['display_col'] ?? $_GET['display_column'] ?? $_GET['display'] ?? 'name';
+$filter     = $_GET['filter']      ?? '';
+$extra      = $_GET['extra']       ?? '';
+$q          = trim($_GET['q']      ?? '');
 
 if (!$table || preg_match('/[^a-zA-Z0-9_]/', $table)) {
     echo json_encode(['success' => false, 'error' => 'Invalid table name']);
@@ -42,10 +46,10 @@ if (preg_match('/[^a-zA-Z0-9_]/', $idCol) || preg_match('/[^a-zA-Z0-9_]/', $disp
     exit;
 }
 
+// Extra mapping cols (src_col:target_field,...)
 $extraCols = [];
 if (!empty($extra)) {
-    $pairs = explode(',', $extra);
-    foreach ($pairs as $pair) {
+    foreach (explode(',', $extra) as $pair) {
         $parts = explode(':', $pair);
         if (count($parts) === 2) {
             $sourceCol = trim($parts[0]);
@@ -63,28 +67,44 @@ foreach ($extraCols as $col) {
     }
 }
 
+// Build WHERE clauses
+$whereParts = [];
+$params     = [];
+
+// Static filter from field config
 $filter = trim($filter);
 if (stripos($filter, 'WHERE ') === 0) {
     $filter = trim(substr($filter, 6));
 }
-
-$sql = "SELECT " . implode(', ', $selectCols) . " FROM `{$table}`";
 if ($filter !== '') {
-    $sql .= " WHERE {$filter}";
+    $whereParts[] = "({$filter})";
 }
-$sql .= " ORDER BY `{$displayCol}` LIMIT 500";
+
+// Live search query
+if ($q !== '') {
+    $whereParts[] = "`{$displayCol}` LIKE ?";
+    $params[]     = '%' . $q . '%';
+}
+
+$sql = 'SELECT ' . implode(', ', $selectCols) . " FROM `{$table}`";
+if (!empty($whereParts)) {
+    $sql .= ' WHERE ' . implode(' AND ', $whereParts);
+}
+$sql .= " ORDER BY `{$displayCol}` LIMIT 200";
 
 try {
-    $data = $db->fetchAll($sql);
+    $data = empty($params)
+        ? $db->fetchAll($sql)
+        : $db->fetchAll($sql, $params);
+
     echo json_encode([
         'success' => true,
-        'data' => $data,
-        'debug_sql' => $sql
+        'data'    => $data,
     ]);
 } catch (Exception $e) {
     echo json_encode([
         'success' => false,
-        'error' => $e->getMessage(),
-        'sql' => $sql
+        'error'   => $e->getMessage(),
+        'sql'     => $sql,
     ]);
 }
