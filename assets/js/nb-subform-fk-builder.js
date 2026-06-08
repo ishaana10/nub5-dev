@@ -3,67 +3,20 @@
  * FK-aware subform panel patches for nbFormBuilder.
  *
  * Changelog:
- *   2026-06-07  Initial saveForm intercept approach.
- *   2026-06-08a Dropdown sel.value fix for edit mode.
- *   2026-06-08b Re-entrant upgradeSubformPanel to handle timing race.
- *   2026-06-08c Refactor: _nbSfAugmentLayout hook.
- *   2026-06-08d Fix: positional card match + remove stale _rebuildCanvas wrap.
- *   2026-06-08e Fix: wrap window.saveForm directly (not fb.getLayout which
- *               may not exist yet when patchBuilder runs). Uses Object.defineProperty
- *               to intercept the assignment of saveForm so we catch it no matter
- *               when nubuilder-next.js sets it. Before each save, flush panel
- *               values into data-sf-* attrs so fb.getLayout() sees them.
+ *   2026-06-08f Fix: drop Object.defineProperty window.saveForm trap (broke save).
+ *               Instead wrap nbFormBuilder.saveForm inside waitForBuilder, which
+ *               fires only after nbFormBuilder is fully initialised. Also wrap
+ *               nbFormBuilder.open / _initAfterLoad to re-hook whenever the
+ *               builder re-opens (module reload). Flush panel → data-sf-* before
+ *               every save so fb.getLayout() picks up the values.
  */
 (function () {
   'use strict';
 
   /* ══════════════════════════════════════════════════════════════════
-     PART A — intercept window.saveForm the moment it is assigned,
-     then wrap it to flush subform panel data first.
-  ═══════════════════════════════════════════════════════════════════ */
-  (function patchSaveForm() {
-    var _realSaveForm = null;
-
-    function _flushAndSave() {
-      // 1. Flush panel values → data-sf-* on every subform card
-      _flushAllPanels();
-      // 2. Call the real saveForm
-      if (typeof _realSaveForm === 'function') {
-        return _realSaveForm.apply(this, arguments);
-      }
-    }
-
-    // Define a property trap on window so we catch when nubuilder-next.js
-    // does `window.saveForm = function() {...}`
-    try {
-      Object.defineProperty(window, 'saveForm', {
-        configurable: true,
-        enumerable:   true,
-        get: function () {
-          return _realSaveForm ? _flushAndSave : undefined;
-        },
-        set: function (fn) {
-          _realSaveForm = fn;
-          // Re-expose as a plain value so external callers (onclick, etc.) work
-          // Leave the trap in place — no need to restore, the wrapper IS saveForm.
-        }
-      });
-    } catch (e) {
-      // Fallback: poll until saveForm appears, then wrap it
-      var _poll = setInterval(function () {
-        if (typeof window.saveForm === 'function' && window.saveForm !== _flushAndSave) {
-          _realSaveForm   = window.saveForm;
-          window.saveForm = _flushAndSave;
-          clearInterval(_poll);
-        }
-      }, 50);
-    }
-  })();
-
-  /* ══════════════════════════════════════════════════════════════════
-     _flushAllPanels — reads each subform card's panel UI and writes
-     values into data-sf-* attributes so fb.getLayout() picks them up.
-     Also calls _nbSfData.write() to keep the shared store in sync.
+     _flushAllPanels — reads each subform panel UI and writes values into
+     data-sf-* on the card element so fb.getLayout() / the serialiser
+     can read them synchronously.
   ═══════════════════════════════════════════════════════════════════ */
   function _flushAllPanels() {
     var canvas = document.getElementById('formCanvas');
@@ -83,14 +36,12 @@
       var formCode = formCodeSel ? (formCodeSel.value || '') : '';
       var fkField  = fkFieldSel  ? (fkFieldSel.value  || '') : '';
 
-      // Write to data-sf-* so getLayout() / serialiser can read them
       card.dataset.sfFormCode       = formCode;
       card.dataset.sfFkField        = fkField;
       card.dataset.sfIsFk           = (isFkChk  && isFkChk.checked)  ? '1' : '0';
       card.dataset.sfHideInGrid     = (hideChk  && hideChk.checked)   ? '1' : '0';
       card.dataset.sfServerReadonly = (srvRoChk && srvRoChk.checked)  ? '1' : '0';
 
-      // Keep shared store in sync
       if (window._nbSfData) {
         window._nbSfData.write(card, {
           form_code:       formCode,
@@ -101,26 +52,10 @@
         });
       }
     });
-
-    // Also call _nbSfAugmentLayout on whatever getLayout would return,
-    // if fb and getLayout already exist at this point.
-    var fb = window.nbFormBuilder;
-    if (fb && typeof fb.getLayout === 'function' && typeof window._nbSfAugmentLayout === 'function') {
-      // monkey-patch once: wrap getLayout to call augment
-      if (!fb._sfGetLayoutPatched) {
-        fb._sfGetLayoutPatched = true;
-        var _origGL = fb.getLayout.bind(fb);
-        fb.getLayout = function () {
-          var layout = _origGL.apply(fb, arguments);
-          return window._nbSfAugmentLayout(layout);
-        };
-      }
-    }
   }
 
   /* ══════════════════════════════════════════════════════════════════
-     PART B — builder panel injection (GAP 1)
-     Waits for nbFormBuilder, then upgrades subform cards.
+     waitForBuilder — polls until nbFormBuilder.addField exists
   ═══════════════════════════════════════════════════════════════════ */
   function waitForBuilder(cb) {
     if (window.nbFormBuilder && typeof window.nbFormBuilder.addField === 'function') {
@@ -133,6 +68,93 @@
   waitForBuilder(function () {
     var fb = window.nbFormBuilder;
 
+    /* ══════════════════════════════════════════════════════════════════
+       Wrap nbFormBuilder.saveForm to flush panels first.
+       Also wrap window.saveForm (the alias the button calls) once we
+       know it exists — poll briefly since it may be set milliseconds
+       after waitForBuilder resolves.
+    ═══════════════════════════════════════════════════════════════════ */
+    function _wrapSaveForm(target, key) {
+      if (!target || typeof target[key] !== 'function') return false;
+      if (target[key]._sfWrapped) return true;
+      var _orig = target[key].bind(target);
+      target[key] = function () {
+        _flushAllPanels();
+        return _orig.apply(target, arguments);
+      };
+      target[key]._sfWrapped = true;
+      return true;
+    }
+
+    // Wrap on fb immediately
+    _wrapSaveForm(fb, 'saveForm');
+
+    // Also poll for window.saveForm (alias set by nubuilder-next.js or forms.php)
+    var _sfPollCount = 0;
+    var _sfPoll = setInterval(function () {
+      if (_wrapSaveForm(window, 'saveForm')) { clearInterval(_sfPoll); return; }
+      if (++_sfPollCount > 100) clearInterval(_sfPoll); // give up after 5s
+    }, 50);
+
+    /* ══════════════════════════════════════════════════════════════════
+       _nbSfAugmentLayout hook (positional matching)
+       Still registered for nb-form-builder-layout.js to call if it
+       manages to wrap getLayout correctly.
+    ═══════════════════════════════════════════════════════════════════ */
+    function _augmentSubformData(fieldObj, card) {
+      if ((fieldObj.type || fieldObj.fieldtype || '') !== 'subform') return fieldObj;
+
+      var formCode = card.dataset.sfFormCode || '';
+      var fkField  = card.dataset.sfFkField  || '';
+      var isFk     = card.dataset.sfIsFk           === '1';
+      var hideGrid = card.dataset.sfHideInGrid     === '1';
+      var srvRo    = card.dataset.sfServerReadonly === '1';
+
+      var panel = card.querySelector('.nb-sf-fk-panel');
+      if (panel) {
+        var formCodeSel = panel.querySelector('.nb-sf-form-code');
+        var fkFieldSel  = panel.querySelector('.nb-sf-fk-field');
+        var isFkChk     = panel.querySelector('.nb-sf-is-fk');
+        var hideChk     = panel.querySelector('.nb-sf-hide-in-grid');
+        var srvRoChk    = panel.querySelector('.nb-sf-server-readonly');
+        if (formCodeSel && formCodeSel.value) formCode = formCodeSel.value;
+        if (fkFieldSel  && fkFieldSel.value)  fkField  = fkFieldSel.value;
+        if (isFkChk)  isFk     = isFkChk.checked;
+        if (hideChk)  hideGrid = hideChk.checked;
+        if (srvRoChk) srvRo    = srvRoChk.checked;
+      }
+
+      if (!fieldObj.subform) fieldObj.subform = {};
+      if (formCode) fieldObj.subform.form_code = formCode;
+      if (fkField)  fieldObj.subform.fk_field  = fkField;
+      if (isFk)     fieldObj.is_fk           = true; else delete fieldObj.is_fk;
+      if (hideGrid) fieldObj.hide_in_grid    = true; else delete fieldObj.hide_in_grid;
+      if (srvRo)    fieldObj.server_readonly = true; else delete fieldObj.server_readonly;
+
+      return fieldObj;
+    }
+
+    function _augmentLayout(layout) {
+      if (!Array.isArray(layout)) return layout;
+      var canvas = document.getElementById('formCanvas');
+      if (!canvas) return layout;
+      var sfCards = Array.prototype.slice.call(
+        canvas.querySelectorAll('.nb-cfield[data-type="subform"], .nb-cfield[data-fieldtype="subform"]')
+      );
+      var sfIndex = 0;
+      layout.forEach(function (fieldObj) {
+        if ((fieldObj.type || fieldObj.fieldtype || '') !== 'subform') return;
+        var card = sfCards[sfIndex++] || null;
+        if (card) _augmentSubformData(fieldObj, card);
+      });
+      return layout;
+    }
+
+    window._nbSfAugmentLayout = _augmentLayout;
+
+    /* ══════════════════════════════════════════════════════════════════
+       GAP 1 — subform panel injection
+    ═══════════════════════════════════════════════════════════════════ */
     function upgradeSubformPanel(card) {
       if (card._sfPanelUpgraded) {
         var existingPanel = card.querySelector('.nb-sf-fk-panel');
@@ -143,7 +165,6 @@
         }
         card._sfPanelUpgraded = false;
       }
-
       card._sfPanelUpgraded = true;
 
       var oldInput = card.querySelector('.nu-subform-config, input[placeholder*="order_id"], input[data-sf-config]');
@@ -279,61 +300,6 @@
         })
         .catch(function () {});
     }
-
-    /* ══════════════════════════════════════════════════════════════════
-       GAP 2 — _nbSfAugmentLayout hook (positional matching)
-    ═══════════════════════════════════════════════════════════════════ */
-    function _augmentSubformData(fieldObj, card) {
-      if ((fieldObj.type || fieldObj.fieldtype || '') !== 'subform') return fieldObj;
-
-      var formCode = card.dataset.sfFormCode || '';
-      var fkField  = card.dataset.sfFkField  || '';
-      var isFk     = card.dataset.sfIsFk           === '1';
-      var hideGrid = card.dataset.sfHideInGrid     === '1';
-      var srvRo    = card.dataset.sfServerReadonly === '1';
-
-      // Prefer live panel values if available
-      var panel = card.querySelector('.nb-sf-fk-panel');
-      if (panel) {
-        var formCodeSel = panel.querySelector('.nb-sf-form-code');
-        var fkFieldSel  = panel.querySelector('.nb-sf-fk-field');
-        var isFkChk     = panel.querySelector('.nb-sf-is-fk');
-        var hideChk     = panel.querySelector('.nb-sf-hide-in-grid');
-        var srvRoChk    = panel.querySelector('.nb-sf-server-readonly');
-        if (formCodeSel && formCodeSel.value) formCode = formCodeSel.value;
-        if (fkFieldSel  && fkFieldSel.value)  fkField  = fkFieldSel.value;
-        if (isFkChk)  isFk     = isFkChk.checked;
-        if (hideChk)  hideGrid = hideChk.checked;
-        if (srvRoChk) srvRo    = srvRoChk.checked;
-      }
-
-      if (!fieldObj.subform) fieldObj.subform = {};
-      if (formCode) fieldObj.subform.form_code = formCode;
-      if (fkField)  fieldObj.subform.fk_field  = fkField;
-      if (isFk)     fieldObj.is_fk           = true; else delete fieldObj.is_fk;
-      if (hideGrid) fieldObj.hide_in_grid    = true; else delete fieldObj.hide_in_grid;
-      if (srvRo)    fieldObj.server_readonly = true; else delete fieldObj.server_readonly;
-
-      return fieldObj;
-    }
-
-    function _augmentLayout(layout) {
-      if (!Array.isArray(layout)) return layout;
-      var canvas = document.getElementById('formCanvas');
-      if (!canvas) return layout;
-      var sfCards = Array.prototype.slice.call(
-        canvas.querySelectorAll('.nb-cfield[data-type="subform"], .nb-cfield[data-fieldtype="subform"]')
-      );
-      var sfIndex = 0;
-      layout.forEach(function (fieldObj) {
-        if ((fieldObj.type || fieldObj.fieldtype || '') !== 'subform') return;
-        var card = sfCards[sfIndex++] || null;
-        if (card) _augmentSubformData(fieldObj, card);
-      });
-      return layout;
-    }
-
-    window._nbSfAugmentLayout = _augmentLayout;
 
     /* ══════════════════════════════════════════════════════════════════
        GAP 3 — createFkField()
