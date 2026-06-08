@@ -12,6 +12,7 @@
  *
  * Class-naming convention:
  *   nu-field-*  per-field config inputs  (label, name, required, …)
+ *   nu-lookup-* lookup-specific inputs   (table, display, store, filter, extra)
  *   nb-*        builder canvas structure (rows, card shell, span bar, …)
  */
 (function (window) {
@@ -259,6 +260,7 @@
     // ── _makeFieldCard ────────────────────────────────────────────
     // Field input classes use the  nu-field-*  prefix for consistency
     // with the rest of the nu-* design system.
+    // Lookup-specific inputs use the  nu-lookup-*  prefix.
     _makeFieldCard: function (type, label, name, required, extra) {
       extra = extra || {};
       var col = parseInt(extra.col || extra.colspan, 10) || 12;
@@ -284,15 +286,45 @@
       }
 
       if (type === 'lookup') {
-        extraBody += '<div class="nb-fp nb-fp-full"><label>Popup Form Code</label>'
-          + '<input type="text" class="nu-input nu-field-lookup-form" placeholder="form_code" value="'
-          + _esc(extra.lookup_form || '') + '"></div>';
-        extraBody += '<div class="nb-fp"><label>Display Column</label>'
-          + '<input type="text" class="nu-input nu-field-lookup-display" placeholder="column shown to user" value="'
-          + _esc(extra.lookup_display || '') + '"></div>';
-        extraBody += '<div class="nb-fp"><label>Store Column</label>'
-          + '<input type="text" class="nu-input nu-field-lookup-store" placeholder="value saved to DB" value="'
-          + _esc(extra.lookup_store || '') + '"></div>';
+        // Resolve values from both new (lookup object) and legacy flat fields
+        var lk       = (extra.lookup && typeof extra.lookup === 'object') ? extra.lookup : {};
+        var lkTable  = lk.table          || lk.form_code       || extra.lookup_form    || '';
+        var lkDisp   = lk.display_column || lk.displaycolumn   || extra.lookup_display || '';
+        var lkStore  = lk.id_column      || lk.idcolumn        || extra.lookup_store   || '';
+        var lkFilter = lk.filter         || extra.lookup_filter || '';
+        var lkExtra  = lk.extra          || extra.lookup_extra  || '';
+
+        extraBody +=
+          '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;margin-top:6px;grid-column:1/-1;">' +
+            '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">🔗 LOOKUP CONFIG <span style="font-weight:400;color:var(--text-muted,#888);">— links this field to another table</span></div>' +
+
+            '<div style="margin-bottom:8px;">' +
+              '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Lookup Table <span style="font-weight:400;">— the DB table to search</span></label>' +
+              '<input type="text" class="nu-input nu-lookup-table" value="' + _esc(lkTable) + '" placeholder="e.g. customers" style="font-size:12px;width:100%;box-sizing:border-box;">' +
+            '</div>' +
+
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+              '<div>' +
+                '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Display Column <span style="font-weight:400;">(shown to user)</span></label>' +
+                '<input type="text" class="nu-input nu-lookup-display" value="' + _esc(lkDisp) + '" placeholder="e.g. full_name" style="font-size:12px;">' +
+              '</div>' +
+              '<div>' +
+                '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Store Column <span style="font-weight:400;">(saved to DB)</span></label>' +
+                '<input type="text" class="nu-input nu-lookup-store" value="' + _esc(lkStore) + '" placeholder="e.g. id" style="font-size:12px;">' +
+              '</div>' +
+            '</div>' +
+
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+              '<div>' +
+                '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Filter SQL <span style="font-weight:400;">(optional WHERE clause)</span></label>' +
+                '<input type="text" class="nu-input nu-lookup-filter" value="' + _esc(lkFilter) + '" placeholder="e.g. active=1" style="font-size:12px;">' +
+              '</div>' +
+              '<div>' +
+                '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Extra Mapping <span style="font-weight:400;">(src:field, comma-sep)</span></label>' +
+                '<input type="text" class="nu-input nu-lookup-extra" value="' + _esc(lkExtra) + '" placeholder="e.g. code:dept_code" style="font-size:12px;">' +
+              '</div>' +
+            '</div>' +
+          '</div>';
       }
 
       if (type === 'subform') {
@@ -390,9 +422,13 @@
         var optsEl     = card.querySelector('.nu-field-options');
         var helpEl     = card.querySelector('.nu-field-help');
         var formulaEl  = card.querySelector('.nu-field-formula');
-        var lkFormEl   = card.querySelector('.nu-field-lookup-form');
-        var lkDispEl   = card.querySelector('.nu-field-lookup-display');
-        var lkStoreEl  = card.querySelector('.nu-field-lookup-store');
+
+        // Lookup inputs — new nu-lookup-* class names
+        var lkTableEl  = card.querySelector('.nu-lookup-table');
+        var lkDispEl   = card.querySelector('.nu-lookup-display');
+        var lkStoreEl  = card.querySelector('.nu-lookup-store');
+        var lkFilterEl = card.querySelector('.nu-lookup-filter');
+        var lkExtraEl  = card.querySelector('.nu-lookup-extra');
 
         var field = {
           type:          type,
@@ -415,10 +451,18 @@
           }).filter(Boolean);
         }
 
-        if (formulaEl)  field.formula        = formulaEl.value;
-        if (lkFormEl)   field.lookup_form    = lkFormEl.value;
-        if (lkDispEl)   field.lookup_display = lkDispEl.value;
-        if (lkStoreEl)  field.lookup_store   = lkStoreEl.value;
+        if (formulaEl) field.formula = formulaEl.value;
+
+        // Serialise lookup config as a nested object
+        if (type === 'lookup' && lkTableEl) {
+          field.lookup = {
+            table:          lkTableEl  ? lkTableEl.value.trim()  : '',
+            display_column: lkDispEl   ? (lkDispEl.value.trim()  || 'name') : 'name',
+            id_column:      lkStoreEl  ? (lkStoreEl.value.trim() || 'id')   : 'id',
+            filter:         lkFilterEl ? lkFilterEl.value.trim() : '',
+            extra:          lkExtraEl  ? lkExtraEl.value.trim()  : ''
+          };
+        }
 
         if (type === 'subform') field.subform = {};
         fields.push(field);
