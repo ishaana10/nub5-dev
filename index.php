@@ -352,7 +352,9 @@ function nu_asset(string $path): string {
 <script src="assets/js/select2.min.js"></script>
 <script src="<?= nu_asset('assets/js/nusubform.js') ?>"></script>
 <script src="assets/js/nubuilder-next.js"></script>
-<script src="<?= nu_asset('assets/js/nb-subform-fk-builder.js') ?>" defer></script>
+<script src="<?= nu_asset('assets/js/nb-sf-data.js') ?>"></script>
+<script src="<?= nu_asset('assets/js/nb-subform-fk-builder.js') ?>"></script>
+<script src="<?= nu_asset('assets/js/nb-form-builder-layout.js') ?>"></script>
 <script src="<?= nu_asset('assets/js/nb-form-edit.js') ?>"></script>
 <script>
 (function () {
