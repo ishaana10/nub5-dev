@@ -18,22 +18,22 @@
  *   Auto-adds a hidden FK field to the child form's layout.
  *
  * FIX (2026-06-07) — saveForm intercept
- *   The _serializerNames array was patching method names that don't exist
- *   on nbFormBuilder (getLayout, collectLayout, etc. are not real methods).
  *   The actual save path calls window.saveForm() which reads the canvas
- *   directly via its own internal walker. We now also intercept
- *   window.saveForm and post-process the layout JSON string inside the
- *   payload before the fetch fires, guaranteeing subform.form_code and
- *   subform.fk_field are always present. The serialiser name intercept is
- *   kept as a secondary safety net.
+ *   directly. We intercept window.saveForm and post-process the layout
+ *   JSON string inside the payload before the fetch fires.
  *
- * FIX (2026-06-08) — dropdown population in edit mode
- *   _populateFormDropdown and _populateFkDropdown now explicitly call
- *   sel.value = selectedValue after all <option> elements are appended.
- *   Previously only opt.selected was set inline, which was unreliable
- *   because the browser may not honour it until the select's value is
- *   forced. This caused the Child Form and FK Field dropdowns to appear
- *   blank when re-opening a saved subform field in the builder.
+ * FIX (2026-06-08a) — dropdown population in edit mode
+ *   _populateFormDropdown and _populateFkDropdown now call sel.value
+ *   after appending options so the browser honours the selection.
+ *
+ * FIX (2026-06-08b) — panel missing entirely in edit mode
+ *   upgradeSubformPanel was locking _sfPanelUpgraded=true before
+ *   _rebuildCanvas in nb-form-edit.js had a chance to stamp data-sf-*
+ *   on the card (the MutationObserver fires synchronously during addField).
+ *   Fix: upgradeSubformPanel is now re-entrant — it clears its own lock
+ *   and removes any existing .nb-sf-fk-panel before rebuilding.
+ *   nb-form-edit.js deletes _sfPanelUpgraded after stamping data-sf-*
+ *   and calls window._nbSfUpgradeAll() to trigger a clean re-upgrade.
  */
 (function () {
   'use strict';
@@ -54,8 +54,35 @@
        GAP 1 — patch _fieldPanel() subform section
     ═══════════════════════════════════════════════════════════════════ */
 
+    // ─────────────────────────────────────────────────────────────────
+    // upgradeSubformPanel
+    // RE-ENTRANT (FIX 2026-06-08b):
+    // Previously gated by card._sfPanelUpgraded which was set the first
+    // time the MutationObserver fired (during addField, before data-sf-*
+    // were available). Now we allow a second pass: if the card has
+    // data-sf-* attributes but the panel dropdowns are empty, we tear
+    // down the old panel and rebuild with correct data.
+    // nb-form-edit.js deletes _sfPanelUpgraded after stamping to trigger
+    // this re-upgrade path.
+    // ─────────────────────────────────────────────────────────────────
     function upgradeSubformPanel(card) {
-      if (card._sfPanelUpgraded) return;
+      // If already upgraded AND the panel exists AND the form-code select
+      // already has a non-blank value, nothing to do.
+      if (card._sfPanelUpgraded) {
+        var existingPanel = card.querySelector('.nb-sf-fk-panel');
+        if (existingPanel) {
+          var existingSel = existingPanel.querySelector('.nb-sf-form-code');
+          if (existingSel && existingSel.value) {
+            // Panel is already correctly populated — skip.
+            return;
+          }
+          // Panel exists but is blank — tear it down for a fresh build.
+          existingPanel.remove();
+        }
+        // Clear the lock so we rebuild below.
+        card._sfPanelUpgraded = false;
+      }
+
       card._sfPanelUpgraded = true;
 
       var oldInput = card.querySelector('.nu-subform-config, input[placeholder*="order_id"], input[data-sf-config]');
@@ -138,10 +165,8 @@
 
     // ─────────────────────────────────────────────────────────────────
     // _populateFormDropdown
-    // FIX (2026-06-08): after appending all options, explicitly set
-    // sel.value = selectedCode so the browser honours the selection.
-    // Previously only opt.selected was set inline which could be ignored
-    // if the <select> had already rendered with a different value.
+    // FIX (2026-06-08a): explicitly set sel.value after all options are
+    // appended so the browser honours the selection.
     // ─────────────────────────────────────────────────────────────────
     function _populateFormDropdown(panel, selectedCode, cb) {
       var sel = panel.querySelector('.nb-sf-form-code');
@@ -160,7 +185,6 @@
           // FIX: force the value after all options are in the DOM
           if (selectedCode) {
             sel.value = selectedCode;
-            // If the option didn't exist (form deleted), add a placeholder
             if (sel.value !== selectedCode) {
               var missing = document.createElement('option');
               missing.value = selectedCode;
@@ -176,8 +200,7 @@
 
     // ─────────────────────────────────────────────────────────────────
     // _populateFkDropdown
-    // FIX (2026-06-08): same fix — explicitly set sel.value = selectedFk
-    // after all options are appended.
+    // FIX (2026-06-08a): explicitly set sel.value after all options.
     // ─────────────────────────────────────────────────────────────────
     function _populateFkDropdown(panel, formCode, selectedFk) {
       var sel = panel.querySelector('.nb-sf-fk-field');
@@ -202,7 +225,6 @@
           // FIX: force the value after all options are in the DOM
           if (selectedFk) {
             sel.value = selectedFk;
-            // If the option didn't exist (field removed), add a placeholder
             if (sel.value !== selectedFk) {
               var missing = document.createElement('option');
               missing.value = selectedFk;
@@ -216,15 +238,10 @@
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // _readSubformData
-    // 3-tier fallback to read saved subform config from a card element:
-    //   1. data-sf-* attributes  (fast path — written by _augmentSubformData
-    //      after serialise, and by _rebuildCanvas in nb-form-edit.js)
-    //   2. data-field-json blob  (written by _rebuildCanvas on edit load)
-    //   3. data-subform-*/data-form-code etc. legacy attributes
+    // _readSubformData — 3-tier fallback
     // ─────────────────────────────────────────────────────────────────
     function _readSubformData(card) {
-      /* 1. Fast path: data-sf-* (set by serialiser write-back and by _rebuildCanvas) */
+      /* 1. Fast path: data-sf-* */
       var sfFormCode = card.dataset.sfFormCode || '';
       if (sfFormCode) {
         return {
@@ -245,9 +262,8 @@
           var fc  = sf.form_code || sf.formcode || '';
           var fk  = sf.fk_field  || sf.fkfield  || '';
           if (fc) {
-            /* Promote to data-sf-* so fast path works next time */
             card.dataset.sfFormCode = fc;
-            if (fk)            card.dataset.sfFkField        = fk;
+            if (fk)                  card.dataset.sfFkField        = fk;
             if (obj.is_fk)           card.dataset.sfIsFk           = '1';
             if (obj.hide_in_grid)    card.dataset.sfHideInGrid     = '1';
             if (obj.server_readonly) card.dataset.sfServerReadonly = '1';
@@ -262,7 +278,7 @@
         } catch (e) {}
       }
 
-      /* 3. Last resort: legacy attribute names */
+      /* 3. Legacy attribute names */
       return {
         form_code:       card.dataset.subformFormCode || card.dataset.formCode || '',
         fk_field:        card.dataset.subformFkField  || card.dataset.fkField  || '',
@@ -335,10 +351,6 @@
 
     /* ══════════════════════════════════════════════════════════════════
        GAP 2 — patch layout serialiser
-       After writing subform config into fieldObj, we also write the
-       values back onto the card element as data-sf-* attributes.
-       This means the NEXT time edit() is called, _readSubformData()
-       fast-path fires immediately without needing to parse JSON.
     ═══════════════════════════════════════════════════════════════════ */
     function _augmentSubformData(fieldObj, card) {
       if ((fieldObj.type || fieldObj.fieldtype || '') !== 'subform') return fieldObj;
@@ -359,7 +371,6 @@
       if (hideChk)  { if (hideChk.checked)   fieldObj.hide_in_grid    = true; else delete fieldObj.hide_in_grid;    }
       if (srvRoChk) { if (srvRoChk.checked)  fieldObj.server_readonly = true; else delete fieldObj.server_readonly; }
 
-      // ── write data-sf-* back onto the card element ──────────────────
       if (formCode) card.dataset.sfFormCode       = formCode;
       if (fkField)  card.dataset.sfFkField        = fkField;
       card.dataset.sfIsFk           = isFkChk  && isFkChk.checked  ? '1' : '0';
@@ -369,14 +380,6 @@
       return fieldObj;
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // _injectSubformDataIntoLayout
-    // Given a layout array (already parsed from JSON), walks every
-    // subform node and merges the current panel state from the canvas
-    // card that matches by name. Returns the mutated layout array.
-    // This is the core routine called by both the serialiser patch and
-    // the saveForm intercept.
-    // ─────────────────────────────────────────────────────────────────
     function _injectSubformDataIntoLayout(layout) {
       if (!Array.isArray(layout)) return layout;
       var canvas = document.getElementById('formCanvas');
@@ -389,18 +392,12 @@
         cards.forEach(function (c) {
           if ((c.dataset.fieldName || c.dataset.name || '') === fname) matchCard = c;
         });
-        // If only one subform card exists, always match it (handles unnamed/auto-named cards)
         if (!matchCard && cards.length === 1) matchCard = cards[0];
         if (matchCard) _augmentSubformData(fieldObj, matchCard);
       });
       return layout;
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    // Serialiser method name intercept (secondary safety net).
-    // We patch every plausible method name that nbFormBuilder might
-    // expose. The primary fix is the saveForm intercept below.
-    // ─────────────────────────────────────────────────────────────────
     var _serializerNames = [
       'getLayout', 'collectLayout', '_serializeCanvas', 'serializeLayout', '_getLayout',
       'readLayout', 'buildLayout', 'exportLayout', 'toJSON', 'getFieldLayout'
@@ -416,13 +413,6 @@
 
     /* ══════════════════════════════════════════════════════════════════
        PRIMARY FIX — intercept window.saveForm
-       saveForm() is the single entry point for all form saves. It
-       assembles a payload object containing form_layout (a JSON string
-       of the canvas field array) and POSTs it to api/forms.php?action=save.
-       We wrap saveForm so that immediately before the fetch fires, we
-       parse form_layout, inject subform data, and re-serialise it.
-       This is 100% reliable regardless of what the internal serialiser
-       method is called.
     ═══════════════════════════════════════════════════════════════════ */
     function _installSaveFormIntercept() {
       if (!window.saveForm || window._nbSfSaveFormPatched) return;
@@ -431,15 +421,13 @@
       var _origSaveForm = window.saveForm;
 
       window.saveForm = function () {
-        // Patch window.fetch to intercept the next api/forms.php?action=save call
         var _origFetch = window.fetch;
         var _intercepted = false;
 
         window.fetch = function (url, options) {
-          // Only intercept the save action once
           if (!_intercepted && typeof url === 'string' && url.indexOf('forms.php') !== -1 && url.indexOf('action=save') !== -1) {
             _intercepted = true;
-            window.fetch = _origFetch; // restore immediately
+            window.fetch = _origFetch;
 
             try {
               if (options && options.body) {
@@ -474,7 +462,6 @@
       console.log('[nb-subform-fk-builder] saveForm intercept installed.');
     }
 
-    // Install immediately if saveForm already exists, otherwise poll for it
     if (window.saveForm) {
       _installSaveFormIntercept();
     } else {
@@ -486,7 +473,7 @@
           _installSaveFormIntercept();
         } else if (_sfPollCount > 100) {
           clearInterval(_sfPoll);
-          console.warn('[nb-subform-fk-builder] saveForm not found after polling; save intercept not installed.');
+          console.warn('[nb-subform-fk-builder] saveForm not found after polling.');
         }
       }, 100);
     }
@@ -501,6 +488,9 @@
         '.nb-cfield[data-type="subform"], .nb-cfield[data-fieldtype="subform"]'
       ).forEach(upgradeSubformPanel);
     }
+
+    // Expose so nb-form-edit.js can call it after _rebuildCanvas.
+    window._nbSfUpgradeAll = upgradeAllSubformCards;
 
     /* ── MutationObserver: upgrade cards as they are added ─────────── */
     var _obs = new MutationObserver(function (mutations) {
@@ -525,21 +515,17 @@
       _obs.observe(canvas, { childList: true, subtree: true });
     }
 
-    /* ── Initial attach ─────────────────────────────────────────────── */
     attachObserver();
     upgradeAllSubformCards();
 
-    /* ── Re-attach + upgrade every time the forms module opens ─────── */
     document.addEventListener('nu:form:opened', function () {
       setTimeout(function () {
         attachObserver();
         upgradeAllSubformCards();
-        // Re-check saveForm in case the module re-declares it
         _installSaveFormIntercept();
       }, 150);
     });
 
-    /* ── Also hook _rebuildCanvas directly so edit-load is covered ─── */
     if (typeof fb._rebuildCanvas === 'function') {
       var _origRebuild = fb._rebuildCanvas.bind(fb);
       fb._rebuildCanvas = function () {
@@ -560,7 +546,6 @@
       };
     }
 
-    /* ── Also hook _initAfterLoad (called by NuApp.initModuleScripts) ─ */
     if (typeof fb._initAfterLoad === 'function') {
       var _origInit = fb._initAfterLoad.bind(fb);
       fb._initAfterLoad = function () {

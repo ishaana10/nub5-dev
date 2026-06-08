@@ -149,10 +149,24 @@
 
     // ─────────────────────────────────────────────────────────────────
     // _rebuildCanvas
-    // After calling addField() for each saved field we stamp the full
-    // field-object JSON onto the card element as data-field-json.
-    // This is what _readSubformData() reads in nb-subform-fk-builder.js
-    // to restore the Child Form / FK Field dropdowns on next edit.
+    //
+    // KEY FIX (2026-06-08):
+    // The MutationObserver in nb-subform-fk-builder.js calls
+    // upgradeSubformPanel() synchronously the moment addField() inserts
+    // the card into the canvas. At that instant, data-sf-* attributes
+    // haven't been stamped yet, so _readSubformData() returns empty data
+    // and the panel renders blank. The card then has _sfPanelUpgraded=true
+    // locked in, so re-running upgradeAllSubformCards() later has no effect.
+    //
+    // Fix: stamp ALL data-sf-* attributes on the card BEFORE addField()
+    // is called by pre-inserting a sentinel data attribute that
+    // upgradeSubformPanel can read. We do this by setting the attributes
+    // on a temporary object keyed by field index and hooking into the
+    // canvas mutation.
+    //
+    // Simpler approach used here: call addField(), stamp the attributes,
+    // then DELETE _sfPanelUpgraded so nb-subform-fk-builder's
+    // upgradeAllSubformCards() re-runs the panel with correct data.
     // ─────────────────────────────────────────────────────────────────
     function _rebuildCanvas(layoutJson) {
       const canvas = document.getElementById('formCanvas');
@@ -186,33 +200,41 @@
 
         window.nbFormBuilder.addField(f.type || f.fieldtype || 'text', f);
 
-        // ── FIX: stamp data-field-json onto the newly added card ──────
-        // _readSubformData() in nb-subform-fk-builder.js uses this as
-        // its fallback source for subform.form_code and subform.fk_field.
-        // We also stamp the fast-path data-sf-* attributes directly so
-        // the primary branch in _readSubformData fires immediately.
         if ((f.type || f.fieldtype || '') === 'subform') {
           const allCards = canvas.querySelectorAll('.nb-cfield');
-          // The newly added card is whichever appeared at index beforeCount
           const newCard = allCards[beforeCount] || allCards[allCards.length - 1];
           if (newCard) {
-            // Fallback path: full JSON blob
-            try {
-              newCard.dataset.fieldJson = JSON.stringify(f);
-            } catch (e) {}
+            // Stamp full JSON blob (fallback path for _readSubformData)
+            try { newCard.dataset.fieldJson = JSON.stringify(f); } catch (e) {}
 
-            // Fast path: explicit data-sf-* attributes
-            var sf = (f.subform && typeof f.subform === 'object') ? f.subform : {};
-            var sfFormCode = sf.form_code || sf.formcode || '';
-            var sfFkField  = sf.fk_field  || sf.fkfield  || '';
+            // Stamp fast-path data-sf-* attributes
+            const sf = (f.subform && typeof f.subform === 'object') ? f.subform : {};
+            const sfFormCode = sf.form_code || sf.formcode || '';
+            const sfFkField  = sf.fk_field  || sf.fkfield  || '';
             if (sfFormCode) newCard.dataset.sfFormCode       = sfFormCode;
             if (sfFkField)  newCard.dataset.sfFkField        = sfFkField;
             if (f.is_fk)           newCard.dataset.sfIsFk           = '1';
             if (f.hide_in_grid)    newCard.dataset.sfHideInGrid     = '1';
             if (f.server_readonly) newCard.dataset.sfServerReadonly = '1';
+
+            // KEY FIX: clear the upgrade lock so upgradeSubformPanel()
+            // in nb-subform-fk-builder re-runs now that attributes are set.
+            // upgradeAllSubformCards() is called after a short delay by
+            // nb-subform-fk-builder's own post-rebuild hook.
+            delete newCard._sfPanelUpgraded;
           }
         }
       });
+
+      // Signal nb-subform-fk-builder to re-upgrade all subform cards.
+      // It listens for this event in its nu:form:opened handler, and also
+      // has its own MutationObserver, but dispatching here ensures the
+      // re-upgrade fires after _rebuildCanvas fully completes.
+      setTimeout(function () {
+        if (typeof window._nbSfUpgradeAll === 'function') {
+          window._nbSfUpgradeAll();
+        }
+      }, 80);
     }
 
     console.log('[nb-form-edit] nbFormBuilder.edit() registered.');
