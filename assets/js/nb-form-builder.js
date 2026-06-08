@@ -16,6 +16,7 @@
   /* ════════════════════════════════════════════════════════════════════
      SECTION 1 — _nbSfData  (was nb-sf-data.js)
      Centralised read/write of data-sf-* attributes on canvas cards.
+     Now also tracks subform_view (grid|form) and help_text.
   ═══════════════════════════════════════════════════════════════════ */
   (function () {
     function _sfRead(card) {
@@ -24,6 +25,8 @@
         return {
           form_code:       fc,
           fk_field:        card.dataset.sfFkField        || '',
+          subform_view:    card.dataset.sfSubformView    || 'grid',
+          help_text:       card.dataset.sfHelpText       || '',
           is_fk:           card.dataset.sfIsFk           === '1',
           hide_in_grid:    card.dataset.sfHideInGrid     === '1',
           server_readonly: card.dataset.sfServerReadonly === '1'
@@ -39,6 +42,8 @@
             _sfWrite(card, {
               form_code:       fc2,
               fk_field:        sf.fk_field || sf.fkfield || '',
+              subform_view:    obj.subform_view || sf.subform_view || 'grid',
+              help_text:       obj.help_text || obj.field_help_text || '',
               is_fk:           !!obj.is_fk,
               hide_in_grid:    !!obj.hide_in_grid,
               server_readonly: !!obj.server_readonly
@@ -50,21 +55,26 @@
       return {
         form_code:       card.dataset.subformFormCode || card.dataset.formCode || '',
         fk_field:        card.dataset.subformFkField  || card.dataset.fkField  || '',
+        subform_view:    'grid',
+        help_text:       '',
         is_fk: false, hide_in_grid: false, server_readonly: false
       };
     }
 
     function _sfWrite(card, obj) {
       if (!obj) return;
-      if (obj.form_code) card.dataset.sfFormCode       = obj.form_code;
-      if (obj.fk_field)  card.dataset.sfFkField        = obj.fk_field;
+      if (obj.form_code)    card.dataset.sfFormCode       = obj.form_code;
+      if (obj.fk_field)     card.dataset.sfFkField        = obj.fk_field;
+      if (obj.subform_view) card.dataset.sfSubformView    = obj.subform_view;
+      if (obj.help_text !== undefined) card.dataset.sfHelpText = obj.help_text;
       card.dataset.sfIsFk           = obj.is_fk           ? '1' : '0';
       card.dataset.sfHideInGrid     = obj.hide_in_grid    ? '1' : '0';
       card.dataset.sfServerReadonly = obj.server_readonly ? '1' : '0';
     }
 
     function _sfClear(card) {
-      ['sfFormCode','sfFkField','sfIsFk','sfHideInGrid','sfServerReadonly',
+      ['sfFormCode','sfFkField','sfSubformView','sfHelpText',
+       'sfIsFk','sfHideInGrid','sfServerReadonly',
        'fieldJson','fieldData'].forEach(function (k) { delete card.dataset[k]; });
       delete card._sfPanelUpgraded;
     }
@@ -75,7 +85,6 @@
 
   /* ════════════════════════════════════════════════════════════════════
      SECTION 2 — nbFormBuilder core object
-     Defines the builder: open/close, addField, addRow, getLayout, saveForm.
   ═══════════════════════════════════════════════════════════════════ */
   var _fieldCounter = 0;
 
@@ -220,7 +229,6 @@
       var card = this._makeFieldCard(type, label, name, !!extra.required, extra);
       if (!card) return null;
 
-      // Target: last row body, or create a row
       var rows = canvas.querySelectorAll('.nb-row-body');
       var targetBody = rows.length ? rows[rows.length - 1] : null;
       if (!targetBody) {
@@ -245,7 +253,6 @@
     },
 
     // ── _makeFieldCard ────────────────────────────────────────────
-    // NOTE: header toggle is wired via addEventListener below — NO inline onclick.
     _makeFieldCard: function (type, label, name, required, extra) {
       extra = extra || {};
       var col = parseInt(extra.col || extra.colspan, 10) || 12;
@@ -293,11 +300,11 @@
             + '<div class="nb-fp"><label class="nb-fp-check"><input type="checkbox" class="nb-field-required"' + (required ? ' checked' : '') + '> Required</label></div>'
             + (type !== 'subform' ? '<div class="nb-fp"><label>Placeholder</label><input type="text" class="nu-input nb-field-placeholder" value="' + _esc(extra.placeholder || '') + '"></div>' : '')
             + (type !== 'subform' ? '<div class="nb-fp"><label>Default Value</label><input type="text" class="nu-input nb-field-default" value="' + _esc(extra.default_value || extra.defaultvalue || '') + '"></div>' : '')
+            + '<div class="nb-fp nb-fp-full"><label>Help Text</label><input type="text" class="nu-input nb-field-help" value="' + _esc(extra.help_text || extra.field_help_text || '') + '"></div>'
             + extraBody
           + '</div>'
         + '</div>';
 
-      // ── Wire header toggle (no inline onclick — avoids space-in-token bug) ──
       var header = card.querySelector('.nb-cfield-header');
       var body   = card.querySelector('.nb-cfield-body');
       if (header && body) {
@@ -307,7 +314,6 @@
         });
       }
 
-      // ── Wire delete button ──
       var delBtn = card.querySelector('.nb-cfield-btn.del');
       if (delBtn) {
         delBtn.addEventListener('click', function (e) {
@@ -317,7 +323,6 @@
         });
       }
 
-      // ── Wire span buttons ──
       var self = this;
       card.querySelectorAll('.nb-span-btn').forEach(function (btn) {
         btn.addEventListener('click', function (e) {
@@ -357,6 +362,7 @@
         var phEl    = card.querySelector('.nb-field-placeholder');
         var defEl   = card.querySelector('.nb-field-default');
         var optsEl  = card.querySelector('.nb-field-options');
+        var helpEl  = card.querySelector('.nb-field-help');
 
         var field = {
           type:          type,
@@ -365,6 +371,7 @@
           required:      reqEl   ? reqEl.checked  : false,
           placeholder:   phEl    ? phEl.value     : '',
           default_value: defEl   ? defEl.value    : '',
+          help_text:     helpEl  ? helpEl.value   : '',
           col:           parseInt(card.dataset.col, 10) || 12
         };
 
@@ -382,7 +389,6 @@
         fields.push(field);
       });
 
-      // Augment subform entries with live panel values
       if (typeof window._nbSfAugmentLayout === 'function') {
         fields = window._nbSfAugmentLayout(fields);
       }
@@ -432,12 +438,7 @@
         form_custom_css:           _v('formCustomCss')
       };
 
-      // ── FIX: always use action=save; include form_id in payload for updates ──
-      // api/forms.php only has action=save — it decides insert vs UPDATE
-      // based on whether form_id is present in the JSON body.
-      if (editId) {
-        payload.form_id = editId;
-      }
+      if (editId) payload.form_id = editId;
 
       try {
         var res = await NuApp.apiJson('api/forms.php?action=save', {
@@ -458,19 +459,17 @@
       }
     },
 
-    // Called by NuApp.initModuleScripts after forms module loads
     _initAfterLoad: function () {
       _attachAllRowDrops();
       _upgradeAllSubformCards();
     }
   };
 
-  // expose saveForm on window (called from forms.php button)
   window.saveForm = function () { return window.nbFormBuilder.saveForm(); };
 
 
   /* ════════════════════════════════════════════════════════════════════
-     SECTION 3 — Row/span canvas patches  (was nb-form-builder-layout.js)
+     SECTION 3 — Row/span canvas patches
   ═══════════════════════════════════════════════════════════════════ */
 
   if (!window.nuToggleContainer) {
@@ -531,7 +530,6 @@
     canvas.querySelectorAll('.nb-row-body').forEach(_attachRowBodyDrop);
   }
 
-  // Toolbox dragstart
   document.addEventListener('dragstart', function (e) {
     var tool = e.target.closest ? e.target.closest('.nb-tool[data-type]') : null;
     if (tool) e.dataTransfer.setData('text/nb-type', tool.dataset.type);
@@ -544,7 +542,7 @@
 
 
   /* ════════════════════════════════════════════════════════════════════
-     SECTION 4 — Subform FK panel  (was nb-subform-fk-builder.js)
+     SECTION 4 — Subform FK panel
   ═══════════════════════════════════════════════════════════════════ */
 
   function _isSubformCard(card) {
@@ -567,40 +565,51 @@
   }
 
   function _readCardConfig(card) {
-    var formCode = '', fkField = '', isFk = false, hideGrid = false, srvRo = false;
+    var formCode = '', fkField = '', subformView = 'grid', helpText = '';
+    var isFk = false, hideGrid = false, srvRo = false;
     var panel = card.querySelector('.nb-sf-fk-panel');
     if (panel) {
-      var fcSel  = panel.querySelector('.nb-sf-form-code');
-      var fkSel  = panel.querySelector('.nb-sf-fk-field');
-      var isFkC  = panel.querySelector('.nb-sf-is-fk');
-      var hideC  = panel.querySelector('.nb-sf-hide-in-grid');
-      var srvRoC = panel.querySelector('.nb-sf-server-readonly');
-      if (fcSel)  formCode = fcSel.value  || '';
-      if (fkSel)  fkField  = fkSel.value  || '';
-      if (isFkC)  isFk     = isFkC.checked;
-      if (hideC)  hideGrid = hideC.checked;
-      if (srvRoC) srvRo    = srvRoC.checked;
+      var fcSel   = panel.querySelector('.nb-sf-form-code');
+      var fkSel   = panel.querySelector('.nb-sf-fk-field');
+      var viewSel = panel.querySelector('.nb-sf-view');
+      var isFkC   = panel.querySelector('.nb-sf-is-fk');
+      var hideC   = panel.querySelector('.nb-sf-hide-in-grid');
+      var srvRoC  = panel.querySelector('.nb-sf-server-readonly');
+      if (fcSel)   formCode    = fcSel.value   || '';
+      if (fkSel)   fkField     = fkSel.value   || '';
+      if (viewSel) subformView = viewSel.value  || 'grid';
+      if (isFkC)   isFk        = isFkC.checked;
+      if (hideC)   hideGrid    = hideC.checked;
+      if (srvRoC)  srvRo       = srvRoC.checked;
     }
-    if (!formCode) formCode = card.dataset.sfFormCode || '';
-    if (!fkField)  fkField  = card.dataset.sfFkField  || '';
-    if (!isFk)     isFk     = card.dataset.sfIsFk           === '1';
-    if (!hideGrid) hideGrid = card.dataset.sfHideInGrid     === '1';
-    if (!srvRo)    srvRo    = card.dataset.sfServerReadonly === '1';
+    // read help_text from the shared nb-field-help input on the card
+    var helpEl = card.querySelector('.nb-field-help');
+    if (helpEl) helpText = helpEl.value || '';
+
+    if (!formCode)    formCode    = card.dataset.sfFormCode    || '';
+    if (!fkField)     fkField     = card.dataset.sfFkField     || '';
+    if (!subformView) subformView = card.dataset.sfSubformView || 'grid';
+    if (!isFk)        isFk        = card.dataset.sfIsFk           === '1';
+    if (!hideGrid)    hideGrid    = card.dataset.sfHideInGrid     === '1';
+    if (!srvRo)       srvRo       = card.dataset.sfServerReadonly === '1';
+
     if (!formCode) {
       var raw = card.dataset.fieldJson || card.dataset.fieldData || '';
       if (raw) {
         try {
           var obj = JSON.parse(raw);
           var sf  = (obj.subform && typeof obj.subform === 'object') ? obj.subform : {};
-          formCode = sf.form_code || sf.formcode || '';
-          fkField  = sf.fk_field  || sf.fkfield  || '';
+          formCode    = sf.form_code || sf.formcode || '';
+          fkField     = sf.fk_field  || sf.fkfield  || '';
+          subformView = obj.subform_view || sf.subform_view || 'grid';
           if (!isFk)     isFk     = !!obj.is_fk;
           if (!hideGrid) hideGrid = !!obj.hide_in_grid;
           if (!srvRo)    srvRo    = !!obj.server_readonly;
         } catch (e) {}
       }
     }
-    return { form_code: formCode, fk_field: fkField, is_fk: isFk, hide_in_grid: hideGrid, server_readonly: srvRo };
+    return { form_code: formCode, fk_field: fkField, subform_view: subformView,
+             help_text: helpText, is_fk: isFk, hide_in_grid: hideGrid, server_readonly: srvRo };
   }
 
   // _nbSfAugmentLayout — called inside getLayout()
@@ -614,8 +623,10 @@
       if (!card) return;
       var cfg = _readCardConfig(card);
       if (!fieldObj.subform) fieldObj.subform = {};
-      if (cfg.form_code) fieldObj.subform.form_code = cfg.form_code;
-      if (cfg.fk_field)  fieldObj.subform.fk_field  = cfg.fk_field;
+      if (cfg.form_code)    fieldObj.subform.form_code = cfg.form_code;
+      if (cfg.fk_field)     fieldObj.subform.fk_field  = cfg.fk_field;
+      fieldObj.subform_view = cfg.subform_view || 'grid';
+      if (cfg.help_text)    fieldObj.help_text = cfg.help_text;
       if (cfg.is_fk)           fieldObj.is_fk           = true; else delete fieldObj.is_fk;
       if (cfg.hide_in_grid)    fieldObj.hide_in_grid    = true; else delete fieldObj.hide_in_grid;
       if (cfg.server_readonly) fieldObj.server_readonly = true; else delete fieldObj.server_readonly;
@@ -633,9 +644,11 @@
   }
 
   function _subformPanelHTML(d) {
-    var isFk     = d.is_fk           ? 'checked' : '';
-    var hideGrid = d.hide_in_grid    ? 'checked' : '';
-    var srvRo    = d.server_readonly ? 'checked' : '';
+    var isFk        = d.is_fk           ? 'checked' : '';
+    var hideGrid    = d.hide_in_grid    ? 'checked' : '';
+    var srvRo       = d.server_readonly ? 'checked' : '';
+    var viewGrid    = (!d.subform_view || d.subform_view === 'grid') ? 'selected' : '';
+    var viewForm    = (d.subform_view === 'form') ? 'selected' : '';
     return [
       '<div class="nb-sf-fk-panel" style="display:flex;flex-direction:column;gap:8px;padding:10px 0;">',
         '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Child Form</label>',
@@ -645,11 +658,16 @@
           '<select class="nu-input nb-sf-fk-field" style="flex:1;"><option value="">— select FK field —</option></select>',
           '<button type="button" class="nu-btn nu-btn-ghost nu-btn-sm nb-sf-create-fk">＋ Create FK Field</button>',
         '</div></div>',
+        '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Display Mode</label>',
+        '<select class="nu-input nb-sf-view" style="width:100%;">',
+          '<option value="grid" ' + viewGrid + '>Grid (table)</option>',
+          '<option value="form" ' + viewForm + '>Form (stacked)</option>',
+        '</select></div>',
         '<div style="display:flex;flex-direction:column;gap:4px;padding:6px 8px;background:var(--bg-elevated,#f8f9fa);border-radius:6px;border:1px solid var(--border,#e0e0e0);">',
           '<label style="font-size:11px;font-weight:700;color:var(--text-muted,#888);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">FK Field Flags</label>',
-          _toggleRow('nb-sf-is-fk',           'is_fk',        isFk,     'FK field',        'Force hidden; builder locks this field'),
-          _toggleRow('nb-sf-hide-in-grid',    'hide_in_grid', hideGrid, 'Hide in grid',    'Excludes column from subform table'),
-          _toggleRow('nb-sf-server-readonly', 'server_readonly', srvRo, 'Server readonly', 'PHP ignores POST value; always writes parent ID'),
+          _toggleRow('nb-sf-is-fk',           'is_fk',           isFk,     'FK field',        'Force hidden; builder locks this field'),
+          _toggleRow('nb-sf-hide-in-grid',    'hide_in_grid',    hideGrid, 'Hide in grid',    'Excludes column from subform table'),
+          _toggleRow('nb-sf-server-readonly', 'server_readonly', srvRo,    'Server readonly', 'PHP ignores POST value; always writes parent ID'),
         '</div>',
       '</div>'
     ].join('');
@@ -780,6 +798,10 @@
       if (existingData.form_code) _populateFkDropdown(panel, existingData.form_code, existingData.fk_field);
     });
 
+    // restore subform_view selection
+    var viewSel = panel.querySelector('.nb-sf-view');
+    if (viewSel && existingData.subform_view) viewSel.value = existingData.subform_view;
+
     var formSel = panel.querySelector('.nb-sf-form-code');
     if (formSel) {
       formSel.addEventListener('change', function () {
@@ -824,7 +846,7 @@
 
 
   /* ════════════════════════════════════════════════════════════════════
-     SECTION 5 — Edit restore  (was nb-form-edit.js)
+     SECTION 5 — Edit restore
   ═══════════════════════════════════════════════════════════════════ */
 
   window.nbFormBuilder.edit = async function (formId) {
@@ -932,6 +954,8 @@
           window._nbSfData.write(newCard, {
             form_code:       sf.form_code || sf.formcode || '',
             fk_field:        sf.fk_field  || sf.fkfield  || '',
+            subform_view:    f.subform_view || 'grid',
+            help_text:       f.help_text || f.field_help_text || '',
             is_fk:           !!f.is_fk,
             hide_in_grid:    !!f.hide_in_grid,
             server_readonly: !!f.server_readonly
