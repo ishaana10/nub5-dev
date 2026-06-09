@@ -70,6 +70,39 @@ function nu_table_exists($table) {
     catch (Throwable $e) { return false; }
 }
 
+/**
+ * Returns a set (keyed by column name => true) of real columns for $table.
+ * Results are cached for the lifetime of the request.
+ */
+function nu_get_table_columns($table) {
+    static $cache = [];
+    if (isset($cache[$table])) return $cache[$table];
+    try {
+        $rows = nu_q("DESCRIBE `{$table}`")->fetchAll(PDO::FETCH_ASSOC);
+        $cols = [];
+        foreach ($rows as $row) $cols[$row['Field']] = true;
+        $cache[$table] = $cols;
+        return $cols;
+    } catch (Throwable $e) {
+        $cache[$table] = [];
+        return [];
+    }
+}
+
+/**
+ * Filter a $save array so only columns that actually exist in $table are kept.
+ * The PK is always kept if present (it may not be in DESCRIBE when autoincrement).
+ */
+function nu_filter_save_to_columns($save, $table, $pk) {
+    $cols = nu_get_table_columns($table);
+    if (empty($cols)) return $save; // can't verify — pass through as-is
+    $out = [];
+    foreach ($save as $col => $val) {
+        if ($col === $pk || isset($cols[$col])) $out[$col] = $val;
+    }
+    return $out;
+}
+
 function nu_form_table_name() {
     if (nu_table_exists('nu_forms')) return 'nu_forms';
     if (nu_table_exists('nuforms')) return 'nuforms';
@@ -155,7 +188,6 @@ function nu_field_type($field)  { return $field['type']  ?? ($field['fieldtype']
 function nu_field_value($record, $field) {
     $name = nu_field_name($field);
     if ($name === '') return '';
-    // For lookup fields, the stored value lives under the DB column, not the widget name
     $type = nu_field_type($field);
     if ($type === 'lookup') {
         $dbCol = nu_resolve_lookup_store_col($field);
@@ -209,11 +241,6 @@ function nu_resolve_lookup_id_col($lookup) {
     return 'id';
 }
 
-/**
- * Resolve the DB column on the HOST table where the looked-up ID is stored.
- * Priority: store_field > storefield > field name itself (if it looks like a real col).
- * Falls back to '' if none configured — caller must skip saving in that case.
- */
 function nu_resolve_lookup_store_col($field) {
     $lookup = $field['lookup'] ?? [];
     $col = $lookup['store_field']
@@ -223,17 +250,11 @@ function nu_resolve_lookup_store_col($field) {
         ?? '';
     $col = nu_safe_ident($col);
     if ($col !== '') return $col;
-    // If no explicit store_field, fall back to the field widget name ONLY if it
-    // doesn't look like a generated lookup widget name (e.g. 'lookup_123456').
     $name = nu_safe_ident(nu_field_name($field));
     if ($name !== '' && !preg_match('/^lookup_\d+$/', $name)) return $name;
     return '';
 }
 
-/**
- * Resolve the display column from a lookup config, checking all common key variants.
- * Returns '' (empty string) if none found — callers must handle the empty case gracefully.
- */
 function nu_resolve_lookup_display_col($lookup) {
     $col = $lookup['display_column']
         ?? $lookup['displaycolumn']
@@ -248,7 +269,6 @@ function nu_render_lookup_display($field, $value) {
     $table      = nu_safe_ident($lookup['table'] ?? '');
     $idCol      = nu_resolve_lookup_id_col($lookup);
     $displayCol = nu_resolve_lookup_display_col($lookup);
-    // If no display column configured, fall back to showing the raw stored value
     if ($table === '' || $idCol === '' || $displayCol === '' || $value === '' || $value === null) return (string)($value ?? '');
     try {
         $stmt = nu_q("SELECT `{$displayCol}` FROM `{$table}` WHERE `{$idCol}` = ? LIMIT 1", [$value]);
@@ -756,7 +776,7 @@ function nu_handle_subform_save() {
 
         if ($type === 'lookup') {
             $dbCol = nu_resolve_lookup_store_col($field);
-            if ($dbCol === '') continue; // no DB column configured — skip
+            if ($dbCol === '') continue;
             $save[$dbCol] = $data[$name] ?? null;
             continue;
         }
@@ -771,6 +791,9 @@ function nu_handle_subform_save() {
     if ($parentId !== '' && $fk !== '') {
         $save[$fk] = $parentId;
     }
+
+    // Strip any columns that don't actually exist in the target table
+    $save = nu_filter_save_to_columns($save, $table, $pk);
 
     $saveWithoutPk = array_filter($save, fn($k) => $k !== $pk, ARRAY_FILTER_USE_KEY);
     if (!$id && !$saveWithoutPk && !($pkType === 'uuid')) {
@@ -932,13 +955,16 @@ function nu_handle_save() {
 
         if ($type === 'lookup') {
             $dbCol = nu_resolve_lookup_store_col($field);
-            if ($dbCol === '') continue; // no DB column configured — skip
+            if ($dbCol === '') continue;
             $save[$dbCol] = $data[$name] ?? null;
             continue;
         }
 
         $save[$name] = ($type === 'checkbox') ? (!empty($data[$name]) ? 1 : 0) : ($data[$name] ?? null);
     }
+
+    // Strip any columns that don't actually exist in the target table
+    $save = nu_filter_save_to_columns($save, $table, $pk);
 
     $saveWithoutPk = array_filter($save, fn($k) => $k !== $pk, ARRAY_FILTER_USE_KEY);
     if (!$id && empty($saveWithoutPk) && $pkType !== 'uuid') {
