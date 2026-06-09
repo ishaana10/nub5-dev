@@ -355,7 +355,7 @@ function nu_render_field($field, $value = '', $record = []) {
             $displayVal  = nu_render_lookup_display($field, $value);
             $control = '<div style="display:flex;gap:8px;">'
                 . '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">'
-                . '<input type="text" class="' . nu_attr($cssClass) . '" value="' . nu_attr($displayVal) . '" readonly>'
+                . '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '_display" value="' . nu_attr($displayVal) . '" readonly>'
                 . '<button type="button" class="nu-btn nu-btn-ghost" onclick="openLookupModal('
                 . '\'' . addslashes($name) . '\',\'' . addslashes($lTable) . '\',\'' . addslashes($lIdCol) . '\',\'' . addslashes($lDisplayCol) . '\',\'' . addslashes($lFilter) . '\',\'' . addslashes($lExtra) . '\''
                 . ')">Lookup</button>'
