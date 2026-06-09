@@ -155,6 +155,12 @@ function nu_field_type($field)  { return $field['type']  ?? ($field['fieldtype']
 function nu_field_value($record, $field) {
     $name = nu_field_name($field);
     if ($name === '') return '';
+    // For lookup fields, the stored value lives under the DB column, not the widget name
+    $type = nu_field_type($field);
+    if ($type === 'lookup') {
+        $dbCol = nu_resolve_lookup_store_col($field);
+        if ($dbCol !== '' && array_key_exists($dbCol, $record)) return $record[$dbCol];
+    }
     if (array_key_exists($name, $record)) return $record[$name];
     if (isset($field['default_value'])) return $field['default_value'];
     if (isset($field['defaultvalue'])) return $field['defaultvalue'];
@@ -201,6 +207,27 @@ function nu_resolve_lookup_id_col($lookup) {
     $table = nu_safe_ident($lookup['table'] ?? '');
     if ($table !== '') return nu_get_pk($table);
     return 'id';
+}
+
+/**
+ * Resolve the DB column on the HOST table where the looked-up ID is stored.
+ * Priority: store_field > storefield > field name itself (if it looks like a real col).
+ * Falls back to '' if none configured — caller must skip saving in that case.
+ */
+function nu_resolve_lookup_store_col($field) {
+    $lookup = $field['lookup'] ?? [];
+    $col = $lookup['store_field']
+        ?? $lookup['storefield']
+        ?? $lookup['store_col']
+        ?? $lookup['storeCol']
+        ?? '';
+    $col = nu_safe_ident($col);
+    if ($col !== '') return $col;
+    // If no explicit store_field, fall back to the field widget name ONLY if it
+    // doesn't look like a generated lookup widget name (e.g. 'lookup_123456').
+    $name = nu_safe_ident(nu_field_name($field));
+    if ($name !== '' && !preg_match('/^lookup_\d+$/', $name)) return $name;
+    return '';
 }
 
 /**
@@ -383,10 +410,6 @@ function nu_render_field($field, $value = '', $record = []) {
             $sfFk   = nu_safe_ident($sf['fk_field']  ?? ($sf['fkfield']  ?? ''));
             $sfView = in_array($sf['view'] ?? 'grid', ['grid','form','inline'], true) ? ($sf['view'] ?? 'grid') : 'grid';
 
-            // ── Use the injected parent ID directly (the actual record ID from
-            //    the URL), bypassing nu_resolve_parent_id() guess logic entirely.
-            //    _parent_id is injected by nu_inject_parent_context() which
-            //    receives $recordId from nu_render_form_html().
             $sfParent = (string)($field['_parent_id'] ?? '');
 
             $control = '<div class="nu-subform-container"'
@@ -568,8 +591,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
     $formTable= $form[$c['table']] ?? '';
     $formName = $form[$c['name']]  ?? $formCode;
 
-    // Inject both the parent table name AND the actual record ID into every
-    // subform node so nu_render_field() can use the ground-truth ID directly.
     $layout = nu_inject_parent_context($layout, $formTable, (string)($recordId ?? ''));
 
     $html  = '<form class="nu-generated-form"'
@@ -593,18 +614,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
     return $html;
 }
 
-/**
- * nu_inject_parent_context()
- *
- * Walks the layout tree and injects two keys onto every subform node:
- *   _parent_table  — the DB table of the parent form (for reference)
- *   _parent_id     — the ACTUAL record ID passed from the URL (?id=N)
- *
- * Using _parent_id directly eliminates all the guesswork in
- * nu_resolve_parent_id() that was picking the wrong column value.
- *
- * Replaces the old nu_inject_parent_table() function.
- */
 function nu_inject_parent_context(array $layout, string $parentTable, string $parentId): array {
     foreach ($layout as &$node) {
         $t = $node['type'] ?? 'field';
@@ -742,6 +751,13 @@ function nu_handle_subform_save() {
         }
 
         if (nu_field_server_readonly($field) || nu_field_is_fk($field)) {
+            continue;
+        }
+
+        if ($type === 'lookup') {
+            $dbCol = nu_resolve_lookup_store_col($field);
+            if ($dbCol === '') continue; // no DB column configured — skip
+            $save[$dbCol] = $data[$name] ?? null;
             continue;
         }
 
@@ -913,6 +929,13 @@ function nu_handle_save() {
         }
 
         if (nu_field_server_readonly($field)) continue;
+
+        if ($type === 'lookup') {
+            $dbCol = nu_resolve_lookup_store_col($field);
+            if ($dbCol === '') continue; // no DB column configured — skip
+            $save[$dbCol] = $data[$name] ?? null;
+            continue;
+        }
 
         $save[$name] = ($type === 'checkbox') ? (!empty($data[$name]) ? 1 : 0) : ($data[$name] ?? null);
     }
