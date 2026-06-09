@@ -15,7 +15,7 @@ header('Content-Type: application/json');
 // Accept id_col / id_column / id  (JS sends id_col)
 $table      = $_GET['table']       ?? '';
 $idCol      = $_GET['id_col']      ?? $_GET['id_column'] ?? $_GET['id'] ?? '';
-$displayCol = $_GET['display_col'] ?? $_GET['display_column'] ?? $_GET['display'] ?? 'name';
+$displayCol = $_GET['display_col'] ?? $_GET['display_column'] ?? $_GET['display'] ?? '';
 $filter     = $_GET['filter']      ?? '';
 $extra      = $_GET['extra']       ?? '';
 $q          = trim($_GET['q']      ?? '');
@@ -37,8 +37,30 @@ function getPrimaryKeyColumn($db, $table) {
     return 'id';
 }
 
+/**
+ * When no display column is configured, pick the first non-PK column
+ * from the table so the query never references a column that doesn't exist.
+ */
+function getFirstDisplayColumn($db, $table, $pkCol) {
+    try {
+        $cols = $db->fetchAll("SHOW COLUMNS FROM `{$table}`");
+        foreach ($cols as $col) {
+            $colName = $col['Field'] ?? '';
+            if ($colName !== '' && $colName !== $pkCol) {
+                return $colName;
+            }
+        }
+    } catch (Exception $e) {}
+    return $pkCol; // last resort: just show the PK value
+}
+
 if (empty($idCol)) {
     $idCol = getPrimaryKeyColumn($db, $table);
+}
+
+// If display column was not passed or was empty, auto-detect it
+if ($displayCol === '') {
+    $displayCol = getFirstDisplayColumn($db, $table, $idCol);
 }
 
 if (preg_match('/[^a-zA-Z0-9_]/', $idCol) || preg_match('/[^a-zA-Z0-9_]/', $displayCol)) {
