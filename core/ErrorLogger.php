@@ -4,13 +4,13 @@ declare(strict_types=1);
  * NuErrorLogger — captures PHP errors, uncaught exceptions, SQL errors, and JS errors.
  * PHP 7.4 compatible.
  *
- * Usage (called once in config.php / bootstrap):
- *   NuErrorLogger::register();
+ * IMPORTANT — registration order:
+ *   Register AFTER NuDatabase and NuAuth are loaded, NOT in config.php.
+ *   In index.php, call NuErrorLogger::register() inside the bootstrap try{} block,
+ *   after the three core require_once lines.
  *
- * SQL errors are captured by wrapping NuDatabase::query() externally
- * OR by calling NuErrorLogger::logSql($sql, $error, $params) directly in catch blocks.
- *
- * JS errors are posted to api/errorlog.php?action=log_js and stored here via logJs().
+ * If an error fires before DB is ready the logger falls back silently to
+ * PHP's native error_log (no crash, no white screen).
  */
 class NuErrorLogger {
 
@@ -41,29 +41,20 @@ class NuErrorLogger {
 
     /**
      * Register global PHP error and exception handlers.
-     * Call once after DB is available.
+     * Safe to call even if DB is not yet available — write() will use file fallback.
      */
     public static function register(): void {
         if (self::$registered) return;
         self::$registered = true;
 
-        // PHP errors → our handler
         set_error_handler([self::getInstance(), 'handlePhpError']);
-
-        // Uncaught exceptions → our handler
         set_exception_handler([self::getInstance(), 'handleException']);
-
-        // Fatal errors via shutdown function
         register_shutdown_function([self::getInstance(), 'handleShutdown']);
     }
 
-    /**
-     * PHP set_error_handler callback.
-     */
+    /** PHP set_error_handler callback. */
     public function handlePhpError(int $errno, string $errstr, string $errfile = '', int $errline = 0): bool {
         $severity = $this->phpErrnoToSeverity($errno);
-        $type     = self::TYPE_PHP;
-        $message  = $errstr;
         $context  = [
             'errno'   => $errno,
             'errtype' => $this->phpErrnoToName($errno),
@@ -71,31 +62,24 @@ class NuErrorLogger {
             'line'    => $errline,
         ];
         $trace = $this->buildTrace(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8));
-        $this->write($type, $severity, $message, $context, $trace, $errfile, $errline);
-        // Return false to let PHP also write to its own error log
-        return false;
+        $this->write(self::TYPE_PHP, $severity, $errstr, $context, $trace, $errfile, $errline);
+        return false; // let PHP also write to its own error_log
     }
 
-    /**
-     * PHP set_exception_handler callback.
-     */
+    /** PHP set_exception_handler callback. */
     public function handleException(\Throwable $e): void {
-        $severity = self::SEV_FATAL;
-        $type     = self::TYPE_PHP;
-        $message  = get_class($e) . ': ' . $e->getMessage();
-        $context  = [
+        $message = get_class($e) . ': ' . $e->getMessage();
+        $context = [
             'exception' => get_class($e),
             'code'      => $e->getCode(),
             'file'      => $this->stripRoot($e->getFile()),
             'line'      => $e->getLine(),
         ];
         $trace = $this->buildTrace($e->getTrace());
-        $this->write($type, $severity, $message, $context, $trace, $e->getFile(), $e->getLine());
+        $this->write(self::TYPE_PHP, self::SEV_FATAL, $message, $context, $trace, $e->getFile(), $e->getLine());
     }
 
-    /**
-     * Shutdown handler — catches fatal errors that set_error_handler misses.
-     */
+    /** Shutdown handler — catches E_ERROR / E_PARSE / E_COMPILE_ERROR etc. */
     public function handleShutdown(): void {
         $error = error_get_last();
         if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
@@ -117,13 +101,8 @@ class NuErrorLogger {
     }
 
     /**
-     * Log a SQL error. Call this in catch blocks around DB operations.
-     *
-     * @param string      $sql     The query that failed
-     * @param string      $error   PDOException message or error string
-     * @param array       $params  Bound parameters (will be sanitised)
-     * @param string|null $callerFile
-     * @param int         $callerLine
+     * Log a SQL error manually in a catch block.
+     *   NuErrorLogger::logSql($sql, $e->getMessage(), $params, __FILE__, __LINE__);
      */
     public static function logSql(
         string $sql,
@@ -132,29 +111,21 @@ class NuErrorLogger {
         ?string $callerFile = null,
         int $callerLine = 0
     ): void {
-        // Redact password-like params
         $safeParams = [];
         foreach ($params as $k => $v) {
             $key = strtolower((string)$k);
             $safeParams[$k] = (str_contains($key, 'pass') || str_contains($key, 'secret') || str_contains($key, 'token'))
                 ? '***' : $v;
         }
-        $context = [
-            'sql'    => $sql,
-            'params' => $safeParams,
-        ];
+        $context = ['sql' => $sql, 'params' => $safeParams];
         if ($callerFile) $context['file'] = self::getInstance()->stripRoot($callerFile);
         if ($callerLine) $context['line'] = $callerLine;
-
         $trace = self::getInstance()->buildTrace(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8));
         self::getInstance()->write(self::TYPE_SQL, self::SEV_ERROR, $error, $context, $trace, $callerFile ?? '', $callerLine);
     }
 
     /**
-     * Log a JS error received from the frontend.
-     * Called by api/errorlog.php after validating the POST payload.
-     *
-     * @param array $payload  Keys: message, source, lineno, colno, stack, url, userAgent
+     * Log a JS error payload (called from api/errorlog.php).
      */
     public static function logJs(array $payload): void {
         $message = $payload['message'] ?? 'Unknown JS error';
@@ -167,19 +138,14 @@ class NuErrorLogger {
         ];
         $trace = $payload['stack'] ?? null;
         self::getInstance()->write(
-            self::TYPE_JS,
-            self::SEV_ERROR,
-            $message,
-            $context,
-            $trace,
-            $payload['source'] ?? '',
-            (int)($payload['lineno'] ?? 0)
+            self::TYPE_JS, self::SEV_ERROR, $message, $context, $trace,
+            $payload['source'] ?? '', (int)($payload['lineno'] ?? 0)
         );
     }
 
     /**
-     * Log an application-level message (call anywhere in PHP).
-     * e.g.  NuErrorLogger::logApp('Form save failed', ['form_id'=>5], NuErrorLogger::SEV_WARNING);
+     * Log any app-level message from PHP.
+     *   NuErrorLogger::logApp('Save failed', ['form_id' => 5], NuErrorLogger::SEV_WARNING);
      */
     public static function logApp(
         string $message,
@@ -191,7 +157,7 @@ class NuErrorLogger {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Internal write
+    // Internal write — NEVER throws, NEVER crashes the app
     // ──────────────────────────────────────────────────────────────────────────
 
     private function write(
@@ -203,52 +169,80 @@ class NuErrorLogger {
         string $file = '',
         int $line = 0
     ): void {
-        // Determine session user if available (don't touch session if shutting down)
+        // Session user — only when session is already active
         $userId   = null;
         $userName = null;
         try {
             if (session_status() === PHP_SESSION_ACTIVE) {
-                $userId   = $_SESSION['nu_user_id']   ?? null;
-                $userName = $_SESSION['nu_username']  ?? null;
+                $userId   = $_SESSION['nu_user_id']  ?? null;
+                $userName = $_SESSION['nu_username'] ?? null;
             }
-        } catch (\Throwable $e) { /* ignore */ }
+        } catch (\Throwable $ignored) {}
 
-        $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+        $requestUri    = $_SERVER['REQUEST_URI']    ?? '';
         $requestMethod = $_SERVER['REQUEST_METHOD'] ?? '';
 
-        // Try to write to DB; fall back to file log silently
-        try {
-            $db = NuDatabase::getInstance();
-            $db->query(
-                "INSERT INTO nu_error_log
-                    (errlog_type, errlog_severity, errlog_message, errlog_context,
-                     errlog_trace, errlog_file, errlog_line,
-                     errlog_request_uri, errlog_request_method,
-                     errlog_user_id, errlog_user_name, errlog_created_at)
-                 VALUES
-                    (:type, :sev, :msg, :ctx,
-                     :trace, :file, :line,
-                     :uri, :method,
-                     :uid, :uname, NOW())",
-                [
-                    ':type'   => $type,
-                    ':sev'    => $severity,
-                    ':msg'    => mb_substr($message, 0, 2000),
-                    ':ctx'    => json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                    ':trace'  => $trace ? mb_substr($trace, 0, 8000) : null,
-                    ':file'   => mb_substr($this->stripRoot($file), 0, 500),
-                    ':line'   => $line,
-                    ':uri'    => mb_substr($requestUri, 0, 500),
-                    ':method' => $requestMethod,
-                    ':uid'    => $userId,
-                    ':uname'  => $userName,
-                ]
-            );
-        } catch (\Throwable $dbErr) {
-            // Last resort — write to PHP error log
-            error_log("[NuErrorLogger] DB write failed: " . $dbErr->getMessage());
-            error_log("[NuErrorLogger] Original [{$type}] {$severity}: {$message}");
+        // ── Try DB first ─────────────────────────────────────────────────────
+        // Guard: NuDatabase class may not be loaded yet (e.g. during login page
+        // bootstrap). If it is not available, fall straight through to file log.
+        if (class_exists('NuDatabase', false)) {
+            try {
+                $db = NuDatabase::getInstance();
+                $db->query(
+                    "INSERT INTO nu_error_log
+                        (errlog_type, errlog_severity, errlog_message, errlog_context,
+                         errlog_trace, errlog_file, errlog_line,
+                         errlog_request_uri, errlog_request_method,
+                         errlog_user_id, errlog_user_name, errlog_created_at)
+                     VALUES
+                        (:type, :sev, :msg, :ctx,
+                         :trace, :file, :line,
+                         :uri, :method,
+                         :uid, :uname, NOW())",
+                    [
+                        ':type'   => $type,
+                        ':sev'    => $severity,
+                        ':msg'    => mb_substr($message, 0, 2000),
+                        ':ctx'    => json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        ':trace'  => $trace ? mb_substr($trace, 0, 8000) : null,
+                        ':file'   => mb_substr($this->stripRoot($file), 0, 500),
+                        ':line'   => $line,
+                        ':uri'    => mb_substr($requestUri, 0, 500),
+                        ':method' => $requestMethod,
+                        ':uid'    => $userId,
+                        ':uname'  => $userName,
+                    ]
+                );
+                return; // success — skip file fallback
+            } catch (\Throwable $dbErr) {
+                // DB write failed — fall through to file log below
+                error_log('[NuErrorLogger] DB write failed: ' . $dbErr->getMessage());
+            }
         }
+
+        // ── File fallback — always works, even before DB is ready ─────────────
+        $logDir  = defined('NU_ROOT') ? NU_ROOT . '/logs' : __DIR__ . '/../logs';
+        $logFile = $logDir . '/nuerror.log';
+        // Create logs/ directory if it does not exist
+        if (!is_dir($logDir)) {
+            @mkdir($logDir, 0755, true);
+        }
+        $cleanFile = $this->stripRoot($file);
+        $ctxJson   = json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $entry     = sprintf(
+            "[%s] [%s] [%s] %s | %s:%d | %s | %s\n",
+            date('Y-m-d H:i:s'),
+            $type,
+            strtoupper($severity),
+            $message,
+            $cleanFile,
+            $line,
+            $requestUri,
+            $ctxJson
+        );
+        @file_put_contents($logFile, $entry, FILE_APPEND | LOCK_EX);
+        // Also keep PHP's native error_log in sync
+        error_log("[NuErrorLogger] [{$type}] {$severity}: {$message} | {$cleanFile}:{$line}");
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -259,7 +253,7 @@ class NuErrorLogger {
         $lines = [];
         foreach ($frames as $i => $f) {
             $file  = $this->stripRoot($f['file'] ?? '');
-            $line  = $f['line']     ?? '?';
+            $line  = $f['line'] ?? '?';
             $fn    = ($f['class'] ?? '') . ($f['type'] ?? '') . ($f['function'] ?? '');
             $lines[] = "#{$i} {$fn}() — {$file}:{$line}";
         }
@@ -285,21 +279,21 @@ class NuErrorLogger {
 
     private function phpErrnoToName(int $errno): string {
         $map = [
-            E_ERROR             => 'E_ERROR',
-            E_WARNING           => 'E_WARNING',
-            E_PARSE             => 'E_PARSE',
-            E_NOTICE            => 'E_NOTICE',
-            E_CORE_ERROR        => 'E_CORE_ERROR',
-            E_CORE_WARNING      => 'E_CORE_WARNING',
-            E_COMPILE_ERROR     => 'E_COMPILE_ERROR',
-            E_COMPILE_WARNING   => 'E_COMPILE_WARNING',
-            E_USER_ERROR        => 'E_USER_ERROR',
-            E_USER_WARNING      => 'E_USER_WARNING',
-            E_USER_NOTICE       => 'E_USER_NOTICE',
-            E_STRICT            => 'E_STRICT',
-            E_DEPRECATED        => 'E_DEPRECATED',
-            E_USER_DEPRECATED   => 'E_USER_DEPRECATED',
-            E_ALL               => 'E_ALL',
+            E_ERROR           => 'E_ERROR',
+            E_WARNING         => 'E_WARNING',
+            E_PARSE           => 'E_PARSE',
+            E_NOTICE          => 'E_NOTICE',
+            E_CORE_ERROR      => 'E_CORE_ERROR',
+            E_CORE_WARNING    => 'E_CORE_WARNING',
+            E_COMPILE_ERROR   => 'E_COMPILE_ERROR',
+            E_COMPILE_WARNING => 'E_COMPILE_WARNING',
+            E_USER_ERROR      => 'E_USER_ERROR',
+            E_USER_WARNING    => 'E_USER_WARNING',
+            E_USER_NOTICE     => 'E_USER_NOTICE',
+            E_STRICT          => 'E_STRICT',
+            E_DEPRECATED      => 'E_DEPRECATED',
+            E_USER_DEPRECATED => 'E_USER_DEPRECATED',
+            E_ALL             => 'E_ALL',
         ];
         return $map[$errno] ?? "E_UNKNOWN({$errno})";
     }
