@@ -1,9 +1,10 @@
 <?php
 // Guard — loaded inside index.php which already has session + DB
-if (!isset($_SESSION['nu_user_id'])) {
+/*if (!isset($_SESSION['nu_user_id'])) {
     echo '<p class="nu-alert nu-alert-danger">Access denied.</p>';
     return;
-}
+}*/
+require_once dirname(__DIR__, 2) . '/core/module_bootstrap.php';
 ?>
 <!-- ═══════════════════════════════════════════════════════════════════════════
      nuBuilder Error Log Viewer
