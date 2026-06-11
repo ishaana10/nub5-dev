@@ -81,7 +81,6 @@
       ['sfFormCode','sfFkField','sfSubformView','sfHelpText',
        'sfIsFk','sfHideInGrid','sfServerReadonly',
        'fieldJson','fieldData'].forEach(function (k) { delete card.dataset[k]; });
-      delete card._sfPanelUpgraded;
     }
 
     window._nbSfData = { read: _sfRead, write: _sfWrite, clear: _sfClear };
@@ -258,9 +257,8 @@
     },
 
     // ── _makeFieldCard ────────────────────────────────────────────
-    // Field input classes use the  nu-field-*  prefix for consistency
-    // with the rest of the nu-* design system.
-    // Lookup-specific inputs use the  nu-lookup-*  prefix.
+    // For type === 'subform' the FK config panel is rendered inline
+    // here — no deferred upgrade, no MutationObserver needed.
     _makeFieldCard: function (type, label, name, required, extra) {
       extra = extra || {};
       var col = parseInt(extra.col || extra.colspan, 10) || 12;
@@ -286,7 +284,6 @@
       }
 
       if (type === 'lookup') {
-        // Resolve values from both new (lookup object) and legacy flat fields
         var lk       = (extra.lookup && typeof extra.lookup === 'object') ? extra.lookup : {};
         var lkTable  = lk.table          || lk.form_code       || extra.lookup_form    || '';
         var lkDisp   = lk.display_column || lk.displaycolumn   || extra.lookup_display || '';
@@ -297,12 +294,10 @@
         extraBody +=
           '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;margin-top:6px;grid-column:1/-1;">' +
             '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">🔗 LOOKUP CONFIG <span style="font-weight:400;color:var(--text-muted,#888);">— links this field to another table</span></div>' +
-
             '<div style="margin-bottom:8px;">' +
               '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Lookup Table <span style="font-weight:400;">— the DB table to search</span></label>' +
               '<input type="text" class="nu-input nu-lookup-table" value="' + _esc(lkTable) + '" placeholder="e.g. customers" style="font-size:12px;width:100%;box-sizing:border-box;">' +
             '</div>' +
-
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
               '<div>' +
                 '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Display Column <span style="font-weight:400;">(shown to user)</span></label>' +
@@ -313,7 +308,6 @@
                 '<input type="text" class="nu-input nu-lookup-store" value="' + _esc(lkStore) + '" placeholder="e.g. id" style="font-size:12px;">' +
               '</div>' +
             '</div>' +
-
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
               '<div>' +
                 '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Filter SQL <span style="font-weight:400;">(optional WHERE clause)</span></label>' +
@@ -328,7 +322,19 @@
       }
 
       if (type === 'subform') {
-        extraBody += '<div class="nb-sf-config"></div>';
+        // Resolve saved subform data from the extra object so the
+        // panel is pre-populated when editing an existing form.
+        var sf          = (extra.subform && typeof extra.subform === 'object') ? extra.subform : {};
+        var sfData = {
+          form_code:       sf.form_code    || sf.formcode  || extra.sf_form_code    || '',
+          fk_field:        sf.fk_field     || sf.fkfield   || extra.sf_fk_field     || '',
+          subform_view:    extra.subform_view                                        || 'grid',
+          help_text:       extra.help_text  || extra.field_help_text                || '',
+          is_fk:           !!extra.is_fk,
+          hide_in_grid:    !!extra.hide_in_grid,
+          server_readonly: !!extra.server_readonly
+        };
+        extraBody += _subformPanelHTML(sfData);
       }
 
       var card = document.createElement('div');
@@ -389,6 +395,11 @@
         });
       });
 
+      // Wire up subform panel events immediately — no deferred upgrade needed.
+      if (type === 'subform') {
+        _attachSubformPanelEvents(card, sfData);
+      }
+
       return card;
     },
 
@@ -429,7 +440,6 @@
           var helpEl     = card.querySelector('.nu-field-help');
           var formulaEl  = card.querySelector('.nu-field-formula');
 
-          // Lookup inputs — nu-lookup-* class names
           var lkTableEl  = card.querySelector('.nu-lookup-table');
           var lkDispEl   = card.querySelector('.nu-lookup-display');
           var lkStoreEl  = card.querySelector('.nu-lookup-store');
@@ -445,7 +455,7 @@
             default_value: defEl   ? defEl.value    : '',
             help_text:     helpEl  ? helpEl.value   : '',
             col:           parseInt(card.dataset.col, 10) || 12,
-            row_index:     rowIndex   // ← row grouping key
+            row_index:     rowIndex
           };
 
           if (optsEl) {
@@ -460,7 +470,6 @@
 
           if (formulaEl) field.formula = formulaEl.value;
 
-          // Serialise lookup config as a nested object
           if (type === 'lookup' && lkTableEl) {
             field.lookup = {
               table:          lkTableEl  ? lkTableEl.value.trim()  : '',
@@ -549,7 +558,6 @@
 
     _initAfterLoad: function () {
       _attachAllRowDrops();
-      _upgradeAllSubformCards();
     }
   };
 
@@ -631,96 +639,10 @@
 
   /* ════════════════════════════════════════════════════════════════════
      SECTION 4 — Subform FK panel
+     _subformPanelHTML  — generates HTML (used inside _makeFieldCard)
+     _attachSubformPanelEvents — wires live events on the card's panel
+     _readCardConfig / _augmentLayout — read panel state for getLayout()
   ═══════════════════════════════════════════════════════════════════ */
-
-  function _isSubformCard(card) {
-    var t = card.dataset.type || card.dataset.fieldtype || card.dataset.fieldType
-         || card.dataset.nbType || card.dataset.ftype || '';
-    if (t === 'subform') return true;
-    var badge = card.querySelector('.nb-cfield-type-badge');
-    if (badge && badge.textContent.trim().toLowerCase() === 'subform') return true;
-    var raw = card.dataset.fieldJson || card.dataset.fieldData || '';
-    if (raw) {
-      try { if ((JSON.parse(raw).type || '') === 'subform') return true; } catch (e) {}
-    }
-    return false;
-  }
-
-  function _getSubformCards() {
-    var canvas = document.getElementById('formCanvas');
-    if (!canvas) return [];
-    return Array.prototype.slice.call(canvas.querySelectorAll('.nb-cfield')).filter(_isSubformCard);
-  }
-
-  function _readCardConfig(card) {
-    var formCode = '', fkField = '', subformView = 'grid', helpText = '';
-    var isFk = false, hideGrid = false, srvRo = false;
-    var panel = card.querySelector('.nb-sf-fk-panel');
-    if (panel) {
-      var fcSel   = panel.querySelector('.nb-sf-form-code');
-      var fkSel   = panel.querySelector('.nb-sf-fk-field');
-      var viewSel = panel.querySelector('.nb-sf-view');
-      var isFkC   = panel.querySelector('.nb-sf-is-fk');
-      var hideC   = panel.querySelector('.nb-sf-hide-in-grid');
-      var srvRoC  = panel.querySelector('.nb-sf-server-readonly');
-      if (fcSel)   formCode    = fcSel.value   || '';
-      if (fkSel)   fkField     = fkSel.value   || '';
-      if (viewSel) subformView = viewSel.value  || 'grid';
-      if (isFkC)   isFk        = isFkC.checked;
-      if (hideC)   hideGrid    = hideC.checked;
-      if (srvRoC)  srvRo       = srvRoC.checked;
-    }
-    var helpEl = card.querySelector('.nu-field-help');
-    if (helpEl) helpText = helpEl.value || '';
-
-    if (!formCode)    formCode    = card.dataset.sfFormCode    || '';
-    if (!fkField)     fkField     = card.dataset.sfFkField     || '';
-    if (!subformView) subformView = card.dataset.sfSubformView || 'grid';
-    if (!isFk)        isFk        = card.dataset.sfIsFk           === '1';
-    if (!hideGrid)    hideGrid    = card.dataset.sfHideInGrid     === '1';
-    if (!srvRo)       srvRo       = card.dataset.sfServerReadonly === '1';
-
-    if (!formCode) {
-      var raw = card.dataset.fieldJson || card.dataset.fieldData || '';
-      if (raw) {
-        try {
-          var obj = JSON.parse(raw);
-          var sf  = (obj.subform && typeof obj.subform === 'object') ? obj.subform : {};
-          formCode    = sf.form_code || sf.formcode || '';
-          fkField     = sf.fk_field  || sf.fkfield  || '';
-          subformView = obj.subform_view || sf.subform_view || 'grid';
-          if (!isFk)     isFk     = !!obj.is_fk;
-          if (!hideGrid) hideGrid = !!obj.hide_in_grid;
-          if (!srvRo)    srvRo    = !!obj.server_readonly;
-        } catch (e) {}
-      }
-    }
-    return { form_code: formCode, fk_field: fkField, subform_view: subformView,
-             help_text: helpText, is_fk: isFk, hide_in_grid: hideGrid, server_readonly: srvRo };
-  }
-
-  // _nbSfAugmentLayout — called inside getLayout()
-  function _augmentLayout(layout) {
-    if (!Array.isArray(layout)) return layout;
-    var sfCards = _getSubformCards();
-    var sfIndex = 0;
-    layout.forEach(function (fieldObj) {
-      if ((fieldObj.type || fieldObj.fieldtype || '') !== 'subform') return;
-      var card = sfCards[sfIndex++] || null;
-      if (!card) return;
-      var cfg = _readCardConfig(card);
-      if (!fieldObj.subform) fieldObj.subform = {};
-      if (cfg.form_code)    fieldObj.subform.form_code = cfg.form_code;
-      if (cfg.fk_field)     fieldObj.subform.fk_field  = cfg.fk_field;
-      fieldObj.subform_view = cfg.subform_view || 'grid';
-      if (cfg.help_text)    fieldObj.help_text = cfg.help_text;
-      if (cfg.is_fk)           fieldObj.is_fk           = true; else delete fieldObj.is_fk;
-      if (cfg.hide_in_grid)    fieldObj.hide_in_grid    = true; else delete fieldObj.hide_in_grid;
-      if (cfg.server_readonly) fieldObj.server_readonly = true; else delete fieldObj.server_readonly;
-    });
-    return layout;
-  }
-  window._nbSfAugmentLayout = _augmentLayout;
 
   function _toggleRow(cls, dataKey, checkedAttr, label, hint) {
     return '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;">'
@@ -731,13 +653,13 @@
   }
 
   function _subformPanelHTML(d) {
-    var isFk        = d.is_fk           ? 'checked' : '';
-    var hideGrid    = d.hide_in_grid    ? 'checked' : '';
-    var srvRo       = d.server_readonly ? 'checked' : '';
-    var viewGrid    = (!d.subform_view || d.subform_view === 'grid') ? 'selected' : '';
-    var viewForm    = (d.subform_view === 'form') ? 'selected' : '';
+    var isFk     = d.is_fk           ? 'checked' : '';
+    var hideGrid = d.hide_in_grid    ? 'checked' : '';
+    var srvRo    = d.server_readonly ? 'checked' : '';
+    var viewGrid = (!d.subform_view || d.subform_view === 'grid') ? 'selected' : '';
+    var viewForm = (d.subform_view === 'form') ? 'selected' : '';
     return [
-      '<div class="nb-sf-fk-panel" style="display:flex;flex-direction:column;gap:8px;padding:10px 0;">',
+      '<div class="nb-sf-fk-panel" style="display:flex;flex-direction:column;gap:8px;padding:10px 0;grid-column:1/-1;">',
         '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Child Form</label>',
         '<select class="nu-input nb-sf-form-code" style="width:100%;"><option value="">— select form —</option></select></div>',
         '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">FK Field (links child → parent)</label>',
@@ -758,6 +680,34 @@
         '</div>',
       '</div>'
     ].join('');
+  }
+
+  // Called once immediately after the card element is created.
+  // Populates the form/FK dropdowns and wires change + create events.
+  function _attachSubformPanelEvents(card, initialData) {
+    var panel = card.querySelector('.nb-sf-fk-panel');
+    if (!panel) return;
+
+    var d = initialData || {};
+
+    _populateFormDropdown(panel, d.form_code || '', function () {
+      if (d.form_code) _populateFkDropdown(panel, d.form_code, d.fk_field || '');
+    });
+
+    var viewSel = panel.querySelector('.nb-sf-view');
+    if (viewSel && d.subform_view) viewSel.value = d.subform_view;
+
+    var formSel = panel.querySelector('.nb-sf-form-code');
+    if (formSel) {
+      formSel.addEventListener('change', function () {
+        _populateFkDropdown(panel, formSel.value, '');
+      });
+    }
+
+    var createBtn = panel.querySelector('.nb-sf-create-fk');
+    if (createBtn) {
+      createBtn.addEventListener('click', function () { _createFkField(panel); });
+    }
   }
 
   function _populateFormDropdown(panel, selectedCode, cb) {
@@ -860,76 +810,61 @@
       .catch(function (e) { NuApp.toast('Error: ' + e.message, 'error'); });
   }
 
-  function _upgradeSubformPanel(card) {
-    if (!_isSubformCard(card)) return;
-    if (card._sfPanelUpgraded) {
-      var existing = card.querySelector('.nb-sf-fk-panel');
-      if (existing) {
-        var sel = existing.querySelector('.nb-sf-form-code');
-        if (sel && sel.value) return;
-        existing.remove();
-      }
-      card._sfPanelUpgraded = false;
+  // _readCardConfig — reads the live panel state for getLayout() / _augmentLayout()
+  function _readCardConfig(card) {
+    var formCode = '', fkField = '', subformView = 'grid', helpText = '';
+    var isFk = false, hideGrid = false, srvRo = false;
+    var panel = card.querySelector('.nb-sf-fk-panel');
+    if (panel) {
+      var fcSel   = panel.querySelector('.nb-sf-form-code');
+      var fkSel   = panel.querySelector('.nb-sf-fk-field');
+      var viewSel = panel.querySelector('.nb-sf-view');
+      var isFkC   = panel.querySelector('.nb-sf-is-fk');
+      var hideC   = panel.querySelector('.nb-sf-hide-in-grid');
+      var srvRoC  = panel.querySelector('.nb-sf-server-readonly');
+      if (fcSel)   formCode    = fcSel.value   || '';
+      if (fkSel)   fkField     = fkSel.value   || '';
+      if (viewSel) subformView = viewSel.value  || 'grid';
+      if (isFkC)   isFk        = isFkC.checked;
+      if (hideC)   hideGrid    = hideC.checked;
+      if (srvRoC)  srvRo       = srvRoC.checked;
     }
-    card._sfPanelUpgraded = true;
-
-    var panelTarget = card.querySelector('.nb-sf-config')
-      || card.querySelector('.nb-cfield-body')
-      || card;
-
-    var existingData = window._nbSfData.read(card);
-    panelTarget.insertAdjacentHTML('beforeend', _subformPanelHTML(existingData));
-
-    var panel = panelTarget.querySelector('.nb-sf-fk-panel');
-    if (!panel) return;
-
-    _populateFormDropdown(panel, existingData.form_code, function () {
-      if (existingData.form_code) _populateFkDropdown(panel, existingData.form_code, existingData.fk_field);
-    });
-
-    var viewSel = panel.querySelector('.nb-sf-view');
-    if (viewSel && existingData.subform_view) viewSel.value = existingData.subform_view;
-
-    var formSel = panel.querySelector('.nb-sf-form-code');
-    if (formSel) {
-      formSel.addEventListener('change', function () {
-        _populateFkDropdown(panel, formSel.value, '');
-      });
-    }
-    var createBtn = panel.querySelector('.nb-sf-create-fk');
-    if (createBtn) createBtn.addEventListener('click', function () { _createFkField(panel); });
+    var helpEl = card.querySelector('.nu-field-help');
+    if (helpEl) helpText = helpEl.value || '';
+    return { form_code: formCode, fk_field: fkField, subform_view: subformView,
+             help_text: helpText, is_fk: isFk, hide_in_grid: hideGrid, server_readonly: srvRo };
   }
 
-  function _upgradeAllSubformCards() {
+  function _getSubformCards() {
     var canvas = document.getElementById('formCanvas');
-    if (!canvas) return;
-    canvas.querySelectorAll('.nb-cfield').forEach(_upgradeSubformPanel);
-  }
-  window._nbSfUpgradeAll = _upgradeAllSubformCards;
-
-  var _obs = new MutationObserver(function (mutations) {
-    mutations.forEach(function (m) {
-      m.addedNodes.forEach(function (node) {
-        if (node.nodeType !== 1) return;
-        if (_isSubformCard(node)) _upgradeSubformPanel(node);
-        if (node.querySelectorAll) node.querySelectorAll('.nb-cfield').forEach(function (c) {
-          if (_isSubformCard(c)) _upgradeSubformPanel(c);
-        });
-      });
+    if (!canvas) return [];
+    return Array.prototype.slice.call(canvas.querySelectorAll('.nb-cfield')).filter(function (c) {
+      return (c.dataset.type || '') === 'subform';
     });
-  });
-
-  function _attachObserver() {
-    var canvas = document.getElementById('formCanvas');
-    if (!canvas) return;
-    try { _obs.disconnect(); } catch (e) {}
-    _obs.observe(canvas, { childList: true, subtree: true });
   }
 
-  document.addEventListener('nu:form:opened', function () {
-    setTimeout(function () { _attachObserver(); _upgradeAllSubformCards(); }, 150);
-  });
-
+  // Called by getLayout() to stamp subform-specific fields onto each subform entry
+  function _augmentLayout(layout) {
+    if (!Array.isArray(layout)) return layout;
+    var sfCards = _getSubformCards();
+    var sfIndex = 0;
+    layout.forEach(function (fieldObj) {
+      if ((fieldObj.type || fieldObj.fieldtype || '') !== 'subform') return;
+      var card = sfCards[sfIndex++] || null;
+      if (!card) return;
+      var cfg = _readCardConfig(card);
+      if (!fieldObj.subform) fieldObj.subform = {};
+      if (cfg.form_code)    fieldObj.subform.form_code = cfg.form_code;
+      if (cfg.fk_field)     fieldObj.subform.fk_field  = cfg.fk_field;
+      fieldObj.subform_view = cfg.subform_view || 'grid';
+      if (cfg.help_text)    fieldObj.help_text = cfg.help_text;
+      if (cfg.is_fk)           fieldObj.is_fk           = true; else delete fieldObj.is_fk;
+      if (cfg.hide_in_grid)    fieldObj.hide_in_grid    = true; else delete fieldObj.hide_in_grid;
+      if (cfg.server_readonly) fieldObj.server_readonly = true; else delete fieldObj.server_readonly;
+    });
+    return layout;
+  }
+  window._nbSfAugmentLayout = _augmentLayout;
   window.nbCreateFkField = _createFkField;
 
 
@@ -1013,10 +948,9 @@
   };
 
   // ── _rebuildCanvas ────────────────────────────────────────────────
-  // Groups fields by row_index before building the canvas, so the
-  // exact row structure is restored after a save/reload cycle.
-  // Fields without a row_index (legacy flat layouts) are all placed
-  // in a single row, preserving backwards compatibility.
+  // Groups fields by row_index, creates one canvas row per group,
+  // and passes full field data into _makeFieldCard so subform panels
+  // are pre-populated inline — no deferred upgrade needed.
   function _rebuildCanvas(layoutJson) {
     var canvas = document.getElementById('formCanvas');
     var empty  = document.getElementById('canvasEmpty');
@@ -1034,8 +968,6 @@
     if (!fields.length) { if (empty) empty.style.display = 'block'; return; }
     if (empty) empty.style.display = 'none';
 
-    // Group fields by row_index. Fields with no row_index go into group -1
-    // (treated as a single legacy row appended at the end).
     var groups = {};
     var groupOrder = [];
     fields.forEach(function (f) {
@@ -1044,7 +976,6 @@
       groups[ri].push(f);
     });
 
-    // Sort groups: numbered rows first in ascending order, legacy (-1) last
     groupOrder.sort(function (a, b) {
       if (a === -1) return 1;
       if (b === -1) return -1;
@@ -1052,18 +983,16 @@
     });
 
     groupOrder.forEach(function (ri) {
-      // Create one canvas row per group
       var row = window.nbFormBuilder.addRow();
       var rowBody = row ? row.querySelector('.nb-row-body') : null;
 
       groups[ri].forEach(function (f) {
-        var beforeCount = canvas.querySelectorAll('.nb-cfield').length;
         var card = window.nbFormBuilder._makeFieldCard(
           f.type || f.fieldtype || 'text',
           f.label || f.fieldlabel || '',
           f.name  || f.fieldname  || '',
           !!f.required,
-          f
+          f   // full field object passed as extra — subform panel reads from here
         );
         if (!card) return;
 
@@ -1084,26 +1013,10 @@
         }
 
         window.nbFormBuilder._applyColSpan(card, parseInt(f.col, 10) || 12);
-
-        if ((f.type || f.fieldtype || '') === 'subform') {
-          try { card.dataset.fieldJson = JSON.stringify(f); } catch (e) {}
-          var sf = (f.subform && typeof f.subform === 'object') ? f.subform : {};
-          window._nbSfData.write(card, {
-            form_code:       sf.form_code || sf.formcode || '',
-            fk_field:        sf.fk_field  || sf.fkfield  || '',
-            subform_view:    f.subform_view || 'grid',
-            help_text:       f.help_text || f.field_help_text || '',
-            is_fk:           !!f.is_fk,
-            hide_in_grid:    !!f.hide_in_grid,
-            server_readonly: !!f.server_readonly
-          });
-          delete card._sfPanelUpgraded;
-        }
       });
     });
 
     _attachAllRowDrops();
-    setTimeout(function () { _upgradeAllSubformCards(); }, 80);
   }
 
 
@@ -1112,8 +1025,6 @@
   ═══════════════════════════════════════════════════════════════════ */
   function _init() {
     _attachAllRowDrops();
-    _attachObserver();
-    _upgradeAllSubformCards();
   }
 
   if (document.readyState === 'loading') {
