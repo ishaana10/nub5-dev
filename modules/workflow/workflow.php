@@ -293,7 +293,18 @@ window.WF = (() => {
 
   function toast(msg, type = 'info') {
     if (typeof nuToast === 'function') { nuToast(msg, type); return; }
+    if (window.NuApp && typeof NuApp.toast === 'function') { NuApp.toast(msg, type); return; }
     console.log('[WF]', type, msg);
+  }
+
+  // Reload just this module inside the SPA content area (no full page reload)
+  function _reloadModule() {
+    WF._cleanup();
+    if (window.NuApp && typeof NuApp.loadModule === 'function') {
+      NuApp.loadModule('workflow');
+    } else {
+      location.reload(); // fallback only
+    }
   }
 
   let _stages      = [];
@@ -363,7 +374,9 @@ window.WF = (() => {
       toast('Workflow saved', 'success');
       const unsaved = document.querySelectorAll('.wf-stage-row[data-new="1"]');
       for (const row of unsaved) { await _saveStageRow(row, d.wf_id); }
-      setTimeout(() => location.reload(), 700);
+      // Close drawer then reload workflow module in-place (no full page reload)
+      closeDrawer();
+      setTimeout(_reloadModule, 300);
     } catch (e) { toast('Save failed: ' + e.message, 'error'); }
   }
 
@@ -374,7 +387,7 @@ window.WF = (() => {
       const d = await r.json();
       if (!d.success) { toast(d.error, 'error'); return; }
       toast('Workflow deleted', 'success');
-      setTimeout(() => location.reload(), 600);
+      setTimeout(_reloadModule, 400);
     } catch (e) { toast('Delete failed', 'error'); }
   }
 
@@ -681,6 +694,11 @@ window.WF = (() => {
     $('wfDrawerTitle').textContent = name || 'New Workflow';
   }
 
+  // Clean up global WF reference so next loadModule() re-initialises it fresh
+  function _cleanup() {
+    window.WF = null;
+  }
+
   return {
     search, openNew, openDetail, saveAll,
     delete: del, closeDrawer, autoCode,
@@ -688,7 +706,7 @@ window.WF = (() => {
     addTransition, _patchTrans, _deleteTrans,
     openInstances, filterInstances,
     openHistory, doTransition, doReject, closeHistory,
-    _renderStages, _renderTransitions,
+    _renderStages, _renderTransitions, _cleanup,
   };
 })();
 } // end if (!window.WF)
