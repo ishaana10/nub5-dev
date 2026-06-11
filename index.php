@@ -294,6 +294,17 @@ function nu_asset(string $path): string {
                 </svg>
                 <span>Error Log</span>
             </a>
+
+            <!-- ─── App Cloner ─────────────────────────────────────────────── -->
+            <a href="#appcloner" class="nu-nav-item" data-module="appcloner"
+               onclick="NuApp.loadModule('appcloner'); return false;"
+               style="color:var(--warning,#f59e0b);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                <span>App Cloner</span>
+            </a>
             <?php endif; ?>
 
         </nav>

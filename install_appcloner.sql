@@ -1,10 +1,16 @@
 -- ============================================================
 -- nuBuilder 5 - App Cloner Module Registration
--- Run this ONCE after uploading files (e.g. in phpMyAdmin).
--- Compatible with the nub5 schema (nu_forms + nu_menus).
+-- ============================================================
+-- NOTE: The nub5 sidebar menu is hardcoded in index.php, not
+-- driven by nu_menus at runtime. The nav item has already been
+-- added directly to index.php (inside the $isAdmin block).
+--
+-- This SQL file only registers the form record in nu_forms so
+-- the module is traceable in the system. No nu_menus row is
+-- needed for the sidebar to show the link.
 -- ============================================================
 
--- ─── 1. Register as a form in nu_forms ──────────────────────────────────────
+-- ─── 1. Register in nu_forms ────────────────────────────────────────────────
 INSERT IGNORE INTO `nu_forms` (
     `form_code`,
     `form_name`,
@@ -16,22 +22,22 @@ INSERT IGNORE INTO `nu_forms` (
     `form_pk_type`,
     `form_table_mode`
 ) VALUES (
-    'appcloner',                        -- form_code  (unique slug, used by menu target)
-    'App Cloner',                       -- form_name
-    NULL,                               -- form_table (no DB table – custom module)
+    'appcloner',
+    'App Cloner',
+    NULL,
     'Clone or export the nuBuilder 5 application database and files.',
-    NULL,                               -- form_layout (custom module, no JSON layout needed)
+    NULL,
     JSON_OBJECT(
-        'custom_module', 'appcloner',   -- tells the router to load modules/appcloner/appcloner.php
-        'type', 'custom'
+        'type',          'custom',
+        'custom_module', 'appcloner'
     ),
-    1,                                  -- form_active
-    'autoincrement',                    -- form_pk_type
-    'existing'                          -- form_table_mode
+    1,
+    'autoincrement',
+    'existing'
 );
 
--- ─── 2. Add a menu item in nu_menus ─────────────────────────────────────────
---  Sits at the bottom of the menu (order 99), under no parent (menu_parent_id = 0)
+-- ─── 2. Optionally register in nu_menus (informational — sidebar is hardcoded)
+--        Only needed if you later build a dynamic menu renderer.
 INSERT IGNORE INTO `nu_menus` (
     `menu_parent_id`,
     `menu_code`,
@@ -43,22 +49,25 @@ INSERT IGNORE INTO `nu_menus` (
     `menu_active`,
     `menu_role_access`
 ) VALUES (
-    0,                                  -- top-level menu item
-    'appcloner',                        -- menu_code (unique)
-    'App Cloner',                       -- menu_label
-    'form',                             -- menu_type  (matches nu_menus ENUM)
-    'appcloner',                        -- menu_target → matches form_code above
-    'copy',                             -- menu_icon  (Feather icon name)
-    99,                                 -- menu_order
-    1,                                  -- menu_active
-    JSON_ARRAY('globeadmin', 'admin')   -- menu_role_access: only admins see this
+    0,
+    'appcloner',
+    'App Cloner',
+    'form',
+    'appcloner',
+    'copy',
+    99,
+    1,
+    JSON_ARRAY('globeadmin', 'admin')
 );
 
--- ─── Notes ───────────────────────────────────────────────────────────────────
--- • The /temp/ folder must be writable by your web server.
---   The background worker writes progress JSON files there.
--- • To remove the module:
---     DELETE FROM nu_forms  WHERE form_code  = 'appcloner';
---     DELETE FROM nu_menus  WHERE menu_code  = 'appcloner';
+-- ─── Notes ──────────────────────────────────────────────────────────────────
+-- The App Cloner nav link is rendered in index.php inside the <?php if ($isAdmin) ?>
+-- block under "Admin Tools". It calls NuApp.loadModule('appcloner').
+-- Make sure your web server can write to the /temp/ directory.
+--
+-- To remove:
+--   DELETE FROM nu_forms WHERE form_code = 'appcloner';
+--   DELETE FROM nu_menus  WHERE menu_code = 'appcloner';
+-- Then remove the nav <a> block from index.php.
 
-SELECT 'App Cloner registered in nu_forms + nu_menus. Refresh nuBuilder 5 to see it in the menu.' AS result;
+SELECT 'App Cloner registered. The nav link is live in index.php for globeadmin/admin roles.' AS result;
