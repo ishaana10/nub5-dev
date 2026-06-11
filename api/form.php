@@ -329,11 +329,14 @@ function nu_render_field($field, $value = '', $record = []) {
             break;
 
         case 'select':
-            $multiple = !empty($field['multiple']) ? ' multiple' : '';
-            $control  = '<select class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $required . $multiple . '>'
-                      . '<option value="">Select...</option>'
-                      . nu_render_options($field, $value)
-                      . '</select>';
+            $multiple   = !empty($field['multiple']) ? ' multiple' : '';
+            $useSelect2 = !empty($field['select2']);
+            $s2Class    = $useSelect2 ? ' nu-select2' : '';
+            $s2Attr     = $useSelect2 ? ' data-select2="1"' : '';
+            $control    = '<select class="' . nu_attr(trim($cssClass . $s2Class)) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $required . $multiple . $s2Attr . '>'
+                        . '<option value="">Select...</option>'
+                        . nu_render_options($field, $value)
+                        . '</select>';
             break;
 
         case 'radio':
