@@ -205,28 +205,103 @@ $queries = $db->fetchAll("SELECT * FROM nu_queries WHERE query_active = 1 ORDER 
 <script>
 /* ============================================================
    QB — Query Builder controller
-   API paths are root-relative (api/queries.php) because this
-   module is AJAX-loaded into index.php at the site root, so
-   relative paths like ../../api/ would resolve incorrectly.
    ============================================================ */
-const QB = (() => {
-  let _mode     = 'visual'; // 'visual' | 'raw'
-  let _runCode  = '';       // query_code being run (for CSV export)
+(function () {
+
+// Guard: if QB already exists from a previous load, tear it down first
+// so the new instance picks up the freshly-rendered DOM.
+if (window.QB && typeof window.QB._destroy === 'function') {
+  window.QB._destroy();
+}
+
+window.QB = (() => {
+  let _mode      = 'visual';
+  let _runCode   = '';
   let _condCount = 0;
   let _paramCount = 0;
-  let _tables   = [];
-  let _columns  = [];
+  let _tables    = [];
+  let _columns   = [];
 
-  /* ── helpers ──────────────────────────────────────────── */
-  const $  = (id) => document.getElementById(id);
-  const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const $   = (id) => document.getElementById(id);
+  const esc = (s)  => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   function toast(msg, type = 'info') {
+    if (window.NuApp && typeof NuApp.toast === 'function') { NuApp.toast(msg, type); return; }
     if (typeof nuToast === 'function') { nuToast(msg, type); return; }
-    console.log('[QB]', msg);
+    console.log('[QB]', type, msg);
   }
 
-  /* ── open new ──────────────────────────────────────────── */
+  function _reloadModule() {
+    window.QB = null;
+    if (window.NuApp && typeof NuApp.loadModule === 'function') {
+      NuApp.loadModule('queries');
+    } else {
+      location.reload();
+    }
+  }
+
+  /* ── load tables ─────────────────────────────────────── */
+  async function loadTables(selectValue) {
+    try {
+      const r = await fetch('api/queries.php?action=get_tables', { credentials: 'same-origin' });
+      if (!r.ok) { console.error('[QB] get_tables HTTP', r.status); return; }
+      const d = await r.json();
+      if (!d.success) { console.error('[QB] get_tables:', d.error); return; }
+      _tables = d.tables || [];
+      const sel = $('qbTable');
+      if (!sel) return;
+      const cur = selectValue !== undefined ? selectValue : sel.value;
+      sel.innerHTML = '<option value="">-- select table --</option>';
+      _tables.forEach(t => {
+        const o = document.createElement('option');
+        o.value = t; o.textContent = t;
+        if (t === cur) o.selected = true;
+        sel.appendChild(o);
+      });
+      // If a table was pre-selected, load its columns immediately
+      if (cur && _tables.includes(cur)) loadColumns();
+    } catch (e) {
+      console.error('[QB] loadTables error:', e);
+    }
+  }
+
+  /* ── load columns ─────────────────────────────────────── */
+  async function loadColumns() {
+    const table = $('qbTable') ? $('qbTable').value : '';
+    if (!table) return;
+    try {
+      const r = await fetch(`api/queries.php?action=get_columns&table=${encodeURIComponent(table)}`, { credentials: 'same-origin' });
+      if (!r.ok) { console.error('[QB] get_columns HTTP', r.status); return; }
+      const d = await r.json();
+      if (!d.success) { console.error('[QB] get_columns:', d.error); return; }
+      _columns = d.columns || [];
+      const colSel   = $('qbColumns');
+      const orderSel = $('qbOrderField');
+      if (!colSel || !orderSel) return;
+      colSel.innerHTML   = '<option value="*" selected>* (all columns)</option>';
+      orderSel.innerHTML = '<option value="">-- none --</option>';
+      _columns.forEach(c => {
+        const o1 = document.createElement('option'); o1.value = c; o1.textContent = c;
+        colSel.appendChild(o1);
+        const o2 = document.createElement('option'); o2.value = c; o2.textContent = c;
+        orderSel.appendChild(o2);
+      });
+      document.querySelectorAll('.qb-cond-field').forEach(s => {
+        const cur2 = s.value;
+        s.innerHTML = '<option value="">-- field --</option>';
+        _columns.forEach(c => {
+          const o = document.createElement('option'); o.value = c; o.textContent = c;
+          if (c === cur2) o.selected = true;
+          s.appendChild(o);
+        });
+      });
+      buildSql();
+    } catch (e) {
+      console.error('[QB] loadColumns error:', e);
+    }
+  }
+
+  /* ── open new ─────────────────────────────────────────── */
   function openNew() {
     reset();
     $('qbBuilderTitle').textContent = 'New Query';
@@ -235,10 +310,10 @@ const QB = (() => {
     loadTables();
   }
 
-  /* ── edit existing ─────────────────────────────────────── */
+  /* ── edit existing ────────────────────────────────────── */
   async function edit(id) {
     try {
-      const r = await fetch(`api/queries.php?action=get&id=${id}`);
+      const r = await fetch(`api/queries.php?action=get&id=${id}`, { credentials: 'same-origin' });
       const d = await r.json();
       if (!d.success) { toast(d.error, 'error'); return; }
       const q = d.query;
@@ -251,10 +326,8 @@ const QB = (() => {
       $('qbRawSql').value      = q.query_sql;
       $('qbSqlPreview').textContent = q.query_sql;
       $('qbBuilderTitle').textContent = 'Edit Query';
-      // Load params
       const params = JSON.parse(q.query_parameters || 'null') || {};
       Object.entries(params).forEach(([key, cfg]) => addParam(key, cfg));
-      // Switch to raw mode so user can see/edit the SQL directly
       setMode('raw');
       $('qbBuilderPanel').style.display = 'block';
       $('qbBuilderPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -264,104 +337,46 @@ const QB = (() => {
     }
   }
 
-  /* ── reset form ────────────────────────────────────────── */
+  /* ── reset form ───────────────────────────────────────── */
   function reset() {
-    $('qbEditId').value      = '';
-    $('qbName').value        = '';
-    $('qbCode').value        = '';
-    $('qbDescription').value = '';
-    $('qbActive').checked    = true;
-    $('qbRawSql').value      = '';
-    $('qbSqlPreview').textContent = '';
-    $('qbTable').innerHTML   = '<option value="">-- select table --</option>';
-    $('qbColumns').innerHTML = '<option value="*" selected>* (all columns)</option>';
-    $('qbConditions').innerHTML = '';
-    $('qbParams').innerHTML  = '';
-    $('qbOrderField').innerHTML = '<option value="">-- none --</option>';
-    $('qbLimit').value       = '';
+    ['qbEditId','qbName','qbCode','qbDescription'].forEach(id => { if ($(id)) $(id).value = ''; });
+    if ($('qbActive'))    $('qbActive').checked = true;
+    if ($('qbRawSql'))    $('qbRawSql').value = '';
+    if ($('qbSqlPreview')) $('qbSqlPreview').textContent = '';
+    if ($('qbTable'))     $('qbTable').innerHTML = '<option value="">-- select table --</option>';
+    if ($('qbColumns'))   $('qbColumns').innerHTML = '<option value="*" selected>* (all columns)</option>';
+    if ($('qbConditions')) $('qbConditions').innerHTML = '';
+    if ($('qbParams'))    $('qbParams').innerHTML = '';
+    if ($('qbOrderField')) $('qbOrderField').innerHTML = '<option value="">-- none --</option>';
+    if ($('qbLimit'))     $('qbLimit').value = '';
     _condCount  = 0;
     _paramCount = 0;
     _columns    = [];
     setMode('visual');
   }
 
-  /* ── toggle SQL / visual mode ──────────────────────────── */
-  function toggleSqlMode() {
-    setMode(_mode === 'visual' ? 'raw' : 'visual');
-  }
+  /* ── toggle SQL / visual mode ─────────────────────────── */
+  function toggleSqlMode() { setMode(_mode === 'visual' ? 'raw' : 'visual'); }
 
   function setMode(m) {
     _mode = m;
     if (m === 'raw') {
-      $('qbVisualSection').style.display = 'none';
-      $('qbRawSection').style.display    = 'block';
-      $('qbSqlToggle').textContent       = 'Visual Builder';
-      // copy last built SQL into raw textarea
-      if (!$('qbRawSql').value && $('qbSqlPreview').textContent) {
+      if ($('qbVisualSection')) $('qbVisualSection').style.display = 'none';
+      if ($('qbRawSection'))    $('qbRawSection').style.display    = 'block';
+      if ($('qbSqlToggle'))     $('qbSqlToggle').textContent       = 'Visual Builder';
+      if ($('qbRawSql') && !$('qbRawSql').value && $('qbSqlPreview')) {
         $('qbRawSql').value = $('qbSqlPreview').textContent;
       }
     } else {
-      $('qbVisualSection').style.display = 'block';
-      $('qbRawSection').style.display    = 'none';
-      $('qbSqlToggle').textContent       = 'Show SQL';
+      if ($('qbVisualSection')) $('qbVisualSection').style.display = 'block';
+      if ($('qbRawSection'))    $('qbRawSection').style.display    = 'none';
+      if ($('qbSqlToggle'))     $('qbSqlToggle').textContent       = 'Show SQL';
     }
   }
 
-  /* ── load tables ───────────────────────────────────────── */
-  async function loadTables() {
-    try {
-      const r = await fetch('api/queries.php?action=get_tables');
-      const d = await r.json();
-      if (!d.success) return;
-      _tables = d.tables;
-      const sel = $('qbTable');
-      const cur = sel.value;
-      sel.innerHTML = '<option value="">-- select table --</option>';
-      _tables.forEach(t => {
-        const o = document.createElement('option');
-        o.value = t; o.textContent = t;
-        if (t === cur) o.selected = true;
-        sel.appendChild(o);
-      });
-    } catch (e) { /* silent */ }
-  }
-
-  /* ── load columns ──────────────────────────────────────── */
-  async function loadColumns() {
-    const table = $('qbTable').value;
-    if (!table) return;
-    try {
-      const r = await fetch(`api/queries.php?action=get_columns&table=${encodeURIComponent(table)}`);
-      const d = await r.json();
-      if (!d.success) return;
-      _columns = d.columns;
-      const colSel   = $('qbColumns');
-      const orderSel = $('qbOrderField');
-      colSel.innerHTML   = '<option value="*" selected>* (all columns)</option>';
-      orderSel.innerHTML = '<option value="">-- none --</option>';
-      _columns.forEach(c => {
-        const o1 = document.createElement('option'); o1.value = c; o1.textContent = c;
-        colSel.appendChild(o1);
-        const o2 = document.createElement('option'); o2.value = c; o2.textContent = c;
-        orderSel.appendChild(o2);
-      });
-      // refresh condition dropdowns
-      document.querySelectorAll('.qb-cond-field').forEach(s => {
-        const cur2 = s.value;
-        s.innerHTML = '<option value="">-- field --</option>';
-        _columns.forEach(c => {
-          const o = document.createElement('option'); o.value = c; o.textContent = c;
-          if (c === cur2) o.selected = true;
-          s.appendChild(o);
-        });
-      });
-      buildSql();
-    } catch (e) { /* silent */ }
-  }
-
-  /* ── add WHERE condition row ───────────────────────────── */
+  /* ── add WHERE condition row ──────────────────────────── */
   function addCondition(field, op, val, logic) {
-    const id = ++_condCount;
+    const id  = ++_condCount;
     const row = document.createElement('div');
     row.id = `qbCond_${id}`;
     row.style.cssText = 'display:grid;grid-template-columns:60px 1fr 120px 1fr 32px;gap:6px;margin-bottom:6px;align-items:center;';
@@ -376,7 +391,7 @@ const QB = (() => {
       </select>
       <select class="nu-input nu-input-sm qb-cond-op" onchange="QB.buildSql()" style="font-size:12px;padding:4px 6px;">
         <option value="="   ${op==='='?'selected':''}>= equals</option>
-        <option value="!="  ${op==='!='?'selected':''}>≠ not equals</option>
+        <option value="!="  ${op==='!='?'selected':''}>&#8800; not equals</option>
         <option value=">"   ${op==='>'?'selected':''}>&#62; greater</option>
         <option value=">="  ${op==='>='?'selected':''}>&#62;= greater eq</option>
         <option value="<"   ${op==='<'?'selected':''}>&#60; less</option>
@@ -398,26 +413,24 @@ const QB = (() => {
     buildSql();
   }
 
-  /* ── build SQL from visual inputs ─────────────────────── */
+  /* ── build SQL ────────────────────────────────────────── */
   function buildSql() {
-    const table = $('qbTable').value;
-    if (!table) { $('qbSqlPreview').textContent = ''; return; }
+    const table = $('qbTable') ? $('qbTable').value : '';
+    if (!table) { if ($('qbSqlPreview')) $('qbSqlPreview').textContent = ''; return; }
 
-    // Columns
-    const colSel = $('qbColumns');
-    const selCols = [...colSel.selectedOptions].map(o => o.value);
+    const colSel  = $('qbColumns');
+    const selCols = colSel ? [...colSel.selectedOptions].map(o => o.value) : ['*'];
     const colStr  = selCols.includes('*') || selCols.length === 0 ? '*' : selCols.map(c => '`' + c + '`').join(', ');
 
     let sql = `SELECT ${colStr}\nFROM \`${table}\``;
 
-    // WHERE
-    const condRows = $('qbConditions').querySelectorAll('[id^="qbCond_"]');
+    const condRows = $('qbConditions') ? $('qbConditions').querySelectorAll('[id^="qbCond_"]') : [];
     const wheres = [];
     condRows.forEach((row, i) => {
-      const field  = row.querySelector('.qb-cond-field').value;
-      const op     = row.querySelector('.qb-cond-op').value;
-      const val    = row.querySelector('.qb-cond-val').value.trim();
-      const logic  = row.querySelector('.qb-cond-logic').value;
+      const field = row.querySelector('.qb-cond-field').value;
+      const op    = row.querySelector('.qb-cond-op').value;
+      const val   = row.querySelector('.qb-cond-val').value.trim();
+      const logic = row.querySelector('.qb-cond-logic').value;
       if (!field) return;
       const prefix = (i === 0) ? '' : ` ${logic} `;
       if (op === 'IS NULL' || op === 'IS NOT NULL') {
@@ -429,30 +442,28 @@ const QB = (() => {
     });
     if (wheres.length) sql += `\nWHERE ${wheres.join('')}`;
 
-    // ORDER BY
-    const orderField = $('qbOrderField').value;
-    const orderDir   = $('qbOrderDir').value;
+    const orderField = $('qbOrderField') ? $('qbOrderField').value : '';
+    const orderDir   = $('qbOrderDir')   ? $('qbOrderDir').value   : 'ASC';
     if (orderField) sql += `\nORDER BY \`${orderField}\` ${orderDir}`;
 
-    // LIMIT
-    const lim = parseInt($('qbLimit').value);
+    const lim = parseInt($('qbLimit') ? $('qbLimit').value : '');
     if (!isNaN(lim) && lim > 0) sql += `\nLIMIT ${lim}`;
 
-    $('qbSqlPreview').textContent = sql;
+    if ($('qbSqlPreview')) $('qbSqlPreview').textContent = sql;
     return sql;
   }
 
-  /* ── auto slug query code ──────────────────────────────── */
+  /* ── auto slug ────────────────────────────────────────── */
   function autoCode() {
-    if ($('qbEditId').value) return; // don't overwrite when editing
-    const name = $('qbName').value;
-    $('qbCode').value = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    if ($('qbEditId') && $('qbEditId').value) return;
+    const name = $('qbName') ? $('qbName').value : '';
+    if ($('qbCode')) $('qbCode').value = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
   }
 
-  /* ── add parameter row ─────────────────────────────────── */
+  /* ── parameters ───────────────────────────────────────── */
   function addParam(key, cfg) {
-    const id = ++_paramCount;
-    const k   = key  || '';
+    const id  = ++_paramCount;
+    const k   = key          || '';
     const lbl = cfg?.label   || '';
     const typ = cfg?.type    || 'text';
     const def = cfg?.default || '';
@@ -460,12 +471,12 @@ const QB = (() => {
     row.id = `qbParam_${id}`;
     row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 100px 1fr 32px;gap:6px;margin-bottom:6px;align-items:center;';
     row.innerHTML = `
-      <input type="text" class="nu-input nu-input-sm qb-param-key"   value="${esc(k)}"   placeholder="param_key"   style="font-size:12px;padding:4px 8px;font-family:monospace;">
-      <input type="text" class="nu-input nu-input-sm qb-param-label" value="${esc(lbl)}" placeholder="Display Label" style="font-size:12px;padding:4px 8px;">
+      <input type="text" class="nu-input nu-input-sm qb-param-key"     value="${esc(k)}"   placeholder="param_key"     style="font-size:12px;padding:4px 8px;font-family:monospace;">
+      <input type="text" class="nu-input nu-input-sm qb-param-label"   value="${esc(lbl)}" placeholder="Display Label" style="font-size:12px;padding:4px 8px;">
       <select class="nu-input nu-input-sm qb-param-type" style="font-size:12px;padding:4px 6px;">
-        <option value="text"   ${typ==='text'?'selected':''}>Text</option>
+        <option value="text"   ${typ==='text'  ?'selected':''}>Text</option>
         <option value="number" ${typ==='number'?'selected':''}>Number</option>
-        <option value="date"   ${typ==='date'?'selected':''}>Date</option>
+        <option value="date"   ${typ==='date'  ?'selected':''}>Date</option>
         <option value="select" ${typ==='select'?'selected':''}>Select</option>
       </select>
       <input type="text" class="nu-input nu-input-sm qb-param-default" value="${esc(def)}" placeholder="default value" style="font-size:12px;padding:4px 8px;">
@@ -479,7 +490,6 @@ const QB = (() => {
     if (el) el.remove();
   }
 
-  /* ── collect parameters JSON ───────────────────────────── */
   function collectParams() {
     const params = {};
     document.querySelectorAll('[id^="qbParam_"]').forEach(row => {
@@ -494,30 +504,26 @@ const QB = (() => {
     return params;
   }
 
-  /* ── save ──────────────────────────────────────────────── */
+  /* ── save ─────────────────────────────────────────────── */
   async function save() {
-    const name = $('qbName').value.trim();
+    const name = $('qbName') ? $('qbName').value.trim() : '';
     if (!name) { toast('Query name is required', 'error'); return; }
-
-    const sql = _mode === 'raw'
-      ? $('qbRawSql').value.trim()
-      : (buildSql() || '').trim();
-
+    const sql = (_mode === 'raw'
+      ? ($('qbRawSql') ? $('qbRawSql').value.trim() : '')
+      : (buildSql() || '').trim());
     if (!sql) { toast('SQL query is required', 'error'); return; }
-
     const payload = {
-      query_id:          $('qbEditId').value || null,
+      query_id:          $('qbEditId') ? $('qbEditId').value || null : null,
       query_name:        name,
-      query_code:        $('qbCode').value.trim() || null,
-      query_description: $('qbDescription').value.trim(),
+      query_code:        $('qbCode') ? $('qbCode').value.trim() || null : null,
+      query_description: $('qbDescription') ? $('qbDescription').value.trim() : '',
       query_sql:         sql,
-      query_active:      $('qbActive').checked ? 1 : 0,
+      query_active:      ($('qbActive') && $('qbActive').checked) ? 1 : 0,
       query_parameters:  collectParams()
     };
-
     try {
       const r = await fetch('api/queries.php?action=save', {
-        method: 'POST',
+        method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
@@ -525,36 +531,31 @@ const QB = (() => {
       if (!d.success) { toast(d.error, 'error'); return; }
       toast('Query saved', 'success');
       close();
-      setTimeout(() => location.reload(), 600);
+      setTimeout(_reloadModule, 400);
     } catch (e) {
       toast('Save failed: ' + e.message, 'error');
     }
   }
 
-  /* ── run query ─────────────────────────────────────────── */
+  /* ── run ──────────────────────────────────────────────── */
   async function run(id) {
     try {
-      // First get the query to check for params
-      const r1 = await fetch(`api/queries.php?action=get&id=${id}`);
+      const r1 = await fetch(`api/queries.php?action=get&id=${id}`, { credentials: 'same-origin' });
       const d1 = await r1.json();
       if (!d1.success) { toast(d1.error, 'error'); return; }
       const q = d1.query;
       _runCode = q.query_code;
-
-      $('qbResultsTitle').textContent  = 'Results: ' + q.query_name;
+      $('qbResultsTitle').textContent   = 'Results: ' + q.query_name;
       $('qbResultsPanel').style.display = 'block';
-      $('qbResultsContent').innerHTML  = '<p style="color:var(--text-tertiary);font-size:13px;">Loading…</p>';
-      $('qbResultsMeta').textContent   = '';
-
-      const params = JSON.parse(q.query_parameters || 'null') || {};
+      $('qbResultsContent').innerHTML   = '<p style="color:var(--text-tertiary);font-size:13px;">Loading…</p>';
+      $('qbResultsMeta').textContent    = '';
+      const params    = JSON.parse(q.query_parameters || 'null') || {};
       const hasParams = Object.keys(params).length > 0;
-
       if (hasParams) {
         renderParamForm(params, q.query_code);
         $('qbResultsContent').innerHTML = '<p style="color:var(--text-tertiary);font-size:13px;">Fill in parameters above, then click Run.</p>';
         return;
       }
-
       $('qbRuntimeParams').style.display = 'none';
       await executeQuery(q.query_code, {});
       $('qbResultsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -570,9 +571,9 @@ const QB = (() => {
       const type  = cfg.type  || 'text';
       const label = cfg.label || key;
       html += `<div class="nu-field" style="margin:0;"><label>${esc(label)}</label>`;
-      if (type === 'date')   html += `<input type="date" name="${esc(key)}" class="nu-input" style="font-size:13px;">`;
+      if (type === 'date')        html += `<input type="date"   name="${esc(key)}" class="nu-input" style="font-size:13px;">`;
       else if (type === 'number') html += `<input type="number" name="${esc(key)}" class="nu-input" style="font-size:13px;" placeholder="${esc(label)}">`;
-      else html += `<input type="text" name="${esc(key)}" class="nu-input" style="font-size:13px;" placeholder="${esc(label)}">`;
+      else                        html += `<input type="text"   name="${esc(key)}" class="nu-input" style="font-size:13px;" placeholder="${esc(label)}">`;
       html += '</div>';
     });
     html += '<div style="margin:0;"><label>&nbsp;</label><button type="submit" class="nu-btn nu-btn-primary" style="width:100%;">Run</button></div>';
@@ -583,9 +584,8 @@ const QB = (() => {
 
   async function runWithParams() {
     const form   = $('qbRuntimeParams').querySelector('form');
-    const inputs = [...form.querySelectorAll('[name]')];
     const params = {};
-    inputs.forEach(i => { if (i.name) params[i.name] = i.value; });
+    [...form.querySelectorAll('[name]')].forEach(i => { if (i.name) params[i.name] = i.value; });
     await executeQuery(_runCode, params);
   }
 
@@ -594,7 +594,7 @@ const QB = (() => {
     try {
       const qs = new URLSearchParams({ action: 'run', code });
       Object.entries(params).forEach(([k, v]) => qs.set(k, v));
-      const r = await fetch('api/queries.php?' + qs.toString());
+      const r = await fetch('api/queries.php?' + qs.toString(), { credentials: 'same-origin' });
       const d = await r.json();
       if (!d.success) {
         $('qbResultsContent').innerHTML = `<div style="color:var(--color-danger);font-size:13px;padding:8px;">${esc(d.error)}</div>`;
@@ -618,8 +618,10 @@ const QB = (() => {
     html += '<tbody>';
     records.forEach(row => {
       html += '<tr>' + columns.map(c => {
-        const v = row[c];
-        const disp = v === null || v === undefined ? '<span style="color:var(--text-tertiary);font-style:italic;">NULL</span>' : esc(String(v));
+        const v    = row[c];
+        const disp = (v === null || v === undefined)
+          ? '<span style="color:var(--text-tertiary);font-style:italic;">NULL</span>'
+          : esc(String(v));
         return `<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(String(v ?? ''))}">` + disp + '</td>';
       }).join('') + '</tr>';
     });
@@ -627,36 +629,47 @@ const QB = (() => {
     $('qbResultsContent').innerHTML = html;
   }
 
-  /* ── export CSV ────────────────────────────────────────── */
+  /* ── export CSV ───────────────────────────────────────── */
   function exportCsv() {
     if (!_runCode) return;
-    window.open(`api/query.php?action=export&code=${_runCode}`, '_blank');
+    window.open(`api/queries.php?action=export&code=${_runCode}`, '_blank');
   }
 
-  /* ── delete ────────────────────────────────────────────── */
+  /* ── delete ───────────────────────────────────────────── */
   async function del(id, name) {
     if (!confirm(`Delete query "${name}"? This cannot be undone.`)) return;
     try {
-      const r = await fetch(`api/queries.php?action=delete&id=${id}`);
+      const r = await fetch(`api/queries.php?action=delete&id=${id}`, { credentials: 'same-origin' });
       const d = await r.json();
       if (!d.success) { toast(d.error, 'error'); return; }
       toast('Query deleted', 'success');
-      setTimeout(() => location.reload(), 600);
+      setTimeout(_reloadModule, 400);
     } catch (e) {
       toast('Delete failed', 'error');
     }
   }
 
-  /* ── close builder ─────────────────────────────────────── */
+  /* ── close builder ────────────────────────────────────── */
   function close() {
-    $('qbBuilderPanel').style.display = 'none';
+    if ($('qbBuilderPanel')) $('qbBuilderPanel').style.display = 'none';
     reset();
   }
 
-  /* ── public API ────────────────────────────────────────── */
-  return { openNew, edit, save, run, runWithParams, exportCsv,
-           delete: del, close, loadTables, loadColumns,
-           buildSql, addCondition, removeCondition,
-           addParam, removeParam, autoCode, toggleSqlMode };
+  /* ── destroy (called before SPA re-inject) ────────────── */
+  function _destroy() { window.QB = null; }
+
+  /* ── auto-load tables so dropdown is ready immediately ── */
+  // Use a short defer so the DOM is fully inserted before we query it
+  setTimeout(loadTables, 0);
+
+  return {
+    openNew, edit, save, run, runWithParams, exportCsv,
+    delete: del, close, loadTables, loadColumns,
+    buildSql, addCondition, removeCondition,
+    addParam, removeParam, autoCode, toggleSqlMode,
+    _destroy
+  };
+})();
+
 })();
 </script>
