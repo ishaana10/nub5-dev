@@ -783,11 +783,14 @@
   function _populateFkDropdown(panel, formCode, selectedFk) {
     var sel = panel.querySelector('.nb-sf-fk-field');
     if (!sel || !formCode) return;
-    fetch('api/form.php?action=subform_fields&code=' + encodeURIComponent(formCode), { credentials: 'same-origin' })
+    // Fixed: was incorrectly pointing to api/form.php (missing 's')
+    fetch('api/forms.php?action=get_by_code&code=' + encodeURIComponent(formCode), { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (json) {
-        var fields = (json && json.success && json.data)
-          ? (json.data.all_fields || json.data.layout || []) : [];
+        if (!json.success || !json.form) return;
+        var layout = [];
+        try { layout = JSON.parse(json.form.form_layout || '[]'); } catch (e) { layout = []; }
+        var fields = Array.isArray(layout) ? layout : [];
         while (sel.options.length > 1) sel.remove(1);
         fields.forEach(function (f) {
           var fname = f.name || f.fieldname || '';
