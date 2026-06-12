@@ -334,7 +334,7 @@ foreach ($forms as $f) {
 .nb-tmode-card-desc  { font-size:11px; color:var(--text-tertiary); line-height:1.4; }
 
 /* Form type selector */
-.nb-ftype-cards { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.nb-ftype-cards { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:0; }
 .nb-ftype-card {
   flex:1; min-width:120px; border:2px solid var(--border-color); border-radius:10px;
   padding:12px 10px; cursor:pointer; background:var(--bg-surface);
@@ -370,6 +370,87 @@ foreach ($forms as $f) {
 }
 .nb-filter-tab:hover { border-color:var(--color-primary); color:var(--color-primary); }
 .nb-filter-tab.active { background:var(--color-primary); border-color:var(--color-primary); color:#fff; }
+
+/* ── Collapsible settings group ── */
+.nb-settings-group {
+  border:1px solid var(--border-color);
+  border-radius:10px;
+  margin-bottom:16px;
+  overflow:hidden;
+}
+.nb-settings-group-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px; cursor:pointer;
+  background:color-mix(in oklch,var(--bg-elevated) 70%,var(--bg-surface));
+  user-select:none;
+  transition:background .15s;
+}
+.nb-settings-group-header:hover {
+  background:color-mix(in oklch,var(--color-primary) 6%,var(--bg-elevated));
+}
+.nb-settings-group-title {
+  font-size:11px; font-weight:700; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--text-secondary);
+  display:flex; align-items:center; gap:8px;
+}
+.nb-settings-group-summary {
+  font-size:11px; color:var(--text-tertiary); font-weight:400;
+  text-transform:none; letter-spacing:0; margin-left:4px;
+}
+.nb-settings-group-chevron {
+  color:var(--text-tertiary); transition:transform .2s; flex-shrink:0;
+}
+.nb-settings-group-header.open .nb-settings-group-chevron {
+  transform:rotate(180deg);
+}
+.nb-settings-group-body {
+  display:none;
+  padding:14px;
+  border-top:1px solid var(--border-color);
+  background:var(--bg-surface);
+}
+.nb-settings-group-body.open { display:block; }
+
+/* ── Expandable row option (click-to-expand inside group) ── */
+.nb-option-row {
+  border:1px solid var(--border-color);
+  border-radius:8px;
+  margin-bottom:10px;
+  overflow:hidden;
+  background:var(--bg-surface);
+}
+.nb-option-row:last-child { margin-bottom:0; }
+.nb-option-row-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:9px 12px; cursor:pointer;
+  transition:background .15s;
+}
+.nb-option-row-header:hover {
+  background:color-mix(in oklch,var(--color-primary) 5%,var(--bg-surface));
+}
+.nb-option-row-label {
+  font-size:12px; font-weight:600; color:var(--text-primary);
+  display:flex; align-items:center; gap:8px;
+}
+.nb-option-row-value {
+  font-size:11px; color:var(--color-primary); font-weight:600;
+  background:color-mix(in oklch,var(--color-primary) 10%,transparent);
+  padding:2px 10px; border-radius:20px;
+  display:flex; align-items:center; gap:5px;
+}
+.nb-option-row-chevron {
+  color:var(--text-tertiary); transition:transform .2s; flex-shrink:0; margin-left:8px;
+}
+.nb-option-row-header.open .nb-option-row-chevron {
+  transform:rotate(180deg);
+}
+.nb-option-row-body {
+  display:none;
+  padding:12px;
+  border-top:1px solid var(--border-color);
+  background:color-mix(in oklch,var(--bg-elevated) 50%,var(--bg-surface));
+}
+.nb-option-row-body.open { display:block; }
 </style>
 
 <div class="nu-forms">
@@ -466,102 +547,173 @@ foreach ($forms as $f) {
       <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nbFormBuilder.close()">✕ Cancel</button>
     </div>
 
-    <!-- ── Form Type selector ── -->
-    <div style="margin-bottom:16px;">
-      <label class="nu-label" style="margin-bottom:10px;display:block;">Form Type</label>
-      <div class="nb-ftype-cards" id="nbFormTypeCards">
-        <label class="nb-ftype-card selected" onclick="nbFormBuilder.selectFormType('main',this)">
-          <input type="radio" name="formType" id="formTypeMain" value="main" checked>
-          <div class="nb-ftype-icon">⊞</div>
-          <div class="nb-ftype-label">Main Form</div>
-          <div class="nb-ftype-desc">Standalone — appears in menu &amp; navigation</div>
-        </label>
-        <label class="nb-ftype-card" onclick="nbFormBuilder.selectFormType('subform',this)">
-          <input type="radio" name="formType" id="formTypeSubform" value="subform">
-          <div class="nb-ftype-icon">⊟</div>
-          <div class="nb-ftype-label">Subform</div>
-          <div class="nb-ftype-desc">Embedded inside a main form, linked by FK</div>
-        </label>
-        <label class="nb-ftype-card" onclick="nbFormBuilder.selectFormType('popup',this)">
-          <input type="radio" name="formType" id="formTypePopup" value="popup">
-          <div class="nb-ftype-icon">▣</div>
-          <div class="nb-ftype-label">Popup</div>
-          <div class="nb-ftype-desc">Opens in a modal for lookup / record selection</div>
-        </label>
-        <label class="nb-ftype-card" onclick="nbFormBuilder.selectFormType('report',this)">
-          <input type="radio" name="formType" id="formTypeReport" value="report">
-          <div class="nb-ftype-icon">📊</div>
-          <div class="nb-ftype-label">Report</div>
-          <div class="nb-ftype-desc">Read-only display form, no save button</div>
-        </label>
-      </div>
-    </div>
+    <!-- ══════════════════════════════════════════════════════════
+         COLLAPSIBLE SETTINGS GROUP
+         Contains: Form Type · Name/Code · Table · Primary Key
+         Collapsed by default — click header to expand
+    ═══════════════════════════════════════════════════════════════ -->
+    <div class="nb-settings-group" id="nbSettingsGroup">
 
-    <!-- ── Top meta row: Name + Code ── -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-      <div>
-        <label class="nu-label">Form Name</label>
-        <input type="text" id="builderFormName" class="nu-input" placeholder="e.g. Customer Registration">
-      </div>
-      <div>
-        <label class="nu-label">Form Code <span style="font-weight:400;color:var(--text-tertiary);">(auto-generated if blank)</span></label>
-        <input type="text" id="builderFormCode" class="nu-input" placeholder="e.g. customer_registration">
-      </div>
-    </div>
-
-    <!-- ── Table Mode selector ── -->
-    <div style="margin-bottom:16px;">
-      <label class="nu-label" style="margin-bottom:10px;display:block;">Table</label>
-      <div class="nb-tmode-cards" id="nbTableModeCards">
-        <label class="nb-tmode-card selected" onclick="nbFormBuilder.selectTableMode('new',this)">
-          <input type="radio" name="formTableMode" id="formTableModeNew" value="new" checked>
-          <div class="nb-tmode-card-title">✦ Create new table</div>
-          <div class="nb-tmode-card-desc">NuBuilder creates and manages the DB table automatically</div>
-        </label>
-        <label class="nb-tmode-card" onclick="nbFormBuilder.selectTableMode('existing',this)">
-          <input type="radio" name="formTableMode" id="formTableModeExisting" value="existing">
-          <div class="nb-tmode-card-title">⊞ Use existing table</div>
-          <div class="nb-tmode-card-desc">Attach this form to a table that already exists in the database</div>
-        </label>
+      <!-- Group header (clickable toggle) -->
+      <div class="nb-settings-group-header" id="nbSettingsHeader" onclick="nbToggleSettingsGroup()">
+        <div class="nb-settings-group-title">
+          ⚙ Form Settings
+          <span class="nb-settings-group-summary" id="nbSettingsSummary">click to configure</span>
+        </div>
+        <svg class="nb-settings-group-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
       </div>
 
-      <!-- New table name input — ID matches JS: newTableWrap -->
-      <div id="newTableWrap">
-        <label class="nu-label">DB Table Name</label>
-        <input type="text" id="builderFormTable" class="nu-input" placeholder="e.g. customers">
-      </div>
+      <!-- Group body (hidden by default) -->
+      <div class="nb-settings-group-body" id="nbSettingsBody">
 
-      <!-- Existing table dropdown — ID matches JS: existingTableWrap -->
-      <div id="existingTableWrap" style="display:none;">
-        <label class="nu-label">Select Existing Table</label>
-        <select id="builderFormTableExisting" class="nu-input" onchange="document.getElementById('builderFormTable').value=this.value">
-          <option value="">-- choose a table --</option>
-          <?php foreach ($userTables as $tbl): ?>
-          <option value="<?= htmlspecialchars($tbl, ENT_QUOTES) ?>"><?= htmlspecialchars($tbl) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <p style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">NuBuilder will read this table's columns and <strong>not</strong> alter its structure unless you explicitly add new fields.</p>
-      </div>
-    </div>
+        <!-- ── Option row: Form Type ── -->
+        <div class="nb-option-row" id="optRowFormType">
+          <div class="nb-option-row-header" onclick="nbToggleOptionRow('optRowFormType')">
+            <div class="nb-option-row-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>
+              Form Type
+            </div>
+            <div style="display:flex;align-items:center;">
+              <span class="nb-option-row-value" id="optValFormType">⊞ Main Form</span>
+              <svg class="nb-option-row-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div class="nb-option-row-body" id="optBodyFormType">
+            <div class="nb-ftype-cards" id="nbFormTypeCards">
+              <label class="nb-ftype-card selected" onclick="nbFormBuilder.selectFormType('main',this)">
+                <input type="radio" name="formType" id="formTypeMain" value="main" checked>
+                <div class="nb-ftype-icon">⊞</div>
+                <div class="nb-ftype-label">Main Form</div>
+                <div class="nb-ftype-desc">Standalone — appears in menu &amp; navigation</div>
+              </label>
+              <label class="nb-ftype-card" onclick="nbFormBuilder.selectFormType('subform',this)">
+                <input type="radio" name="formType" id="formTypeSubform" value="subform">
+                <div class="nb-ftype-icon">⊟</div>
+                <div class="nb-ftype-label">Subform</div>
+                <div class="nb-ftype-desc">Embedded inside a main form, linked by FK</div>
+              </label>
+              <label class="nb-ftype-card" onclick="nbFormBuilder.selectFormType('popup',this)">
+                <input type="radio" name="formType" id="formTypePopup" value="popup">
+                <div class="nb-ftype-icon">▣</div>
+                <div class="nb-ftype-label">Popup</div>
+                <div class="nb-ftype-desc">Opens in a modal for lookup / record selection</div>
+              </label>
+              <label class="nb-ftype-card" onclick="nbFormBuilder.selectFormType('report',this)">
+                <input type="radio" name="formType" id="formTypeReport" value="report">
+                <div class="nb-ftype-icon">📊</div>
+                <div class="nb-ftype-label">Report</div>
+                <div class="nb-ftype-desc">Read-only display form, no save button</div>
+              </label>
+            </div>
+          </div>
+        </div>
 
-    <!-- ── Primary Key type selector ── -->
-    <div style="margin-bottom:20px;" id="pkTypeSection">
-      <label class="nu-label" style="margin-bottom:10px;display:block;">Primary Key Type</label>
-      <div class="nb-pk-cards" id="nbPkCards">
-        <label class="nb-pk-card selected" onclick="nbFormBuilder.selectPkType('autoincrement',this)">
-          <input type="radio" name="formPkType" id="formPkTypeAuto" value="autoincrement" checked>
-          <div class="nb-pk-card-title">Auto-increment INT</div>
-          <div class="nb-pk-card-code">id INT AUTO_INCREMENT</div>
-          <div class="nb-pk-card-desc">Standard MySQL integer PK. Simple, fast, and compatible with everything.</div>
-        </label>
-        <label class="nb-pk-card" onclick="nbFormBuilder.selectPkType('uuid',this)">
-          <input type="radio" name="formPkType" id="formPkTypeUuid" value="uuid">
-          <div class="nb-pk-card-title">NuBuilder UUID</div>
-          <div class="nb-pk-card-code">id VARCHAR(36) — nubuilder style</div>
-          <div class="nb-pk-card-desc">Globally unique string ID. Best for migration, sync, and multi-system environments.</div>
-        </label>
-      </div>
-    </div>
+        <!-- ── Option row: Name + Code ── -->
+        <div class="nb-option-row" id="optRowNameCode">
+          <div class="nb-option-row-header" onclick="nbToggleOptionRow('optRowNameCode')">
+            <div class="nb-option-row-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10"/></svg>
+              Form Name &amp; Code
+            </div>
+            <div style="display:flex;align-items:center;">
+              <span class="nb-option-row-value" id="optValNameCode" style="font-style:italic;opacity:.6;">not set</span>
+              <svg class="nb-option-row-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div class="nb-option-row-body" id="optBodyNameCode">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div>
+                <label class="nu-label">Form Name</label>
+                <input type="text" id="builderFormName" class="nu-input" placeholder="e.g. Customer Registration"
+                       oninput="nbUpdateNameCodeSummary()">
+              </div>
+              <div>
+                <label class="nu-label">Form Code <span style="font-weight:400;color:var(--text-tertiary);">(auto-generated if blank)</span></label>
+                <input type="text" id="builderFormCode" class="nu-input" placeholder="e.g. customer_registration"
+                       oninput="nbUpdateNameCodeSummary()">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Option row: Table ── -->
+        <div class="nb-option-row" id="optRowTable">
+          <div class="nb-option-row-header" onclick="nbToggleOptionRow('optRowTable')">
+            <div class="nb-option-row-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
+              Table
+            </div>
+            <div style="display:flex;align-items:center;">
+              <span class="nb-option-row-value" id="optValTable">✦ Create new</span>
+              <svg class="nb-option-row-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div class="nb-option-row-body" id="optBodyTable">
+            <div class="nb-tmode-cards" id="nbTableModeCards">
+              <label class="nb-tmode-card selected" onclick="nbFormBuilder.selectTableMode('new',this)">
+                <input type="radio" name="formTableMode" id="formTableModeNew" value="new" checked>
+                <div class="nb-tmode-card-title">✦ Create new table</div>
+                <div class="nb-tmode-card-desc">NuBuilder creates and manages the DB table automatically</div>
+              </label>
+              <label class="nb-tmode-card" onclick="nbFormBuilder.selectTableMode('existing',this)">
+                <input type="radio" name="formTableMode" id="formTableModeExisting" value="existing">
+                <div class="nb-tmode-card-title">⊞ Use existing table</div>
+                <div class="nb-tmode-card-desc">Attach this form to a table that already exists in the database</div>
+              </label>
+            </div>
+
+            <!-- New table name input -->
+            <div id="newTableWrap">
+              <label class="nu-label">DB Table Name</label>
+              <input type="text" id="builderFormTable" class="nu-input" placeholder="e.g. customers">
+            </div>
+
+            <!-- Existing table dropdown -->
+            <div id="existingTableWrap" style="display:none;">
+              <label class="nu-label">Select Existing Table</label>
+              <select id="builderFormTableExisting" class="nu-input" onchange="document.getElementById('builderFormTable').value=this.value">
+                <option value="">-- choose a table --</option>
+                <?php foreach ($userTables as $tbl): ?>
+                <option value="<?= htmlspecialchars($tbl, ENT_QUOTES) ?>"><?= htmlspecialchars($tbl) ?></option>
+                <?php endforeach; ?>
+              </select>
+              <p style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">NuBuilder will read this table's columns and <strong>not</strong> alter its structure unless you explicitly add new fields.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Option row: Primary Key ── -->
+        <div class="nb-option-row" id="optRowPk">
+          <div class="nb-option-row-header" onclick="nbToggleOptionRow('optRowPk')">
+            <div class="nb-option-row-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7" cy="17" r="3"/><path d="M10.5 17H21M14 14l3 3-3 3"/></svg>
+              Primary Key Type
+            </div>
+            <div style="display:flex;align-items:center;">
+              <span class="nb-option-row-value" id="optValPk">Auto-increment INT</span>
+              <svg class="nb-option-row-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div class="nb-option-row-body" id="optBodyPk">
+            <div class="nb-pk-cards" id="nbPkCards">
+              <label class="nb-pk-card selected" onclick="nbFormBuilder.selectPkType('autoincrement',this)">
+                <input type="radio" name="formPkType" id="formPkTypeAuto" value="autoincrement" checked>
+                <div class="nb-pk-card-title">Auto-increment INT</div>
+                <div class="nb-pk-card-code">id INT AUTO_INCREMENT</div>
+                <div class="nb-pk-card-desc">Standard MySQL integer PK. Simple, fast, and compatible with everything.</div>
+              </label>
+              <label class="nb-pk-card" onclick="nbFormBuilder.selectPkType('uuid',this)">
+                <input type="radio" name="formPkType" id="formPkTypeUuid" value="uuid">
+                <div class="nb-pk-card-title">NuBuilder UUID</div>
+                <div class="nb-pk-card-code">id VARCHAR(36) — nubuilder style</div>
+                <div class="nb-pk-card-desc">Globally unique string ID. Best for migration, sync, and multi-system environments.</div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /nb-settings-group-body -->
+    </div><!-- /nb-settings-group -->
 
     <!-- Tabs -->
     <div class="nb-tabs" id="nbTabsRow">
@@ -595,7 +747,6 @@ foreach ($forms as $f) {
 
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Choice</div>
-            <!-- 4 explicit select variants -->
             <div class="nb-tool" data-type="select" data-preset="standard_select"    draggable="true"
                  onclick="nbFormBuilder.addField('select','Standard Select','',false,{select2:false,multiple:false})">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>Standard Select
@@ -771,6 +922,63 @@ if (!window._nbFormsModuleInit) {
     });
   };
 
+  // ── Collapsible settings group toggle ────────────────────────────
+  window.nbToggleSettingsGroup = function() {
+    const header = document.getElementById('nbSettingsHeader');
+    const body   = document.getElementById('nbSettingsBody');
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    header.classList.toggle('open', !isOpen);
+  };
+
+  // ── Expandable option row toggle ─────────────────────────────────
+  window.nbToggleOptionRow = function(rowId) {
+    const row    = document.getElementById(rowId);
+    const header = row.querySelector('.nb-option-row-header');
+    const body   = row.querySelector('.nb-option-row-body');
+    const isOpen = body.classList.contains('open');
+    // Close all other rows first
+    document.querySelectorAll('.nb-option-row-body.open').forEach(b => {
+      b.classList.remove('open');
+      b.previousElementSibling.classList.remove('open');
+    });
+    if (!isOpen) {
+      body.classList.add('open');
+      header.classList.add('open');
+    }
+  };
+
+  // ── Update settings group summary line ───────────────────────────
+  window.nbUpdateSettingsSummary = function() {
+    const name    = document.getElementById('builderFormName')?.value?.trim() || '';
+    const ftype   = document.querySelector('input[name="formType"]:checked')?.value || 'main';
+    const typeMap = { main:'Main', subform:'Subform', popup:'Popup', report:'Report' };
+    const parts   = [];
+    if (name)  parts.push(name);
+    parts.push(typeMap[ftype] || ftype);
+    const summary = document.getElementById('nbSettingsSummary');
+    if (summary) summary.textContent = parts.join(' · ');
+  };
+
+  // ── Update Name/Code option row value pill ────────────────────────
+  window.nbUpdateNameCodeSummary = function() {
+    const name = document.getElementById('builderFormName')?.value?.trim() || '';
+    const code = document.getElementById('builderFormCode')?.value?.trim() || '';
+    const pill = document.getElementById('optValNameCode');
+    if (pill) {
+      if (name) {
+        pill.textContent = code ? name + ' / ' + code : name;
+        pill.style.opacity = '1';
+        pill.style.fontStyle = 'normal';
+      } else {
+        pill.textContent = 'not set';
+        pill.style.opacity = '0.6';
+        pill.style.fontStyle = 'italic';
+      }
+    }
+    window.nbUpdateSettingsSummary();
+  };
+
   // ── Form type selector ───────────────────────────────────────────
   nbFormBuilder.selectFormType = function(type, card) {
     document.querySelectorAll('.nb-ftype-card').forEach(c => c.classList.remove('selected'));
@@ -778,21 +986,40 @@ if (!window._nbFormsModuleInit) {
     const radio = document.querySelector('input[name="formType"][value="'+type+'"]');
     if (radio) radio.checked = true;
 
+    // Update option row pill
+    const typeLabels = { main:'⊞ Main Form', subform:'⊟ Subform', popup:'▣ Popup', report:'📊 Report' };
+    const pill = document.getElementById('optValFormType');
+    if (pill) pill.textContent = typeLabels[type] || type;
+
     const browseTabEl = document.getElementById('browseTab');
     const browseNotice = document.getElementById('browseNotApplicable');
     const isBrowseable = type === 'main' || type === 'popup';
     if (browseTabEl) browseTabEl.style.opacity = isBrowseable ? '1' : '0.4';
     if (browseNotice) browseNotice.style.display = isBrowseable ? 'none' : 'block';
+
+    window.nbUpdateSettingsSummary();
+  };
+
+  // Patch selectTableMode to update pill
+  const _origSelectTableMode = nbFormBuilder.selectTableMode;
+  nbFormBuilder.selectTableMode = function(mode, card) {
+    if (typeof _origSelectTableMode === 'function') _origSelectTableMode.call(nbFormBuilder, mode, card);
+    const pill = document.getElementById('optValTable');
+    if (pill) pill.textContent = mode === 'existing' ? '⊞ Use existing' : '✦ Create new';
+  };
+
+  // Patch selectPkType to update pill
+  const _origSelectPkType = nbFormBuilder.selectPkType;
+  nbFormBuilder.selectPkType = function(type, card) {
+    if (typeof _origSelectPkType === 'function') _origSelectPkType.call(nbFormBuilder, type, card);
+    const pill = document.getElementById('optValPk');
+    if (pill) pill.textContent = type === 'uuid' ? 'NuBuilder UUID' : 'Auto-increment INT';
   };
 
   // ── Patch toolbox drag for preset-bearing select tools ───────────
-  // The 4 select variants use onclick for click-to-add with preset extra data.
-  // For drag-to-canvas we also need to carry the preset. We patch _initAfterLoad
-  // so dragstart stores the preset alongside the type.
   const _origInitAfterLoad = nbFormBuilder._initAfterLoad;
   nbFormBuilder._initAfterLoad = function() {
     if (typeof _origInitAfterLoad === 'function') _origInitAfterLoad.call(nbFormBuilder);
-    // Override drag behaviour for preset tools
     document.querySelectorAll('#panelFields .nb-tool[data-preset]').forEach(function(tool) {
       tool.addEventListener('dragstart', function(e) {
         e.stopImmediatePropagation();
@@ -805,11 +1032,5 @@ if (!window._nbFormsModuleInit) {
     });
   };
 
-  // ── Patch saveForm to include form_type ──────────────────────────
-/*  const _origSaveForm = window.saveForm;
-  window.saveForm = function() {
-    nbFormBuilder._formType = document.querySelector('input[name="formType"]:checked')?.value || 'main';
-    if (typeof _origSaveForm === 'function') _origSaveForm();
-  };*/
 }
 </script>
