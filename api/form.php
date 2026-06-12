@@ -229,13 +229,6 @@ function nu_form_pk_type($form) {
 
 /**
  * Render <option> tags for select / radio / checkbox_group fields.
- *
- * Priority order for options source:
- *   1. options_source === 'table'  — query options_table using options_value_col /
- *      options_label_col with optional options_filter WHERE clause.
- *   2. options_source === 'sql'    — run raw sql_source query.
- *   3. Manual list                 — use field['options'] array (value|label pairs
- *      saved by the form builder).
  */
 function nu_render_options($field, $selectedValue = null) {
     $options   = [];
@@ -257,7 +250,6 @@ function nu_render_options($field, $selectedValue = null) {
         $options = is_array($field['options'] ?? null) ? $field['options'] : [];
     }
 
-    // Normalise selectedValue: split comma-stored strings back to array for multi-check
     $selectedArr = is_array($selectedValue)
         ? array_map('strval', $selectedValue)
         : array_map('trim', explode(',', (string)$selectedValue));
@@ -319,6 +311,18 @@ function nu_field_is_fk($field)           { return !empty($field['is_fk']); }
 function nu_field_hide_in_grid($field)     { return !empty($field['hide_in_grid']); }
 function nu_field_server_readonly($field)  { return !empty($field['server_readonly']); }
 
+/**
+ * Render a single field using a label-left inline layout that mirrors the form editor.
+ *
+ * Layout:
+ *   +------------------+------------------------------------+
+ *   |  Label (right)   |  Input / control (left-aligned)    |
+ *   +------------------+------------------------------------+
+ *
+ * - Label column: fixed 160px, right-aligned, bold, text-muted colour
+ * - Control column: flex 1, full width
+ * - Full-width exceptions (subform, checkbox, html, button, fieldset): no label column
+ */
 function nu_render_field($field, $value = '', $record = []) {
     $type  = nu_field_type($field);
     $name  = nu_field_name($field);
@@ -343,192 +347,239 @@ function nu_render_field($field, $value = '', $record = []) {
     $col = (int)($field['col'] ?? 12);
     if ($col < 1 || $col > 12) $col = 12;
 
-    $wrapStart = '<div class="nu-field-wrapper" data-field="' . nu_attr($name) . '" style="grid-column:span ' . $col . ';min-width:0;">';
-    $labelHtml = '<label style="display:block;font-weight:600;margin-bottom:6px;">' . nu_html($label) . '</label>';
-    $helpHtml  = $helpText !== '' ? '<div style="font-size:12px;color:#888;margin-top:4px;">' . nu_html($helpText) . '</div>' : '';
+    $helpHtml = $helpText !== ''
+        ? '<div style="font-size:11px;color:#999;margin-top:3px;">' . nu_html($helpText) . '</div>'
+        : '';
 
-    switch ($type) {
+    // ── Full-width types — no label column ──────────────────────────────
+    $fullWidthTypes = ['subform', 'html', 'content', 'button', 'fieldset', 'checkbox'];
 
-        case 'uuid':
-            if ($value !== '' && $value !== null) {
-                $control = '<input type="text" class="' . nu_attr($cssClass) . '" value="' . nu_attr($value) . '" readonly style="background:var(--bg-offset,#f5f5f5);color:#888;cursor:default;">'
-                         . '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">';
-            } else {
-                $control = '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="">';
-                $labelHtml = '';
-                $helpHtml  = '';
-                return $control;
-            }
-            break;
+    if (in_array($type, $fullWidthTypes, true)) {
 
-        case 'textarea':
-            $rows    = (int)($field['rows'] ?? 4);
-            $control = '<textarea class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $placeholder . $required . ' rows="' . $rows . '">'
-                     . nu_html($value) . '</textarea>';
-            break;
-
-        case 'select':
-            $multiple   = !empty($field['multiple']) ? ' multiple' : '';
-            $useSelect2 = !empty($field['select2']);
-            $s2Class    = $useSelect2 ? ' nu-select2' : '';
-            $s2Attr     = $useSelect2 ? ' data-select2="1"' : '';
-            $control    = '<select class="' . nu_attr(trim($cssClass . $s2Class)) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $required . $multiple . $s2Attr . '>'
-                        . '<option value="">Select...</option>'
-                        . nu_render_options($field, $value)
-                        . '</select>';
-            break;
-
-        case 'radio':
-        case 'checkbox_group':
-            $options = [];
-            $optSource  = $field['options_source'] ?? ($field['source_type'] ?? 'manual');
-            if ($optSource === 'table') {
-                $tbl      = nu_safe_ident($field['options_table']     ?? '');
-                $valCol   = nu_safe_ident($field['options_value_col'] ?? '');
-                $labelCol = nu_safe_ident($field['options_label_col'] ?? $valCol);
-                $filter   = trim((string)($field['options_filter']   ?? ''));
-                if ($tbl !== '' && $valCol !== '') {
-                    $sql = "SELECT `{$valCol}`, `{$labelCol}` FROM `{$tbl}`";
-                    if ($filter !== '') $sql .= ' WHERE ' . $filter;
-                    try { $options = nu_fetch_sql_options($sql); } catch (Throwable $e) { $options = []; }
-                }
-            } elseif ($optSource === 'sql' && !empty($field['sql_source'])) {
-                try { $options = nu_fetch_sql_options($field['sql_source']); } catch (Throwable $e) { $options = []; }
-            } else {
-                $options = is_array($field['options'] ?? null) ? $field['options'] : [];
-            }
-            $inputType   = ($type === 'radio') ? 'radio' : 'checkbox';
-            $currentVals = is_array($value) ? array_map('strval', $value) : array_map('trim', explode(',', (string)$value));
-            $control = '<div>';
-            foreach ($options as $opt) {
-                $optValue = (string)($opt['value'] ?? '');
-                $optLabel = (string)($opt['label'] ?? $optValue);
-                $checked  = in_array($optValue, $currentVals, true) ? ' checked' : '';
-                $iname    = ($type === 'radio') ? $name : $name . '[]';
-                $control .= '<label style="display:inline-flex;align-items:center;gap:6px;margin-right:12px;">'
-                          . '<input type="' . $inputType . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($iname) . '" value="' . nu_attr($optValue) . '"' . $checked . '>'
-                          . nu_html($optLabel) . '</label>';
-            }
-            $control .= '</div>';
-            break;
-
-        case 'checkbox':
-            $checked   = !empty($value) ? ' checked' : '';
-            $labelHtml = '';
-            $control   = '<label style="display:flex;align-items:center;gap:8px;">'
-                       . '<input type="hidden" name="' . nu_attr($name) . '" value="0">'
-                       . '<input type="checkbox" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="1"' . $checked . '>'
-                       . nu_html($label) . '</label>';
-            break;
-
-        case 'date':
-            $control = '<input type="date" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $required . '>';
-            break;
-
-        case 'time':
-            $control = '<input type="time" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $required . '>';
-            break;
-
-        case 'datetime':
-            $v       = $value ? str_replace(' ', 'T', substr((string)$value, 0, 16)) : '';
-            $control = '<input type="datetime-local" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($v) . '"' . $required . '>';
-            break;
-
-        case 'number':
-            $min  = isset($field['min'])  && $field['min']  !== '' ? ' min="'  . nu_attr($field['min'])  . '"' : '';
-            $max  = isset($field['max'])  && $field['max']  !== '' ? ' max="'  . nu_attr($field['max'])  . '"' : '';
-            $step = isset($field['step']) && $field['step'] !== '' ? ' step="' . nu_attr($field['step']) . '"' : '';
-            $control = '<input type="number" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . $min . $max . $step . '>';
-            break;
-
-        case 'email':
-            $control = '<input type="email" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . '>';
-            break;
-
-        case 'password':
-            $control = '<input type="password" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $placeholder . $required . '>';
-            break;
-
-        case 'file':
-        case 'image':
-            $accept   = !empty($field['accept'])          ? ' accept="' . nu_attr($field['accept']) . '"' : ($type === 'image' ? ' accept="image/*"' : '');
-            $multiple = !empty($field['multiple_upload']) ? ' multiple' : '';
-            $control  = '<input type="file" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $accept . $multiple . '>';
-            if (!empty($value)) $control .= '<div style="margin-top:6px;font-size:12px;color:#888;">Current: ' . nu_html($value) . '</div>';
-            break;
-
-        case 'lookup':
-            $lookup      = $field['lookup'] ?? [];
-            $lTable      = $lookup['table'] ?? '';
-            $lIdCol      = nu_resolve_lookup_id_col($lookup);
-            $lDisplayCol = nu_resolve_lookup_display_col($lookup);
-            $lFilter     = $lookup['filter'] ?? '';
-            $lExtra      = $lookup['extra']  ?? '';
-            $displayVal  = nu_render_lookup_display($field, $value);
-            $control = '<div style="display:flex;gap:8px;">'
-                . '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">'
-                . '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '_display" value="' . nu_attr($displayVal) . '" readonly>'
-                . '<button type="button" class="nu-btn nu-btn-ghost" onclick="openLookupModal('
-                . '\'' . addslashes($name) . '\',\'' . addslashes($lTable) . '\',\'' . addslashes($lIdCol) . '\',\'' . addslashes($lDisplayCol) . '\',\'' . addslashes($lFilter) . '\',\'' . addslashes($lExtra) . '\''
-                . ')">Lookup</button>'
-                . '<button type="button" class="nu-btn nu-btn-ghost" onclick="clearLookup(\'' . addslashes($name) . '\')">Clear</button>'
-                . '</div>';
-            break;
-
-        case 'subform':
-            $sf     = $field['subform'] ?? [];
-            $sfCode = nu_safe_ident($sf['form_code'] ?? ($sf['formcode'] ?? $name));
-            $sfFk   = nu_safe_ident($sf['fk_field']  ?? ($sf['fkfield']  ?? ''));
-            $sfView = in_array($sf['view'] ?? 'grid', ['grid','form','inline'], true) ? ($sf['view'] ?? 'grid') : 'grid';
-            $sfParent = (string)($field['_parent_id'] ?? '');
-            $control = '<div class="nu-subform-container"'
-                     . ' data-subform-code="'  . nu_attr($sfCode)   . '"'
-                     . ' data-subform-fk="'    . nu_attr($sfFk)     . '"'
-                     . ' data-subform-view="'  . nu_attr($sfView)   . '"'
-                     . ' data-parent-id="'     . nu_attr($sfParent) . '"'
-                     . ' style="border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
-                     . '<div class="nu-subform-toolbar" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-elevated,#f8f9fa);border-bottom:1px solid #ddd;">'
+        // Checkbox: inline label next to tick box
+        if ($type === 'checkbox') {
+            $checked = !empty($value) ? ' checked' : '';
+            $control = '<div class="nu-field-wrapper" data-field="' . nu_attr($name) . '"'
+                     . ' style="grid-column:span ' . $col . ';min-width:0;padding:6px 0;">'
+                     . '<label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;">'
+                     . '<input type="hidden" name="' . nu_attr($name) . '" value="0">'
+                     . '<input type="checkbox" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="1"' . $checked . ' style="width:15px;height:15px;">'
                      . '<span style="font-weight:600;font-size:13px;">' . nu_html($label) . '</span>'
-                     . '<button type="button" class="nu-btn nu-btn-primary nu-btn-sm" onclick="nuSubform.addRow(this)">+ Add Row</button>'
-                     . '</div>'
-                     . '<div class="nu-subform-body" style="padding:0;">'
-                     . '<div class="nu-subform-loading" style="padding:20px;text-align:center;color:#888;font-size:13px;">Loading...</div>'
-                     . '</div>'
+                     . '</label>'
+                     . $helpHtml
                      . '</div>';
-            break;
+            return $control;
+        }
 
-        case 'fieldset':
-            $legend = $field['legend'] ?? $label;
-            return '<fieldset style="margin-bottom:16px;padding:12px;border:1px solid #ddd;border-radius:8px;"><legend>' . nu_html($legend) . '</legend></fieldset>';
+        // Subform: full-width block with label as section header
+        if ($type === 'subform') {
+            $sf       = $field['subform'] ?? [];
+            $sfCode   = nu_safe_ident($sf['form_code'] ?? ($sf['formcode'] ?? $name));
+            $sfFk     = nu_safe_ident($sf['fk_field']  ?? ($sf['fkfield']  ?? ''));
+            $sfView   = in_array($sf['view'] ?? 'grid', ['grid','form','inline'], true) ? ($sf['view'] ?? 'grid') : 'grid';
+            $sfParent = (string)($field['_parent_id'] ?? '');
+            return '<div class="nu-field-wrapper" data-field="' . nu_attr($name) . '"'
+                 . ' style="grid-column:span ' . $col . ';min-width:0;margin-bottom:8px;">'
+                 . '<div class="nu-subform-container"'
+                 . ' data-subform-code="'  . nu_attr($sfCode)   . '"'
+                 . ' data-subform-fk="'    . nu_attr($sfFk)     . '"'
+                 . ' data-subform-view="'  . nu_attr($sfView)   . '"'
+                 . ' data-parent-id="'     . nu_attr($sfParent) . '"'
+                 . ' style="border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
+                 . '<div class="nu-subform-toolbar" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-elevated,#f8f9fa);border-bottom:1px solid #ddd;">'
+                 . '<span style="font-weight:600;font-size:13px;">' . nu_html($label) . '</span>'
+                 . '<button type="button" class="nu-btn nu-btn-primary nu-btn-sm" onclick="nuSubform.addRow(this)">+ Add Row</button>'
+                 . '</div>'
+                 . '<div class="nu-subform-body" style="padding:0;">'
+                 . '<div class="nu-subform-loading" style="padding:20px;text-align:center;color:#888;font-size:13px;">Loading...</div>'
+                 . '</div>'
+                 . '</div>'
+                 . '</div>';
+        }
 
-        case 'button':
-            $action    = $field['button_action'] ?? '';
-            $labelHtml = '';
-            $onclick   = $action !== '' ? ' onclick="' . nu_attr($action) . '"' : '';
-            $control   = '<button type="button" class="nu-btn nu-btn-primary"' . $onclick . '>' . nu_html($label) . '</button>';
-            break;
-
-        case 'html':
-        case 'content':
-            $labelHtml   = '';
+        // HTML / content
+        if ($type === 'html' || $type === 'content') {
             $htmlContent = $field['html_content'] ?? ($field['default_value'] ?? '');
-            $control     = '<div>' . $htmlContent . '</div>';
-            break;
+            return '<div class="nu-field-wrapper"'
+                 . ' style="grid-column:span ' . $col . ';min-width:0;">'
+                 . '<div>' . $htmlContent . '</div>'
+                 . '</div>';
+        }
 
-        case 'calculated':
-            $expr    = $field['calculated'] ?? '';
-            $control = '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" data-calculated="true" data-expression="' . nu_attr($expr) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '" readonly>';
-            break;
+        // Button
+        if ($type === 'button') {
+            $action  = $field['button_action'] ?? '';
+            $onclick = $action !== '' ? ' onclick="' . nu_attr($action) . '"' : '';
+            return '<div class="nu-field-wrapper"'
+                 . ' style="grid-column:span ' . $col . ';min-width:0;padding:4px 0;">'
+                 . '<button type="button" class="nu-btn nu-btn-primary"' . $onclick . '>' . nu_html($label) . '</button>'
+                 . '</div>';
+        }
 
-        case 'hidden':
-            return '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">';
-
-        default:
-            $control = '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . '>';
-            break;
+        // Fieldset
+        if ($type === 'fieldset') {
+            $legend = $field['legend'] ?? $label;
+            return '<fieldset style="grid-column:span ' . $col . ';margin-bottom:16px;padding:12px;border:1px solid #ddd;border-radius:8px;">'
+                 . '<legend>' . nu_html($legend) . '</legend>'
+                 . '</fieldset>';
+        }
     }
 
-    return $wrapStart . $labelHtml . $control . $helpHtml . '</div>';
+    // ── Hidden / UUID with no value ──────────────────────────────────────
+    if ($type === 'hidden') {
+        return '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">';
+    }
+
+    if ($type === 'uuid') {
+        if ($value !== '' && $value !== null) {
+            $control = '<input type="text" class="' . nu_attr($cssClass) . '" value="' . nu_attr($value) . '" readonly style="background:var(--bg-offset,#f5f5f5);color:#888;cursor:default;width:100%;">'
+                     . '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">';
+        } else {
+            return '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="">';
+        }
+        // Falls through to label-left wrapper below
+    } else {
+        // ── Build the input control ─────────────────────────────────────
+        switch ($type) {
+
+            case 'textarea':
+                $rows    = (int)($field['rows'] ?? 3);
+                $control = '<textarea class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $placeholder . $required . ' rows="' . $rows . '" style="width:100%;resize:vertical;">'
+                         . nu_html($value) . '</textarea>';
+                break;
+
+            case 'select':
+                $multiple   = !empty($field['multiple']) ? ' multiple' : '';
+                $useSelect2 = !empty($field['select2']);
+                $s2Class    = $useSelect2 ? ' nu-select2' : '';
+                $s2Attr     = $useSelect2 ? ' data-select2="1"' : '';
+                $control    = '<select class="' . nu_attr(trim($cssClass . $s2Class)) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $required . $multiple . $s2Attr . ' style="width:100%;">'
+                            . '<option value="">Select...</option>'
+                            . nu_render_options($field, $value)
+                            . '</select>';
+                break;
+
+            case 'radio':
+            case 'checkbox_group':
+                $options = [];
+                $optSource  = $field['options_source'] ?? ($field['source_type'] ?? 'manual');
+                if ($optSource === 'table') {
+                    $tbl      = nu_safe_ident($field['options_table']     ?? '');
+                    $valCol   = nu_safe_ident($field['options_value_col'] ?? '');
+                    $labelCol = nu_safe_ident($field['options_label_col'] ?? $valCol);
+                    $filter   = trim((string)($field['options_filter']   ?? ''));
+                    if ($tbl !== '' && $valCol !== '') {
+                        $sql = "SELECT `{$valCol}`, `{$labelCol}` FROM `{$tbl}`";
+                        if ($filter !== '') $sql .= ' WHERE ' . $filter;
+                        try { $options = nu_fetch_sql_options($sql); } catch (Throwable $e) { $options = []; }
+                    }
+                } elseif ($optSource === 'sql' && !empty($field['sql_source'])) {
+                    try { $options = nu_fetch_sql_options($field['sql_source']); } catch (Throwable $e) { $options = []; }
+                } else {
+                    $options = is_array($field['options'] ?? null) ? $field['options'] : [];
+                }
+                $inputType   = ($type === 'radio') ? 'radio' : 'checkbox';
+                $currentVals = is_array($value) ? array_map('strval', $value) : array_map('trim', explode(',', (string)$value));
+                $control = '<div style="display:flex;flex-wrap:wrap;gap:8px 16px;padding-top:4px;">';
+                foreach ($options as $opt) {
+                    $optValue = (string)($opt['value'] ?? '');
+                    $optLabel = (string)($opt['label'] ?? $optValue);
+                    $checked  = in_array($optValue, $currentVals, true) ? ' checked' : '';
+                    $iname    = ($type === 'radio') ? $name : $name . '[]';
+                    $control .= '<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">'
+                              . '<input type="' . $inputType . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($iname) . '" value="' . nu_attr($optValue) . '"' . $checked . '>'
+                              . nu_html($optLabel) . '</label>';
+                }
+                $control .= '</div>';
+                break;
+
+            case 'date':
+                $control = '<input type="date" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $required . ' style="width:100%;">';
+                break;
+
+            case 'time':
+                $control = '<input type="time" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $required . ' style="width:100%;">';
+                break;
+
+            case 'datetime':
+                $v       = $value ? str_replace(' ', 'T', substr((string)$value, 0, 16)) : '';
+                $control = '<input type="datetime-local" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($v) . '"' . $required . ' style="width:100%;">';
+                break;
+
+            case 'number':
+                $min  = isset($field['min'])  && $field['min']  !== '' ? ' min="'  . nu_attr($field['min'])  . '"' : '';
+                $max  = isset($field['max'])  && $field['max']  !== '' ? ' max="'  . nu_attr($field['max'])  . '"' : '';
+                $step = isset($field['step']) && $field['step'] !== '' ? ' step="' . nu_attr($field['step']) . '"' : '';
+                $control = '<input type="number" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . $min . $max . $step . ' style="width:100%;">';
+                break;
+
+            case 'email':
+                $control = '<input type="email" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . ' style="width:100%;">';
+                break;
+
+            case 'password':
+                $control = '<input type="password" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $placeholder . $required . ' style="width:100%;">';
+                break;
+
+            case 'file':
+            case 'image':
+                $accept   = !empty($field['accept'])          ? ' accept="' . nu_attr($field['accept']) . '"' : ($type === 'image' ? ' accept="image/*"' : '');
+                $multiple = !empty($field['multiple_upload']) ? ' multiple' : '';
+                $control  = '<input type="file" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $accept . $multiple . ' style="width:100%;">';
+                if (!empty($value)) $control .= '<div style="margin-top:4px;font-size:11px;color:#888;">Current: ' . nu_html($value) . '</div>';
+                break;
+
+            case 'lookup':
+                $lookup      = $field['lookup'] ?? [];
+                $lTable      = $lookup['table'] ?? '';
+                $lIdCol      = nu_resolve_lookup_id_col($lookup);
+                $lDisplayCol = nu_resolve_lookup_display_col($lookup);
+                $lFilter     = $lookup['filter'] ?? '';
+                $lExtra      = $lookup['extra']  ?? '';
+                $displayVal  = nu_render_lookup_display($field, $value);
+                $control = '<div style="display:flex;gap:6px;align-items:center;">'
+                    . '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">'
+                    . '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '_display" value="' . nu_attr($displayVal) . '" readonly style="flex:1;">'
+                    . '<button type="button" class="nu-btn nu-btn-ghost" style="white-space:nowrap;" onclick="openLookupModal('
+                    . '\'' . addslashes($name) . '\',\'' . addslashes($lTable) . '\',\'' . addslashes($lIdCol) . '\',\'' . addslashes($lDisplayCol) . '\',\'' . addslashes($lFilter) . '\',\'' . addslashes($lExtra) . '\''
+                    . ')">&#x1F50D;</button>'
+                    . '<button type="button" class="nu-btn nu-btn-ghost" onclick="clearLookup(\'' . addslashes($name) . '\')">&#x2715;</button>'
+                    . '</div>';
+                break;
+
+            case 'calculated':
+                $expr    = $field['calculated'] ?? '';
+                $control = '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" data-calculated="true" data-expression="' . nu_attr($expr) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '" readonly style="width:100%;background:var(--bg-offset,#f5f5f5);color:#888;">';
+                break;
+
+            default: // text and everything else
+                $control = '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . ' style="width:100%;">';
+                break;
+        }
+    }
+
+    // ── Label-left inline wrapper ────────────────────────────────────────
+    // Mirrors the form editor: bold label right-aligned in a 160px column,
+    // input stretches to fill the remaining space.
+    $labelHtml = '<label for="nuf_' . nu_attr($name) . '"'
+               . ' style="display:block;font-weight:600;font-size:13px;color:#555;'
+               . 'text-align:right;padding-right:10px;padding-top:7px;'
+               . 'min-width:160px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+               . nu_html($label)
+               . '</label>';
+
+    $wrapInner = '<div style="display:flex;align-items:flex-start;gap:0;width:100%;">'
+               . $labelHtml
+               . '<div style="flex:1;min-width:0;">'
+               . $control
+               . $helpHtml
+               . '</div>'
+               . '</div>';
+
+    return '<div class="nu-field-wrapper" data-field="' . nu_attr($name) . '"'
+         . ' style="grid-column:span ' . $col . ';min-width:0;margin-bottom:6px;">'
+         . $wrapInner
+         . '</div>';
 }
 
 function nu_section_color($index) {
@@ -592,7 +643,7 @@ function nu_render_layout_node($node, $record, $sectionIndex = 0) {
         }
         $html .= '<span style="font-weight:700;font-size:14px;color:' . $col['text'] . ';">' . $label . '</span>';
         $html .= '</div>';
-        $html .= '<div id="' . nu_attr($id) . '-body" class="nu-section-body" style="padding:16px;' . $bodyStyle . '">';
+        $html .= '<div id="' . nu_attr($id) . '-body" class="nu-section-body" style="padding:16px 12px;' . $bodyStyle . '">';
         $si = 0;
         foreach (($node['children'] ?? []) as $child) {
             $html .= nu_render_layout_node($child, $record, $si++);
@@ -628,7 +679,7 @@ function nu_render_layout_node($node, $record, $sectionIndex = 0) {
         }
         $html .= '<span style="font-weight:600;font-size:13px;color:var(--text,#333);">' . $label . '</span>';
         $html .= '</div>';
-        $html .= '<div id="' . nu_attr($id) . '-body" class="nu-group-body" style="padding:14px;' . $bodyStyle . '">';
+        $html .= '<div id="' . nu_attr($id) . '-body" class="nu-group-body" style="padding:12px 10px;' . $bodyStyle . '">';
         $gi = 0;
         foreach (($node['children'] ?? []) as $child) {
             $html .= nu_render_layout_node($child, $record, $gi++);
@@ -638,7 +689,7 @@ function nu_render_layout_node($node, $record, $sectionIndex = 0) {
     }
 
     if ($type === 'row') {
-        $html = '<div class="nu-form-row" style="display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-bottom:16px;align-items:start;">';
+        $html = '<div class="nu-form-row" style="display:grid;grid-template-columns:repeat(12,1fr);gap:8px;margin-bottom:4px;align-items:start;">';
         foreach (($node['children'] ?? []) as $field) {
             $html .= nu_render_field($field, nu_field_value($record, $field), $record);
         }
@@ -648,7 +699,7 @@ function nu_render_layout_node($node, $record, $sectionIndex = 0) {
 
     $col = (int)($node['col'] ?? 12);
     $node['col'] = $col;
-    return '<div class="nu-form-row" style="display:grid;grid-template-columns:repeat(12,1fr);gap:12px;margin-bottom:16px;align-items:start;">'
+    return '<div class="nu-form-row" style="display:grid;grid-template-columns:repeat(12,1fr);gap:8px;margin-bottom:4px;align-items:start;">'
          . nu_render_field($node, nu_field_value($record, $node), $node)
          . '</div>';
 }
@@ -667,15 +718,15 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
            . ' data-table="'      . nu_attr($formTable)  . '"'
            . ' data-record-id="'  . nu_attr((string)$recordId) . '"'
            . ' data-is-new="'     . ($recordId ? '0' : '1') . '"'
-           . ' onsubmit="event.preventDefault(); submitNuForm(this);">';
-    $html .= '<h3 style="margin-top:0;margin-bottom:20px;">' . nu_html($formName) . '</h3>';
+           . ' onsubmit="event.preventDefault(); submitNuForm(this);"'
+           . ' style="font-size:13px;">';
 
     $si = 0;
     foreach ($layout as $node) {
         $html .= nu_render_layout_node($node, $record, $si++);
     }
 
-    $html .= '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">';
+    $html .= '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:12px;border-top:1px solid #eee;">';
     $html .= '<button type="button" class="nu-btn nu-btn-ghost" onclick="closeNuForm(this)">Cancel</button>';
     $html .= '<button type="submit" class="nu-btn nu-btn-primary">Save</button>';
     $html .= '</div></form>';
