@@ -1,16 +1,19 @@
 /**
  * nu-select2-init.js
- * Initialises Select2 on any <select data-select2="1"> inside a given scope.
  *
- * ROOT CAUSE: Select2 stores its instance using a private internal key
- * (not standard jQuery .data()), so .removeData() and even .select2('destroy')
- * do not fully clean up when the element was previously part of a discarded
- * innerHTML tree. Select2's constructor then finds orphaned internal state
- * and crashes: "r.GetData(...).destroy is not a function".
+ * ROOT CAUSE (confirmed by reading select2.min.js source):
+ *   Select2 stores its instance in a static cache (s.__cache) keyed by the
+ *   element's `data-select2-id` attribute. At the top of its constructor it
+ *   does:
+ *       if (GetData(el, "select2")) GetData(el, "select2").destroy()
+ *   When we cloneNode(true), the clone inherits the old `data-select2-id`
+ *   attribute, so the cache lookup finds the DEAD previous instance object
+ *   (which has no .destroy method) and crashes:
+ *       "r.GetData(...).destroy is not a function"
  *
- * FIX: Replace the <select> with a fresh clone before calling .select2().
- * cloneNode(true) copies the element and its children (options) but carries
- * NO jQuery data whatsoever, so Select2 always starts from a blank slate.
+ * FIX: remove `data-select2-id` from the clone BEFORE calling .select2().
+ *   This makes Select2's cache lookup return undefined, so it skips the
+ *   destroy call entirely and constructs a clean new instance.
  */
 (function () {
 
@@ -22,22 +25,31 @@
     $(root).find('select[data-select2="1"]').each(function () {
       var original = this;
 
-      // Replace with a pristine clone — no jQuery data, no Select2 internals.
+      // Clone the element (copies <option> children) then strip the
+      // stale Select2 cache key so its constructor finds nothing to destroy.
       var clone = original.cloneNode(true);
+      clone.removeAttribute('data-select2-id');
+
+      // Also wipe any select2-id attrs on child <option> elements
+      var opts = clone.querySelectorAll('[data-select2-id]');
+      for (var i = 0; i < opts.length; i++) {
+        opts[i].removeAttribute('data-select2-id');
+      }
+
       original.parentNode.replaceChild(clone, original);
 
       var $el = $(clone);
-      var opts = {
+      var s2opts = {
         width: '100%',
         theme: 'default',
         dropdownParent: $(document.body)
       };
       var blank = clone.options[0];
       if (blank && blank.value === '') {
-        opts.placeholder = blank.textContent || blank.innerText || 'Select…';
-        opts.allowClear  = true;
+        s2opts.placeholder = blank.textContent || blank.innerText || 'Select…';
+        s2opts.allowClear  = true;
       }
-      $el.select2(opts);
+      $el.select2(s2opts);
     });
   }
 
