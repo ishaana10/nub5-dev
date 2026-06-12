@@ -671,16 +671,23 @@
   // Wires the Manual / From Table radio switcher inside a select card.
   function _attachSelectOptionsToggle(card) {
     var radios = card.querySelectorAll('.nu-field-opt-src');
-    var manualPanel   = card.querySelector('.nb-select-manual');
+    var manualPanel    = card.querySelector('.nb-select-manual');
     var fromTablePanel = card.querySelector('.nb-select-from-table');
     if (!radios.length || !manualPanel || !fromTablePanel) return;
     radios.forEach(function (r) {
       r.addEventListener('change', function () {
         var isTable = r.value === 'table' && r.checked;
         manualPanel.style.display    = isTable ? 'none' : '';
-        fromTablePanel.style.display = isTable ? '' : 'none';
+        fromTablePanel.style.display = isTable ? ''     : 'none';
       });
     });
+    // Sync visibility to current checked state immediately
+    var checked = card.querySelector('.nu-field-opt-src:checked');
+    if (checked) {
+      var isTable = checked.value === 'table';
+      manualPanel.style.display    = isTable ? 'none' : '';
+      fromTablePanel.style.display = isTable ? ''     : 'none';
+    }
   }
 
   function _attachRowBodyDrop(rowBody) {
@@ -1081,8 +1088,9 @@
       var rowBody = row ? row.querySelector('.nb-row-body') : null;
 
       groups[ri].forEach(function (f) {
+        var type = f.type || f.fieldtype || 'text';
         var card = window.nbFormBuilder._makeFieldCard(
-          f.type || f.fieldtype || 'text',
+          type,
           f.label || f.fieldlabel || '',
           f.name  || f.fieldname  || '',
           !!f.required,
@@ -1107,6 +1115,13 @@
         }
 
         window.nbFormBuilder._applyColSpan(card, parseInt(f.col, 10) || 12);
+
+        // ── FIX: re-wire options-source toggle + open body in edit mode ──
+        if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
+          _attachSelectOptionsToggle(card);
+        }
+        var body = card.querySelector('.nb-cfield-body');
+        if (body) body.classList.add('open');
       });
     });
 
