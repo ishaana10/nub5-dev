@@ -733,8 +733,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
         if (in_array($type, ['section', 'group', 'row'], true)) {
             // Flush any accumulated flat fields first, preserving order
             if ($flatNoRow || $flatByRow) {
-                // emit pending flat rows in the order they were encountered
-                // We store them as sentinel entries keyed by insertion order
                 $structuredNodes[] = ['_flat_flush' => true, 'byRow' => $flatByRow, 'noRow' => $flatNoRow];
                 $flatByRow = [];
                 $flatNoRow = [];
@@ -761,7 +759,9 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
         if (!empty($entry['_structured'])) {
             $html .= nu_render_layout_node($entry['node'], $record, $si++);
         } elseif (!empty($entry['_flat_flush'])) {
-            // Emit grouped rows first (fields sharing a row_index)
+            // Sort by row_index key so non-sequential indices (0,2,5) still render in order
+            ksort($entry['byRow']);
+            // Emit grouped rows (fields sharing a row_index) in ascending row_index order
             foreach ($entry['byRow'] as $rowFields) {
                 $html .= '<div class="nu-form-row" style="' . $ROW_STYLE . '">';
                 foreach ($rowFields as $node) {
@@ -769,7 +769,7 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
                 }
                 $html .= '</div>';
             }
-            // Emit ungrouped fields, each in its own row
+            // Emit ungrouped fields (no row_index), each in its own row
             foreach ($entry['noRow'] as $node) {
                 $html .= '<div class="nu-form-row" style="' . $ROW_STYLE . '">';
                 $html .= nu_render_field($node, nu_field_value($record, $node), $record);
