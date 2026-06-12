@@ -257,8 +257,6 @@
     },
 
     // ── _makeFieldCard ────────────────────────────────────────────
-    // For type === 'subform' the FK config panel is rendered inline
-    // here — no deferred upgrade, no MutationObserver needed.
     _makeFieldCard: function (type, label, name, required, extra) {
       extra = extra || {};
       var col = parseInt(extra.col || extra.colspan, 10) || 12;
@@ -270,11 +268,75 @@
       var extraBody = '';
 
       if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
+        // ── Select-type selector (only for 'select') ──────────────
+        var selectTypeHtml = '';
+        if (type === 'select') {
+          var selType   = extra.select_type || 'select';
+          var isS2      = selType === 'select2'    ? 'selected' : '';
+          var isMulti   = selType === 'multiselect' ? 'selected' : '';
+          var isSingle  = (!isS2 && !isMulti)       ? 'selected' : '';
+          selectTypeHtml =
+            '<div class="nb-fp">'
+              + '<label style="font-size:11px;font-weight:600;">Select Type</label>'
+              + '<select class="nu-input nu-field-select-type" style="font-size:12px;">'
+                + '<option value="select" '      + isSingle + '>Standard Select</option>'
+                + '<option value="select2" '     + isS2     + '>Select2 (searchable)</option>'
+                + '<option value="multiselect" ' + isMulti  + '>Multi-Select</option>'
+              + '</select>'
+            + '</div>';
+        }
+
+        // ── Options source: manual | from table ───────────────────
+        var optSource     = extra.options_source || 'manual';
+        var fromTable     = extra.options_table  || '';
+        var fromValCol    = extra.options_value_col || '';
+        var fromLabelCol  = extra.options_label_col || '';
+        var fromFilter    = extra.options_filter || '';
+        var isFromTable   = (optSource === 'table');
+
         var opts = (extra.options || []).map(function (o) {
           return typeof o === 'object' ? (o.value + '|' + o.label) : o;
         }).join('\n');
-        extraBody += '<div class="nb-fp nb-fp-full"><label>Options (value|label per line)</label>'
-          + '<textarea class="nu-input nu-field-options" rows="3">' + _esc(opts) + '</textarea></div>';
+
+        var fromTablePanel =
+          '<div class="nb-select-from-table" style="' + (isFromTable ? '' : 'display:none;') + 'grid-column:1/-1;">'
+            + '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;">'
+              + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">📋 OPTIONS FROM TABLE</div>'
+              + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+                + '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Table Name</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-table" value="' + _esc(fromTable) + '" placeholder="e.g. categories" style="font-size:12px;width:100%;box-sizing:border-box;"></div>'
+                + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Value Column <span style="font-weight:400;">(stored)</span></label>'
+                  + '<input type="text" class="nu-input nu-field-opt-val-col" value="' + _esc(fromValCol) + '" placeholder="e.g. id" style="font-size:12px;"></div>'
+                + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Label Column <span style="font-weight:400;">(shown)</span></label>'
+                  + '<input type="text" class="nu-input nu-field-opt-label-col" value="' + _esc(fromLabelCol) + '" placeholder="e.g. name" style="font-size:12px;"></div>'
+                + '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Filter SQL <span style="font-weight:400;">(optional WHERE)</span></label>'
+                  + '<input type="text" class="nu-input nu-field-opt-filter" value="' + _esc(fromFilter) + '" placeholder="e.g. active=1" style="font-size:12px;width:100%;box-sizing:border-box;"></div>'
+              + '</div>'
+            + '</div>'
+          + '</div>';
+
+        var manualPanel =
+          '<div class="nb-select-manual" style="' + (isFromTable ? 'display:none;' : '') + 'grid-column:1/-1;">'
+            + '<label style="font-size:11px;font-weight:600;">Options <span style="font-weight:400;color:var(--text-muted);">(value|label per line)</span></label>'
+            + '<textarea class="nu-input nu-field-options" rows="3" style="width:100%;box-sizing:border-box;">' + _esc(opts) + '</textarea>'
+          + '</div>';
+
+        var sourceSwitcherHtml =
+          '<div class="nb-fp nb-fp-full" style="grid-column:1/-1;">'
+            + '<label style="font-size:11px;font-weight:600;">Options Source</label>'
+            + '<div style="display:flex;gap:8px;margin-top:4px;">'
+              + '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">'
+                + '<input type="radio" name="opt-src-' + _esc(name) + '" class="nu-field-opt-src" value="manual"' + (isFromTable ? '' : ' checked') + '>'
+                + ' Manual list'
+              + '</label>'
+              + '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">'
+                + '<input type="radio" name="opt-src-' + _esc(name) + '" class="nu-field-opt-src" value="table"' + (isFromTable ? ' checked' : '') + '>'
+                + ' From table'
+              + '</label>'
+            + '</div>'
+          + '</div>';
+
+        extraBody += selectTypeHtml + sourceSwitcherHtml + manualPanel + fromTablePanel;
       }
 
       if (type === 'calculated') {
@@ -292,38 +354,36 @@
         var lkExtra  = lk.extra          || extra.lookup_extra  || '';
 
         extraBody +=
-          '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;margin-top:6px;grid-column:1/-1;">' +
-            '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">🔗 LOOKUP CONFIG <span style="font-weight:400;color:var(--text-muted,#888);">— links this field to another table</span></div>' +
-            '<div style="margin-bottom:8px;">' +
-              '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Lookup Table <span style="font-weight:400;">— the DB table to search</span></label>' +
-              '<input type="text" class="nu-input nu-lookup-table" value="' + _esc(lkTable) + '" placeholder="e.g. customers" style="font-size:12px;width:100%;box-sizing:border-box;">' +
-            '</div>' +
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
-              '<div>' +
-                '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Display Column <span style="font-weight:400;">(shown to user)</span></label>' +
-                '<input type="text" class="nu-input nu-lookup-display" value="' + _esc(lkDisp) + '" placeholder="e.g. full_name" style="font-size:12px;">' +
-              '</div>' +
-              '<div>' +
-                '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Store Column <span style="font-weight:400;">(saved to DB)</span></label>' +
-                '<input type="text" class="nu-input nu-lookup-store" value="' + _esc(lkStore) + '" placeholder="e.g. id" style="font-size:12px;">' +
-              '</div>' +
-            '</div>' +
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
-              '<div>' +
-                '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Filter SQL <span style="font-weight:400;">(optional WHERE clause)</span></label>' +
-                '<input type="text" class="nu-input nu-lookup-filter" value="' + _esc(lkFilter) + '" placeholder="e.g. active=1" style="font-size:12px;">' +
-              '</div>' +
-              '<div>' +
-                '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Extra Mapping <span style="font-weight:400;">(src:field, comma-sep)</span></label>' +
-                '<input type="text" class="nu-input nu-lookup-extra" value="' + _esc(lkExtra) + '" placeholder="e.g. code:dept_code" style="font-size:12px;">' +
-              '</div>' +
-            '</div>' +
-          '</div>';
+          '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;margin-top:6px;grid-column:1/-1;">'
+            + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">🔗 LOOKUP CONFIG <span style="font-weight:400;color:var(--text-muted,#888);">— links this field to another table</span></div>'
+            + '<div style="margin-bottom:8px;">'
+              + '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Lookup Table <span style="font-weight:400;">— the DB table to search</span></label>'
+              + '<input type="text" class="nu-input nu-lookup-table" value="' + _esc(lkTable) + '" placeholder="e.g. customers" style="font-size:12px;width:100%;box-sizing:border-box;">'
+            + '</div>'
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">'
+              + '<div>'
+                + '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Display Column <span style="font-weight:400;">(shown to user)</span></label>'
+                + '<input type="text" class="nu-input nu-lookup-display" value="' + _esc(lkDisp) + '" placeholder="e.g. full_name" style="font-size:12px;">'
+              + '</div>'
+              + '<div>'
+                + '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Store Column <span style="font-weight:400;">(saved to DB)</span></label>'
+                + '<input type="text" class="nu-input nu-lookup-store" value="' + _esc(lkStore) + '" placeholder="e.g. id" style="font-size:12px;">'
+              + '</div>'
+            + '</div>'
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+              + '<div>'
+                + '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Filter SQL <span style="font-weight:400;">(optional WHERE clause)</span></label>'
+                + '<input type="text" class="nu-input nu-lookup-filter" value="' + _esc(lkFilter) + '" placeholder="e.g. active=1" style="font-size:12px;">'
+              + '</div>'
+              + '<div>'
+                + '<label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px;">Extra Mapping <span style="font-weight:400;">(src:field, comma-sep)</span></label>'
+                + '<input type="text" class="nu-input nu-lookup-extra" value="' + _esc(lkExtra) + '" placeholder="e.g. code:dept_code" style="font-size:12px;">'
+              + '</div>'
+            + '</div>'
+          + '</div>';
       }
 
       if (type === 'subform') {
-        // Resolve saved subform data from the extra object so the
-        // panel is pre-populated when editing an existing form.
         var sf          = (extra.subform && typeof extra.subform === 'object') ? extra.subform : {};
         var sfData = {
           form_code:       sf.form_code    || sf.formcode  || extra.sf_form_code    || '',
@@ -395,7 +455,11 @@
         });
       });
 
-      // Wire up subform panel events immediately — no deferred upgrade needed.
+      // Wire options-source radio toggle for select / radio / checkbox_group
+      if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
+        _attachSelectOptionsToggle(card);
+      }
+
       if (type === 'subform') {
         _attachSubformPanelEvents(card, sfData);
       }
@@ -419,9 +483,6 @@
     },
 
     // ── getLayout ─────────────────────────────────────────────────
-    // Iterates rows in DOM order so each field is stamped with its
-    // row_index. _rebuildCanvas() uses row_index to restore the
-    // exact same row grouping after a save/reload cycle.
     getLayout: function () {
       var canvas = document.getElementById('formCanvas');
       if (!canvas) return [];
@@ -458,14 +519,41 @@
             row_index:     rowIndex
           };
 
-          if (optsEl) {
-            field.options = optsEl.value.split('\n').map(function (l) {
-              l = l.trim(); if (!l) return null;
-              var parts = l.split('|');
-              return parts.length >= 2
-                ? { value: parts[0].trim(), label: parts[1].trim() }
-                : { value: l, label: l };
-            }).filter(Boolean);
+          // ── select-type + options source ──────────────────────
+          if (type === 'select' || type === 'radio' || type === 'checkbox_group') {
+            // select_type (select / select2 / multiselect)
+            if (type === 'select') {
+              var selTypeEl = card.querySelector('.nu-field-select-type');
+              field.select_type = selTypeEl ? (selTypeEl.value || 'select') : 'select';
+              // convenience flags consumed by api/form.php
+              field.select2    = field.select_type === 'select2';
+              field.multiple   = field.select_type === 'multiselect';
+            }
+
+            // options source: manual list or from table
+            var optSrcEl = card.querySelector('.nu-field-opt-src:checked');
+            var optSource = optSrcEl ? optSrcEl.value : 'manual';
+            field.options_source = optSource;
+
+            if (optSource === 'table') {
+              var otEl  = card.querySelector('.nu-field-opt-table');
+              var ovEl  = card.querySelector('.nu-field-opt-val-col');
+              var olEl  = card.querySelector('.nu-field-opt-label-col');
+              var ofEl  = card.querySelector('.nu-field-opt-filter');
+              field.options_table     = otEl  ? otEl.value.trim()  : '';
+              field.options_value_col = ovEl  ? ovEl.value.trim()  : '';
+              field.options_label_col = olEl  ? olEl.value.trim()  : '';
+              field.options_filter    = ofEl  ? ofEl.value.trim()  : '';
+              field.options = [];
+            } else if (optsEl) {
+              field.options = optsEl.value.split('\n').map(function (l) {
+                l = l.trim(); if (!l) return null;
+                var parts = l.split('|');
+                return parts.length >= 2
+                  ? { value: parts[0].trim(), label: parts[1].trim() }
+                  : { value: l, label: l };
+              }).filter(Boolean);
+            }
           }
 
           if (formulaEl) field.formula = formulaEl.value;
@@ -579,6 +667,22 @@
     };
   }
 
+  // ── _attachSelectOptionsToggle ────────────────────────────────
+  // Wires the Manual / From Table radio switcher inside a select card.
+  function _attachSelectOptionsToggle(card) {
+    var radios = card.querySelectorAll('.nu-field-opt-src');
+    var manualPanel   = card.querySelector('.nb-select-manual');
+    var fromTablePanel = card.querySelector('.nb-select-from-table');
+    if (!radios.length || !manualPanel || !fromTablePanel) return;
+    radios.forEach(function (r) {
+      r.addEventListener('change', function () {
+        var isTable = r.value === 'table' && r.checked;
+        manualPanel.style.display    = isTable ? 'none' : '';
+        fromTablePanel.style.display = isTable ? '' : 'none';
+      });
+    });
+  }
+
   function _attachRowBodyDrop(rowBody) {
     if (rowBody._nuDropPatched) return;
     rowBody._nuDropPatched = true;
@@ -639,9 +743,6 @@
 
   /* ════════════════════════════════════════════════════════════════════
      SECTION 4 — Subform FK panel
-     _subformPanelHTML  — generates HTML (used inside _makeFieldCard)
-     _attachSubformPanelEvents — wires live events on the card's panel
-     _readCardConfig / _augmentLayout — read panel state for getLayout()
   ═══════════════════════════════════════════════════════════════════ */
 
   function _toggleRow(cls, dataKey, checkedAttr, label, hint) {
@@ -682,8 +783,6 @@
     ].join('');
   }
 
-  // Called once immediately after the card element is created.
-  // Populates the form/FK dropdowns and wires change + create events.
   function _attachSubformPanelEvents(card, initialData) {
     var panel = card.querySelector('.nb-sf-fk-panel');
     if (!panel) return;
@@ -810,7 +909,6 @@
       .catch(function (e) { NuApp.toast('Error: ' + e.message, 'error'); });
   }
 
-  // _readCardConfig — reads the live panel state for getLayout() / _augmentLayout()
   function _readCardConfig(card) {
     var formCode = '', fkField = '', subformView = 'grid', helpText = '';
     var isFk = false, hideGrid = false, srvRo = false;
@@ -843,7 +941,6 @@
     });
   }
 
-  // Called by getLayout() to stamp subform-specific fields onto each subform entry
   function _augmentLayout(layout) {
     if (!Array.isArray(layout)) return layout;
     var sfCards = _getSubformCards();
@@ -948,9 +1045,6 @@
   };
 
   // ── _rebuildCanvas ────────────────────────────────────────────────
-  // Groups fields by row_index, creates one canvas row per group,
-  // and passes full field data into _makeFieldCard so subform panels
-  // are pre-populated inline — no deferred upgrade needed.
   function _rebuildCanvas(layoutJson) {
     var canvas = document.getElementById('formCanvas');
     var empty  = document.getElementById('canvasEmpty');
@@ -992,7 +1086,7 @@
           f.label || f.fieldlabel || '',
           f.name  || f.fieldname  || '',
           !!f.required,
-          f   // full field object passed as extra — subform panel reads from here
+          f
         );
         if (!card) return;
 
