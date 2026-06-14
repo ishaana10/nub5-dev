@@ -138,7 +138,8 @@
       this.selectFormType('main',  document.querySelector('input[name="formType"][value="main"]')   ? document.querySelector('input[name="formType"][value="main"]').closest('.nb-ftype-card')  : null);
       this.selectTableMode('new',  document.querySelector('input[name="formTableMode"][value="new"]')? document.querySelector('input[name="formTableMode"][value="new"]').closest('.nb-tmode-card') : null);
       this.selectPkType('autoincrement', document.querySelector('input[name="formPkType"][value="autoincrement"]') ? document.querySelector('input[name="formPkType"][value="autoincrement"]').closest('.nb-pk-card') : null);
-      this.selectDisplayMode('inline', document.querySelector('input[name="browseDisplayMode"][value="inline"]') ? document.querySelector('input[name="browseDisplayMode"][value="inline"]').closest('.nb-display-mode-card') : null);
+      // Reset browse display mode dropdown to default
+      this.selectDisplayMode('inline');
     },
 
     switchTab: function (btn) {
@@ -180,11 +181,10 @@
       if (radio) radio.checked = true;
     },
 
-    selectDisplayMode: function (mode, card) {
-      document.querySelectorAll('.nb-display-mode-card').forEach(function (c) { c.classList.remove('selected'); });
-      if (card) card.classList.add('selected');
-      var radio = document.querySelector('input[name="browseDisplayMode"][value="' + mode + '"]');
-      if (radio) radio.checked = true;
+    // ── selectDisplayMode — now drives a <select> dropdown ────────
+    selectDisplayMode: function (mode) {
+      var sel = document.getElementById('browseDisplayMode');
+      if (sel) sel.value = mode || 'inline';
     },
 
     _updateEmptyState: function () {
@@ -608,7 +608,8 @@
         form_table_mode: _r('formTableMode')   || 'new',
         form_pk_type:    _r('formPkType')      || 'autoincrement',
         form_layout:     JSON.stringify(layout),
-        browse_display_mode:       _r('browseDisplayMode') || 'inline',
+        // Read browseDisplayMode from the <select> dropdown
+        browse_display_mode:       (function () { var e = document.getElementById('browseDisplayMode'); return e ? e.value : 'inline'; }()),
         browse_sql:                _v('formBrowseSql'),
         browse_columns:            _v('formBrowseColumns'),
         browse_page_size:          _v('formBrowsePageSize'),
@@ -1033,9 +1034,8 @@
       _sv('formBrowseSearchFields',       f.browse_search_fields      || '');
       _sc('formBrowseSearchEnabled',      f.browse_search_enabled);
 
-      var bdm = f.browse_display_mode || 'inline';
-      var bdmRadio = document.querySelector('input[name="browseDisplayMode"][value="' + bdm + '"]');
-      window.nbFormBuilder.selectDisplayMode(bdm, bdmRadio ? bdmRadio.closest('.nb-display-mode-card') : null);
+      // Restore browse display mode via the dropdown
+      window.nbFormBuilder.selectDisplayMode(f.browse_display_mode || 'inline');
 
       _sv('formCustomJs',     f.form_custom_js      || '');
       _sv('formJsBeforeSave', f.form_js_before_save || '');
