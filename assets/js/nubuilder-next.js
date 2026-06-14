@@ -192,8 +192,13 @@ window.NuApp = {
     delete document.body.dataset.nuFullPage;
   },
 
-  // ─── PREVIEW FORM — resizable modal (compact / standard / full) ─────────────────
-  async previewForm(code, formLabel) {
+  // ─── PREVIEW FORM — routes on displayMode, defaults to resizable modal ──────
+  async previewForm(code, formLabel, displayMode) {
+    const mode = (displayMode || 'modal').toLowerCase();
+    if (mode === 'inline')   return this._openFormInline(code, formLabel, null, true);
+    if (mode === 'fullpage') return this._openFormFullPage(code, formLabel, null, true);
+
+    // ── modal (default) ──────────────────────────────────────────────────────
     try {
       const json = await this.apiJson(
         'api/form.php?action=render&code=' + encodeURIComponent(code),
@@ -294,17 +299,21 @@ window.NuApp = {
     }
   },
 
-  // ─── EDIT RECORD — modal with breadcrumb ─────────────────────────────────
+  // ─── EDIT RECORD — routes on displayMode, defaults to modal ─────────────
   async editRecord(code, id, fromBrowseLabel, displayMode) {
+    const mode        = (displayMode || 'modal').toLowerCase();
+    const browseLabel = fromBrowseLabel || code;
+
+    if (mode === 'inline')   return this._openFormInline(code, browseLabel, id, false);
+    if (mode === 'fullpage') return this._openFormFullPage(code, browseLabel, id, false);
+
+    // ── modal (default) ──────────────────────────────────────────────────────
     try {
       const json = await this.apiJson(
         'api/form.php?action=render&code=' + encodeURIComponent(code) + '&id=' + encodeURIComponent(id),
         { credentials: 'same-origin' }
       );
       if (!json.success) { this.toast(json.error || 'Failed', 'error'); return; }
-
-      const browseLabel = fromBrowseLabel || code;
-      const mode        = displayMode || 'inline';
 
       const overlay = document.createElement('div');
       overlay.className = 'nu-form-overlay';
@@ -356,7 +365,7 @@ window.NuApp = {
   },
 
   addRecord(code, formLabel, displayMode) {
-    return this.previewForm(code, formLabel);
+    return this.previewForm(code, formLabel, displayMode);
   },
 
   // ─── BROWSE FORM — dispatches to inline / modal / fullpage ───────────────────
@@ -545,7 +554,7 @@ window.NuApp = {
       const addBtn = document.createElement('button');
       addBtn.className = 'nu-btn nu-btn-primary nu-btn-sm';
       addBtn.textContent = '+ Add Record';
-      addBtn.onclick = () => this.addRecord(code, label);
+      addBtn.onclick = () => this.addRecord(code, label, 'inline');
       btnGroup.appendChild(addBtn);
       const previewBtn = document.createElement('button');
       previewBtn.className = 'nu-btn nu-btn-ghost nu-btn-sm';
@@ -604,7 +613,7 @@ window.NuApp = {
       const addBtn = document.createElement('button');
       addBtn.className = 'nu-btn nu-btn-primary nu-btn-sm';
       addBtn.textContent = '+ Add';
-      addBtn.onclick = () => this.addRecord(code, label);
+      addBtn.onclick = () => this.addRecord(code, label, 'modal');
       rightBtns.appendChild(addBtn);
       const closeBtn = document.createElement('button');
       closeBtn.type = 'button';
@@ -663,7 +672,7 @@ window.NuApp = {
       const addBtn = document.createElement('button');
       addBtn.className = 'nu-btn nu-btn-primary nu-btn-sm';
       addBtn.textContent = '+ Add Record';
-      addBtn.onclick = () => this.addRecord(code, label);
+      addBtn.onclick = () => this.addRecord(code, label, 'fullpage');
       btnGroup.appendChild(addBtn);
       const exitBtn = document.createElement('button');
       exitBtn.className = 'nu-btn nu-btn-ghost nu-btn-sm';
@@ -676,6 +685,89 @@ window.NuApp = {
       this._buildBrowseTable(json, code, page, query, label, 'fullpage', container);
     } catch (err) {
       console.error('_browseFullPage error', err);
+      this._exitFullPage();
+      this.toast('Error: ' + err.message, 'error');
+    }
+  },
+
+  // ─── OPEN FORM INLINE — renders preview or edit form in #contentArea ────────
+  async _openFormInline(code, formLabel, id, isPreview) {
+    try {
+      const url = 'api/form.php?action=render&code=' + encodeURIComponent(code)
+                + (id ? '&id=' + encodeURIComponent(id) : '');
+      const json = await this.apiJson(url, { credentials: 'same-origin' });
+      if (!json.success) { this.toast(json.error || 'Failed', 'error'); return; }
+
+      const label     = formLabel || code;
+      const container = document.getElementById('contentArea');
+      if (!container) { this.toast('Content area not found', 'error'); return; }
+      container.innerHTML = '';
+
+      const crumbs = [
+        { label: 'Forms', action: () => this.loadModule('forms') },
+        { label: label,   action: () => this.browseForm(code, 1, '', label, 'inline') },
+      ];
+      crumbs.push({ label: isPreview ? 'Preview' : (id ? 'Edit #' + id : 'New Record') });
+      container.appendChild(this._renderBreadcrumb(crumbs));
+
+      const formWrap = document.createElement('div');
+      formWrap.innerHTML = json.html;
+      container.appendChild(formWrap);
+
+      // ✔ Dispatch AFTER content is in the live DOM
+      this._dispatchFormOpened(container);
+      if (window.nuForm && typeof window.nuForm.init === 'function') {
+        const formEl = container.querySelector('.nu-generated-form');
+        if (formEl) window.nuForm.init(formEl.dataset.formCode || code, {}, isPreview);
+      }
+    } catch (err) {
+      console.error('_openFormInline error', err);
+      this.toast('Error: ' + err.message, 'error');
+    }
+  },
+
+  // ─── OPEN FORM FULL PAGE — renders preview or edit form fullscreen ───────────
+  async _openFormFullPage(code, formLabel, id, isPreview) {
+    try {
+      const url = 'api/form.php?action=render&code=' + encodeURIComponent(code)
+                + (id ? '&id=' + encodeURIComponent(id) : '');
+      const json = await this.apiJson(url, { credentials: 'same-origin' });
+      if (!json.success) { this.toast(json.error || 'Failed', 'error'); return; }
+
+      const label = formLabel || code;
+      this._enterFullPage();
+
+      const container = document.getElementById('contentArea');
+      if (!container) { this.toast('Content area not found', 'error'); return; }
+      container.innerHTML = '';
+
+      const exitAction = () => { this._exitFullPage(); this.loadModule('forms'); };
+      const crumbs = [
+        { label: 'Forms', action: exitAction },
+        { label: label,   action: () => { this._exitFullPage(); this.browseForm(code, 1, '', label, 'fullpage'); } },
+        { label: isPreview ? 'Preview' : (id ? 'Edit #' + id : 'New Record') }
+      ];
+      container.appendChild(this._renderBreadcrumb(crumbs));
+
+      const exitBtn = document.createElement('button');
+      exitBtn.className = 'nu-btn nu-btn-ghost nu-btn-sm';
+      exitBtn.style.cssText = 'margin-bottom:12px;';
+      exitBtn.textContent = '✕ Exit Full Page';
+      exitBtn.onclick = exitAction;
+      container.appendChild(exitBtn);
+
+      const formWrap = document.createElement('div');
+      formWrap.innerHTML = json.html;
+      container.appendChild(formWrap);
+
+      // ✔ Dispatch AFTER content is in the live DOM
+      this._dispatchFormOpened(container);
+      if (window.nuForm && typeof window.nuForm.init === 'function') {
+        const formEl = container.querySelector('.nu-generated-form');
+        if (formEl) window.nuForm.init(formEl.dataset.formCode || code, {}, isPreview);
+      }
+    } catch (err) {
+      console.error('_openFormFullPage error', err);
       this._exitFullPage();
       this.toast('Error: ' + err.message, 'error');
     }
@@ -694,8 +786,9 @@ window.closeNuForm = function (btn) {
 
 window.submitNuForm = async function (formElement) {
   if (!formElement) { NuApp.toast('Form element not found', 'error'); return; }
-  const formCode = formElement.dataset.formCode;
-  const recordId = formElement.dataset.recordId;
+  const formCode    = formElement.dataset.formCode;
+  const recordId    = formElement.dataset.recordId;
+  const displayMode = formElement.dataset.displayMode || 'modal';
   const url = 'api/form.php?action=save&code=' + encodeURIComponent(formCode) +
     (recordId ? '&id=' + encodeURIComponent(recordId) : '');
   const formData = new FormData(formElement);
@@ -723,7 +816,7 @@ window.submitNuForm = async function (formElement) {
     const overlay = formElement.closest('.nu-form-overlay');
     if (overlay) overlay.remove();
     if (typeof NuApp.browseForm === 'function' && formCode) {
-      NuApp.browseForm(formCode, 1, '');
+      NuApp.browseForm(formCode, 1, '', null, displayMode);
     } else {
       NuApp.loadModule('forms');
     }
@@ -735,9 +828,9 @@ window.submitNuForm = async function (formElement) {
 
 // ─── Global window aliases ────────────────────────────────────────────────
 window.openFormBuilder = function ()                               { return NuApp.openFormBuilder ? NuApp.openFormBuilder() : (window.nbFormBuilder ? window.nbFormBuilder.open() : null); };
-window.previewForm     = function (code, label)                    { return NuApp.previewForm(code, label); };
+window.previewForm     = function (code, label, mode)              { return NuApp.previewForm(code, label, mode); };
 window.editForm        = function (id)                             { return window.nbFormBuilder ? window.nbFormBuilder.edit(id) : null; };
-window.addRecord       = function (code, label)                    { return NuApp.addRecord(code, label); };
+window.addRecord       = function (code, label, mode)              { return NuApp.addRecord(code, label, mode); };
 window.editRecord      = function (code, id, label, mode)          { return NuApp.editRecord(code, id, label, mode); };
 window.browseForm      = function (code, page, query, label, mode) { return NuApp.browseForm(code, page, query, label, mode); };
 window.browseFormPage  = function (code, page, query, label, mode) { return NuApp.browseForm(code, page, query, label, mode); };
