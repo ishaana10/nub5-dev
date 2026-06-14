@@ -12,23 +12,28 @@ if (!defined('NU_BOOTSTRAP_DONE')) {
     require_once dirname(__DIR__, 2) . '/core/module_bootstrap.php';
 }
 
-$db          = NuDatabase::getInstance();
-$userId      = (int)($_SESSION['nu_user_id'] ?? 0);
-$role        = strtolower((string)($_SESSION['nu_role'] ?? ''));
-$isAdmin     = in_array($role, ['globeadmin', 'admin'], true);
+$db           = NuDatabase::getInstance();
+$userId       = (int)($_SESSION['nu_user_id'] ?? 0);
+$role         = strtolower((string)($_SESSION['nu_role'] ?? ''));
+$isAdmin      = in_array($role, ['globeadmin', 'admin'], true);
 $isGlobeAdmin = ($role === 'globeadmin');
 
 // ── helpers ───────────────────────────────────────────────────────────────
 function wu_resolve_widgets(NuDatabase $db, int $userId, string $role): array {
-    $personal = $db->fetchAll(
-        "SELECT * FROM nu_dashboard_widgets WHERE widget_user_id=? AND widget_active=1 ORDER BY widget_position",
-        [$userId]
-    );
-    if (!empty($personal)) return $personal;
-    return $db->fetchAll(
-        "SELECT * FROM nu_dashboard_widgets WHERE widget_user_id IS NULL AND widget_role=? AND widget_active=1 ORDER BY widget_position",
-        [$role]
-    );
+    try {
+        $personal = $db->fetchAll(
+            "SELECT * FROM nu_dashboard_widgets WHERE widget_user_id=? AND widget_active=1 ORDER BY widget_position",
+            [$userId]
+        );
+        if (!empty($personal)) return $personal;
+        return $db->fetchAll(
+            "SELECT * FROM nu_dashboard_widgets WHERE widget_user_id IS NULL AND widget_role=? AND widget_active=1 ORDER BY widget_position",
+            [$role]
+        ) ?: [];
+    } catch (Throwable $e) {
+        error_log('[widgets] resolve error: ' . $e->getMessage());
+        return [];
+    }
 }
 
 function wu_run_sql(NuDatabase $db, string $sql, int $userId): array {
@@ -38,118 +43,127 @@ function wu_run_sql(NuDatabase $db, string $sql, int $userId): array {
         return $db->fetchAll($sql) ?: [];
     } catch (Throwable $e) {
         error_log('[widget] sql error: ' . $e->getMessage());
-        return [];
+        return [['_error' => $e->getMessage()]];
     }
 }
 
 function wu_render(array $w, NuDatabase $db, int $userId): string {
-    $cfg   = json_decode($w['widget_config'] ?? '{}', true) ?: [];
-    $type  = $w['widget_type'];
-    $accent = match($cfg['color'] ?? 'primary') {
-        'success' => 'var(--color-success,#437a22)',
-        'warning' => 'var(--color-warning,#964219)',
-        'error'   => 'var(--color-error,#a12c7b)',
-        default   => 'var(--color-primary,#01696f)',
-    };
-    switch ($type) {
-        case 'stat':
-            $rows = wu_run_sql($db, $cfg['sql'] ?? '', $userId);
-            $val  = $rows[0]['value'] ?? (isset($rows[0]) ? reset($rows[0]) : 0);
-            $sub  = htmlspecialchars($cfg['subtitle'] ?? '');
-            return '<div style="display:flex;flex-direction:column;gap:4px;padding:4px 0;">'
-                 . '<div style="font-size:2.5rem;font-weight:800;line-height:1;color:' . $accent . ';font-variant-numeric:tabular-nums;">'
-                 . number_format((float)$val) . '</div>'
-                 . ($sub ? '<div style="font-size:var(--text-xs,.75rem);color:var(--color-text-muted,#888);">' . $sub . '</div>' : '')
-                 . '</div>';
+    try {
+        $cfg   = json_decode($w['widget_config'] ?? '{}', true) ?: [];
+        $type  = $w['widget_type'] ?? 'custom';
+        $accent = match($cfg['color'] ?? 'primary') {
+            'success' => 'var(--color-success,#437a22)',
+            'warning' => 'var(--color-warning,#964219)',
+            'error'   => 'var(--color-error,#a12c7b)',
+            default   => 'var(--color-primary,#01696f)',
+        };
+        switch ($type) {
+            case 'stat':
+                $rows = wu_run_sql($db, $cfg['sql'] ?? 'SELECT 0 as value', $userId);
+                if (isset($rows[0]['_error'])) return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error</p>';
+                $val  = $rows[0]['value'] ?? (isset($rows[0]) ? reset($rows[0]) : 0);
+                $sub  = htmlspecialchars($cfg['subtitle'] ?? '');
+                return '<div style="display:flex;flex-direction:column;gap:4px;padding:4px 0;">'
+                     . '<div style="font-size:2.5rem;font-weight:800;line-height:1;color:' . $accent . ';font-variant-numeric:tabular-nums;">'
+                     . number_format((float)$val) . '</div>'
+                     . ($sub ? '<div style="font-size:var(--text-xs,.75rem);color:var(--color-text-muted,#888);">' . $sub . '</div>' : '')
+                     . '</div>';
 
-        case 'chart_bar':
-        case 'chart_line':
-        case 'chart_pie':
-            $rows   = wu_run_sql($db, $cfg['sql'] ?? '', $userId);
-            $labels = array_column($rows, 'label');
-            $values = array_column($rows, 'value');
-            $ctype  = match($type) { 'chart_pie' => 'pie', 'chart_line' => 'line', default => 'bar' };
-            $id     = 'wc_' . $w['widget_id'];
-            $chartJson = json_encode([
-                'type' => $ctype,
-                'data' => ['labels' => $labels, 'datasets' => [[
-                    'label'           => htmlspecialchars($w['widget_title']),
-                    'data'            => $values,
-                    'backgroundColor' => $ctype === 'pie'
-                        ? ['#01696f','#437a22','#006494','#7a39bb','#da7101','#a12c7b']
-                        : 'rgba(1,105,111,0.75)',
-                    'borderColor' => 'rgba(1,105,111,1)',
-                    'borderWidth' => 1,
-                    'tension'     => 0.4,
-                    'fill'        => $ctype === 'line',
-                ]]],
-                'options' => [
-                    'responsive'          => true,
-                    'maintainAspectRatio' => false,
-                    'plugins'             => ['legend' => ['display' => $ctype === 'pie']],
-                    'scales'              => $ctype === 'pie' ? (object)[] : ['y' => ['beginAtZero' => true]],
-                ],
-            ]);
-            return '<div style="height:220px;"><canvas id="' . $id . '" data-chartjs=\'' . htmlspecialchars($chartJson, ENT_QUOTES) . '\'></canvas></div>';
+            case 'chart_bar':
+            case 'chart_line':
+            case 'chart_pie':
+                $rows   = wu_run_sql($db, $cfg['sql'] ?? '', $userId);
+                if (isset($rows[0]['_error'])) return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error</p>';
+                $labels = array_column($rows, 'label');
+                $values = array_column($rows, 'value');
+                $ctype  = match($type) { 'chart_pie' => 'pie', 'chart_line' => 'line', default => 'bar' };
+                $id     = 'wc_' . $w['widget_id'];
+                $chartJson = json_encode([
+                    'type' => $ctype,
+                    'data' => ['labels' => $labels, 'datasets' => [[
+                        'label'           => htmlspecialchars($w['widget_title']),
+                        'data'            => $values,
+                        'backgroundColor' => $ctype === 'pie'
+                            ? ['#01696f','#437a22','#006494','#7a39bb','#da7101','#a12c7b']
+                            : 'rgba(1,105,111,0.75)',
+                        'borderColor' => 'rgba(1,105,111,1)',
+                        'borderWidth' => 1,
+                        'tension'     => 0.4,
+                        'fill'        => $ctype === 'line',
+                    ]]],
+                    'options' => [
+                        'responsive'          => true,
+                        'maintainAspectRatio' => false,
+                        'plugins'             => ['legend' => ['display' => $ctype === 'pie']],
+                        'scales'              => $ctype === 'pie' ? (object)[] : ['y' => ['beginAtZero' => true]],
+                    ],
+                ]);
+                return '<div style="height:220px;"><canvas id="' . $id . '" data-chartjs=\'' . htmlspecialchars($chartJson, ENT_QUOTES) . '\'></canvas></div>';
 
-        case 'table':
-            $rows = wu_run_sql($db, $cfg['sql'] ?? '', $userId);
-            if (empty($rows)) return '<p style="color:var(--color-text-muted,#888);padding:12px 0;">No data</p>';
-            $cols = array_keys($rows[0]);
-            $html = '<div class="nu-table-wrap"><table class="nu-table"><thead><tr>';
-            foreach ($cols as $c) $html .= '<th>' . htmlspecialchars(ucfirst($c)) . '</th>';
-            $html .= '</tr></thead><tbody>';
-            foreach ($rows as $row) {
-                $html .= '<tr>';
-                foreach ($row as $val) $html .= '<td>' . htmlspecialchars((string)$val) . '</td>';
-                $html .= '</tr>';
-            }
-            return $html . '</tbody></table></div>';
+            case 'table':
+                $rows = wu_run_sql($db, $cfg['sql'] ?? '', $userId);
+                if (isset($rows[0]['_error'])) return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error: ' . htmlspecialchars($rows[0]['_error']) . '</p>';
+                if (empty($rows)) return '<p style="color:var(--color-text-muted,#888);padding:12px 0;">No data</p>';
+                $cols = array_keys($rows[0]);
+                $html = '<div class="nu-table-wrap"><table class="nu-table"><thead><tr>';
+                foreach ($cols as $c) $html .= '<th>' . htmlspecialchars(ucfirst($c)) . '</th>';
+                $html .= '</tr></thead><tbody>';
+                foreach ($rows as $row) {
+                    $html .= '<tr>';
+                    foreach ($row as $val) $html .= '<td>' . htmlspecialchars((string)$val) . '</td>';
+                    $html .= '</tr>';
+                }
+                return $html . '</tbody></table></div>';
 
-        case 'list':
-            $items = $cfg['items'] ?? [];
-            if (empty($items)) return '<p style="color:var(--color-text-muted);padding:12px 0;">No links configured</p>';
-            $html = '<div style="display:flex;flex-direction:column;gap:6px;">';
-            foreach ($items as $item) {
-                $label  = htmlspecialchars($item['label'] ?? '');
-                $module = htmlspecialchars($item['module'] ?? '');
-                $url    = htmlspecialchars($item['url'] ?? '');
-                $click  = $module ? "NuApp.loadModule('" . $module . "')" : "window.open('" . $url . "','_blank')";
-                $html  .= '<button class="nu-btn nu-btn-ghost" style="justify-content:flex-start;" onclick="' . $click . '">' . $label . '</button>';
-            }
-            return $html . '</div>';
+            case 'list':
+                $items = $cfg['items'] ?? [];
+                if (empty($items)) return '<p style="color:var(--color-text-muted);padding:12px 0;">No links configured</p>';
+                $html = '<div style="display:flex;flex-direction:column;gap:6px;">';
+                foreach ($items as $item) {
+                    $label  = htmlspecialchars($item['label'] ?? '');
+                    $module = htmlspecialchars($item['module'] ?? '');
+                    $url    = htmlspecialchars($item['url'] ?? '');
+                    $click  = $module ? "NuApp.loadModule('" . $module . "')" : "window.open('" . $url . "','_blank')";
+                    $html  .= '<button class="nu-btn nu-btn-ghost" style="justify-content:flex-start;" onclick="' . $click . '">' . $label . '</button>';
+                }
+                return $html . '</div>';
 
-        case 'progress':
-            $rows   = wu_run_sql($db, $cfg['sql'] ?? '', $userId);
-            $total  = (float)($rows[0]['total'] ?? 1);
-            $done   = (float)($rows[0]['done']  ?? 0);
-            $pct    = $total > 0 ? min(100, round($done / $total * 100)) : 0;
-            $label  = htmlspecialchars($cfg['label'] ?? "$done / $total");
-            return '<div style="margin-top:4px;">'
-                 . '<div style="display:flex;justify-content:space-between;font-size:var(--text-xs,.75rem);color:var(--color-text-muted);margin-bottom:6px;"><span>' . $label . '</span><span>' . $pct . '%</span></div>'
-                 . '<div style="height:8px;border-radius:var(--radius-full,9999px);background:var(--color-surface-offset,#eee);overflow:hidden;">'
-                 . '<div style="width:' . $pct . '%;height:100%;background:' . $accent . ';border-radius:inherit;transition:width .6s ease;"></div></div></div>';
+            case 'progress':
+                $rows   = wu_run_sql($db, $cfg['sql'] ?? '', $userId);
+                if (isset($rows[0]['_error'])) return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error</p>';
+                $total  = (float)($rows[0]['total'] ?? 1);
+                $done   = (float)($rows[0]['done']  ?? 0);
+                $pct    = $total > 0 ? min(100, round($done / $total * 100)) : 0;
+                $label  = htmlspecialchars($cfg['label'] ?? "$done / $total");
+                return '<div style="margin-top:4px;">'
+                     . '<div style="display:flex;justify-content:space-between;font-size:var(--text-xs,.75rem);color:var(--color-text-muted);margin-bottom:6px;"><span>' . $label . '</span><span>' . $pct . '%</span></div>'
+                     . '<div style="height:8px;border-radius:var(--radius-full,9999px);background:var(--color-surface-offset,#eee);overflow:hidden;">'
+                     . '<div style="width:' . $pct . '%;height:100%;background:' . $accent . ';border-radius:inherit;transition:width .6s ease;"></div></div></div>';
 
-        case 'custom':
-            return $cfg['html'] ?? '<p style="color:var(--color-text-muted);">No content set.</p>';
+            case 'custom':
+                return $cfg['html'] ?? '<p style="color:var(--color-text-muted);">No content set.</p>';
 
-        default:
-            return '<p style="color:var(--color-text-muted);">Unknown widget type</p>';
+            default:
+                return '<p style="color:var(--color-text-muted);">Unknown widget type: ' . htmlspecialchars($type) . '</p>';
+        }
+    } catch (Throwable $e) {
+        error_log('[widget render] id=' . ($w['widget_id'] ?? '?') . ' ' . $e->getMessage());
+        return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">Widget error: ' . htmlspecialchars($e->getMessage()) . '</p>';
     }
 }
 
-// ── Resolve widgets for current user ──────────────────────────────────────
-try {
-    $widgets = wu_resolve_widgets($db, $userId, $role);
-} catch (Throwable $e) {
-    error_log('[widgets] resolve error: ' . $e->getMessage());
-    $widgets = [];
-}
+// ── Resolve widgets ────────────────────────────────────────────────────────
+$widgets = wu_resolve_widgets($db, $userId, $role);
 
-$hasPersonal = !empty($db->fetchAll(
-    "SELECT widget_id FROM nu_dashboard_widgets WHERE widget_user_id=? AND widget_active=1 LIMIT 1",
-    [$userId]
-));
+try {
+    $hasPersonal = !empty($db->fetchAll(
+        "SELECT widget_id FROM nu_dashboard_widgets WHERE widget_user_id=? AND widget_active=1 LIMIT 1",
+        [$userId]
+    ));
+} catch (Throwable $e) {
+    error_log('[widgets] hasPersonal error: ' . $e->getMessage());
+    $hasPersonal = false;
+}
 ?>
 
 <!-- Toolbar -->
@@ -187,13 +201,18 @@ $hasPersonal = !empty($db->fetchAll(
     </div>
 <?php else: ?>
 <?php foreach ($widgets as $w):
-    $colSpan = max(1, min(4, (int)$w['widget_width']));
-    $rowSpan = max(1, min(3, (int)$w['widget_height']));
+    $colSpan = max(1, min(4, (int)($w['widget_width'] ?? 2)));
+    $rowSpan = max(1, min(3, (int)($w['widget_height'] ?? 1)));
 ?>
     <div class="nu-widget-card nu-card" data-widget-id="<?= (int)$w['widget_id'] ?>"
          style="grid-column:span <?= $colSpan ?>;grid-row:span <?= $rowSpan ?>;position:relative;">
         <div class="nu-card-header" style="margin-bottom:12px;">
-            <h3 class="nu-card-title" style="font-size:var(--text-sm,.875rem);"><?= htmlspecialchars($w['widget_title']) ?></h3>
+            <h3 class="nu-card-title" style="font-size:var(--text-sm,.875rem);">
+                <?php if (!empty($w['widget_icon'])): ?>
+                <span style="margin-right:6px;"><?= htmlspecialchars($w['widget_icon']) ?></span>
+                <?php endif; ?>
+                <?= htmlspecialchars($w['widget_title']) ?>
+            </h3>
             <div class="nu-widget-controls" style="display:none;gap:4px;">
                 <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuDash.editWidget(<?= (int)$w['widget_id'] ?>)" title="Edit">&#x2699;&#xFE0F;</button>
                 <button class="nu-btn nu-btn-ghost nu-btn-sm" style="color:var(--color-error);" onclick="nuDash.removeWidget(<?= (int)$w['widget_id'] ?>)" title="Remove">&times;</button>
