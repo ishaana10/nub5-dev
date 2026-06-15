@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS `nu_menus` (
   -- Key into NuMenuRenderer::$icons map.
   -- Built-in keys: dashboard, forms, reports, queries, menus, users,
   --                files, workflow, calendar, ai, link, password,
-  --                shield, alert, copy, inspector, divider, group, default
+  --                roles, audit, shield, alert, copy, inspector,
+  --                divider, group, default
 
   `created_at`     TIMESTAMP        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`     TIMESTAMP        NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -88,15 +89,15 @@ LIMIT 1;
 
 -- Children of "Main" group
 INSERT IGNORE INTO `nu_menus`
-  (menu_label,       menu_type,  menu_target,  menu_parent_id,  menu_order, menu_roles, menu_active, menu_icon)
+  (menu_label, menu_type, menu_target, menu_parent_id, menu_order, menu_roles, menu_active, menu_icon)
 VALUES
-  ('Dashboard',      'form',     'dashboard',  @main_group,     10,  '',  1, 'dashboard'),
-  ('Forms',          'form',     'forms',      @main_group,     20,  '',  1, 'forms'),
-  ('Reports',        'form',     'reports',    @main_group,     30,  '',  1, 'reports'),
-  ('Queries',        'form',     'queries',    @main_group,     40,  '',  1, 'queries'),
-  ('Calendar',       'form',     'calendar',   @main_group,     50,  '',  1, 'calendar'),
-  ('AI Assistant',   'form',     'ai',         @main_group,     60,  '',  1, 'ai'),
-  ('Integrations',   'form',     'integrations', @main_group,   70,  '',  1, 'link');
+  ('Dashboard',    'form', 'dashboard',    @main_group, 10, '', 1, 'dashboard'),
+  ('Forms',        'form', 'forms',         @main_group, 20, '', 1, 'forms'),
+  ('Reports',      'form', 'reports',       @main_group, 30, '', 1, 'reports'),
+  ('Queries',      'form', 'queries',       @main_group, 40, '', 1, 'queries'),
+  ('Calendar',     'form', 'calendar',      @main_group, 50, '', 1, 'calendar'),
+  ('AI Assistant', 'form', 'ai',            @main_group, 60, '', 1, 'ai'),
+  ('Integrations', 'form', 'integrations',  @main_group, 70, '', 1, 'link');
 
 
 -- ---------------------------------------------------------------------------
@@ -118,19 +119,18 @@ LIMIT 1;
 
 -- Children of "Admin Tools" group
 INSERT IGNORE INTO `nu_menus`
-  (menu_label,           menu_type, menu_target,       menu_parent_id,  menu_order, menu_roles,            menu_active, menu_icon)
+  (menu_label,              menu_type, menu_target,      menu_parent_id,  menu_order, menu_roles,           menu_active, menu_icon)
 VALUES
-  -- Visible to all logged-in users (no role restriction)
-  ('Menus',              'form',    'menus',            @admin_group,    10,  'globeadmin,admin',  1, 'menus'),
-  ('Users',              'form',    'users',            @admin_group,    20,  'globeadmin,admin',  1, 'users'),
-  ('Files',              'form',    'files',            @admin_group,    30,  'globeadmin,admin',  1, 'files'),
-  ('Workflow',           'form',    'workflow',         @admin_group,    40,  'globeadmin,admin',  1, 'workflow'),
-
-  -- Admin-only items
-  ('DB & Server Inspector', 'form', 'inspector',        @admin_group,    50,  'globeadmin,admin',  1, 'inspector'),
-  ('Error Log',          'form',    'errorlog',         @admin_group,    60,  'globeadmin,admin',  1, 'alert'),
-  ('Password Policy',    'form',    'password_policy',  @admin_group,    70,  'globeadmin,admin',  1, 'shield'),
-  ('App Cloner',         'form',    'appcloner',        @admin_group,    80,  'globeadmin,admin',  1, 'copy');
+  ('Menus',                 'form', 'menus',             @admin_group,    10,  'globeadmin,admin',  1, 'menus'),
+  ('Users',                 'form', 'users',             @admin_group,    20,  'globeadmin,admin',  1, 'users'),
+  ('Roles',                 'form', 'roles',             @admin_group,    25,  'globeadmin,admin',  1, 'roles'),
+  ('Audit Trail',           'form', 'audit',             @admin_group,    28,  'globeadmin,admin',  1, 'audit'),
+  ('Files',                 'form', 'files',             @admin_group,    30,  'globeadmin,admin',  1, 'files'),
+  ('Workflow',              'form', 'workflow',          @admin_group,    40,  'globeadmin,admin',  1, 'workflow'),
+  ('DB & Server Inspector', 'form', 'inspector',         @admin_group,    50,  'globeadmin,admin',  1, 'inspector'),
+  ('Error Log',             'form', 'errorlog',          @admin_group,    60,  'globeadmin,admin',  1, 'alert'),
+  ('Password Policy',       'form', 'password_policy',   @admin_group,    70,  'globeadmin,admin',  1, 'shield'),
+  ('App Cloner',            'form', 'appcloner',         @admin_group,    80,  'globeadmin,admin',  1, 'copy');
 
 
 -- ---------------------------------------------------------------------------
@@ -151,7 +151,7 @@ WHERE  menu_label = 'Personal'
 LIMIT 1;
 
 INSERT IGNORE INTO `nu_menus`
-  (menu_label,      menu_type, menu_target, menu_parent_id,   menu_order, menu_roles, menu_active, menu_icon)
+  (menu_label,       menu_type, menu_target, menu_parent_id,   menu_order, menu_roles, menu_active, menu_icon)
 VALUES
   ('Change Password', 'form',  'password',  @personal_group,  10,  '',  1, 'password');
 

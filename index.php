@@ -174,6 +174,9 @@ if ($isLoggedIn && $currentUser) {
         <?php else: ?>
         <!-- ══ Static fallback nav (shown until nu_menus is populated) ══ -->
         <nav class="nu-nav">
+
+            <!-- ── Main ── -->
+            <div style="margin:12px 8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted,#888);padding:0 4px;">Main</div>
             <a href="#dashboard" class="nu-nav-item" data-module="dashboard"
                onclick="NuApp.loadModule('dashboard'); return false;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -188,7 +191,6 @@ if ($isLoggedIn && $currentUser) {
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                     <polyline points="14 2 14 8 20 8"/>
                     <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-                    <polyline points="10 9 9 9 8 9"/>
                 </svg>
                 <span>Forms</span>
             </a>
@@ -208,6 +210,35 @@ if ($isLoggedIn && $currentUser) {
                 </svg>
                 <span>Queries</span>
             </a>
+            <a href="#calendar" class="nu-nav-item" data-module="calendar"
+               onclick="NuApp.loadModule('calendar'); return false;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                <span>Calendar</span>
+            </a>
+            <a href="#ai" class="nu-nav-item" data-module="ai"
+               onclick="NuApp.loadModule('ai'); return false;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2a10 10 0 1 0 10 10H12V2z"/>
+                    <path d="M12 2a10 10 0 0 1 10 10"/>
+                </svg>
+                <span>AI Assistant</span>
+            </a>
+            <a href="#integrations" class="nu-nav-item" data-module="integrations"
+               onclick="NuApp.loadModule('integrations'); return false;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                <span>Integrations</span>
+            </a>
+
+            <!-- ── Admin Tools section ── -->
+            <?php if ($isAdmin): ?>
+            <div style="margin:12px 8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted,#888);padding:0 4px;">Admin Tools</div>
             <a href="#menus" class="nu-nav-item" data-module="menus"
                onclick="NuApp.loadModule('menus'); return false;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -230,6 +261,27 @@ if ($isLoggedIn && $currentUser) {
                 </svg>
                 <span>Users</span>
             </a>
+            <a href="#roles" class="nu-nav-item" data-module="roles"
+               onclick="NuApp.loadModule('roles'); return false;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span>Roles</span>
+            </a>
+            <a href="#audit" class="nu-nav-item" data-module="audit"
+               onclick="NuApp.loadModule('audit'); return false;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <circle cx="17" cy="17" r="3"/>
+                    <line x1="21" y1="21" x2="19.1" y2="19.1"/>
+                </svg>
+                <span>Audit Trail</span>
+            </a>
             <a href="#files" class="nu-nav-item" data-module="files"
                onclick="NuApp.loadModule('files'); return false;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -244,37 +296,6 @@ if ($isLoggedIn && $currentUser) {
                 </svg>
                 <span>Workflow</span>
             </a>
-            <a href="#calendar" class="nu-nav-item" data-module="calendar"
-               onclick="NuApp.loadModule('calendar'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                    <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-                    <line x1="3" y1="10" x2="21" y2="10"/>
-                </svg>
-                <span>Calendar</span>
-            </a>
-            <a href="#ai" class="nu-nav-item" data-module="ai"
-               onclick="NuApp.loadModule('ai'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2a10 10 0 1 0 10 10H12V2z"/>
-                    <path d="M12 2a10 10 0 0 1 10 10"/>
-                    <path d="M12 12L2.5 12"/>
-                </svg>
-                <span>AI Assistant</span>
-            </a>
-            <a href="#integrations" class="nu-nav-item" data-module="integrations"
-               onclick="NuApp.loadModule('integrations'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                </svg>
-                <span>Integrations</span>
-            </a>
-
-            <!-- ── Admin Tools section (admin + all users for password) ── -->
-            <div style="margin:12px 8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted,#888);padding:0 4px;">Admin Tools</div>
-
-            <?php if ($isAdmin): ?>
             <a href="#inspector" class="nu-nav-item" data-module="inspector"
                onclick="NuApp.loadModule('inspector'); return false;"
                style="color:var(--warning,#f59e0b);">
@@ -287,33 +308,6 @@ if ($isLoggedIn && $currentUser) {
                 </svg>
                 <span>DB &amp; Server Inspector</span>
             </a>
-            <?php endif; ?>
-
-            <!-- Change Password — visible to every logged-in user -->
-            <a href="#password" class="nu-nav-item" data-module="password"
-               onclick="NuApp.loadModule('password'); return false;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                    <line x1="12" y1="16" x2="12" y2="16"/>
-                    <circle cx="12" cy="16" r="1" fill="currentColor"/>
-                </svg>
-                <span>Change Password</span>
-            </a>
-
-            <?php if ($isAdmin): ?>
-            <!-- Password Policy — admin only -->
-            <a href="#password_policy" class="nu-nav-item" data-module="password_policy"
-               onclick="NuApp.loadModule('password_policy'); return false;"
-               style="color:var(--warning,#f59e0b);">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                    <polyline points="9 12 11 14 15 10"/>
-                </svg>
-                <span>Password Policy</span>
-            </a>
-
-            <!-- Error Log — admin only -->
             <a href="#errorlog" class="nu-nav-item" data-module="errorlog"
                onclick="NuApp.loadModule('errorlog'); return false;"
                style="color:var(--warning,#f59e0b);">
@@ -324,8 +318,15 @@ if ($isLoggedIn && $currentUser) {
                 </svg>
                 <span>Error Log</span>
             </a>
-
-            <!-- ─── App Cloner ─────────────────────────────────────────────── -->
+            <a href="#password_policy" class="nu-nav-item" data-module="password_policy"
+               onclick="NuApp.loadModule('password_policy'); return false;"
+               style="color:var(--warning,#f59e0b);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    <polyline points="9 12 11 14 15 10"/>
+                </svg>
+                <span>Password Policy</span>
+            </a>
             <a href="#appcloner" class="nu-nav-item" data-module="appcloner"
                onclick="NuApp.loadModule('appcloner'); return false;"
                style="color:var(--warning,#f59e0b);">
@@ -336,6 +337,19 @@ if ($isLoggedIn && $currentUser) {
                 <span>App Cloner</span>
             </a>
             <?php endif; ?>
+
+            <!-- ── Personal section (every user) ── -->
+            <div style="margin:12px 8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted,#888);padding:0 4px;">Personal</div>
+            <a href="#password" class="nu-nav-item" data-module="password"
+               onclick="NuApp.loadModule('password'); return false;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    <line x1="12" y1="16" x2="12" y2="16"/>
+                    <circle cx="12" cy="16" r="1" fill="currentColor"/>
+                </svg>
+                <span>Change Password</span>
+            </a>
 
         </nav>
         <?php endif; ?>
