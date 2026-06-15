@@ -37,6 +37,9 @@ class NuMenuRenderer
         'default'    => '<circle cx="12" cy="12" r="9"/>',
     ];
 
+    // Types that support open-mode
+    private static array $openModeTypes = ['form', 'report', 'query'];
+
     public static function render(?array $currentUser): string
     {
         $userRole = strtolower((string)($currentUser['usr_role'] ?? ''));
@@ -49,12 +52,14 @@ class NuMenuRenderer
                         COALESCE(menu_target, '') AS menu_target,
                         COALESCE(menu_code,   '') AS menu_code,
                         menu_parent_id, menu_order, menu_roles,
-                        menu_active, menu_icon
+                        menu_active, menu_icon,
+                        COALESCE(menu_open_mode, 'inline') AS menu_open_mode
                  FROM   nu_menus
                  WHERE  menu_active = 1
                  ORDER  BY menu_parent_id ASC, menu_order ASC, menu_id ASC"
             );
         } catch (Throwable $e) {
+            // Fallback without menu_open_mode (column may not exist yet)
             try {
                 $db   = NuDatabase::getInstance();
                 $rows = $db->fetchAll(
@@ -62,7 +67,8 @@ class NuMenuRenderer
                             COALESCE(menu_target, '') AS menu_target,
                             '' AS menu_code,
                             menu_parent_id, menu_order, menu_roles,
-                            menu_active, menu_icon
+                            menu_active, menu_icon,
+                            'inline' AS menu_open_mode
                      FROM   nu_menus
                      WHERE  menu_active = 1
                      ORDER  BY menu_parent_id ASC, menu_order ASC, menu_id ASC"
@@ -106,10 +112,11 @@ class NuMenuRenderer
 
     private static function renderItem(array $item, array $kids): string
     {
-        $type    = $item['menu_type'];
-        $label   = htmlspecialchars((string)$item['menu_label'], ENT_QUOTES, 'UTF-8');
-        $iconKey = strtolower(trim($item['menu_icon'] ?? 'default'));
-        $svgBody = self::$icons[$iconKey] ?? self::$icons['default'];
+        $type     = $item['menu_type'];
+        $label    = htmlspecialchars((string)$item['menu_label'], ENT_QUOTES, 'UTF-8');
+        $iconKey  = strtolower(trim($item['menu_icon'] ?? 'default'));
+        $svgBody  = self::$icons[$iconKey] ?? self::$icons['default'];
+        $openMode = htmlspecialchars(trim($item['menu_open_mode'] ?? 'inline'), ENT_QUOTES, 'UTF-8');
 
         if ($type === 'divider') {
             return "<hr class=\"nu-nav-divider\">\n";
@@ -118,9 +125,7 @@ class NuMenuRenderer
         $rawTarget = trim($item['menu_target'] ?? '');
         $rawCode   = trim($item['menu_code']   ?? '');
 
-        // ── Any item that has children renders as a collapsible group.
-        //    The group-label button is TOGGLE-ONLY — no onclick, no data-module.
-        //    All navigation is handled exclusively by the child <a> items. ──────
+        // ── Group: collapsible, toggle-only ──────────────────────────────────
         if (!empty($kids)) {
             $groupId = 'nu-group-' . (int)$item['menu_id'];
 
@@ -151,15 +156,22 @@ class NuMenuRenderer
             return $out;
         }
 
-        // ── Standard leaf item (module or form) ───────────────────────────────────
+        // ── Standard leaf item ────────────────────────────────────────────────
         $module = $rawTarget !== '' ? $rawTarget : $rawCode;
         if ($module === '') {
             return "<!-- nu_menus id={$item['menu_id']} skipped: no target or code -->\n";
         }
         $moduleSafe = htmlspecialchars($module, ENT_QUOTES, 'UTF-8');
 
-        $out  = "<a href=\"#{$moduleSafe}\" class=\"nu-nav-item\" data-module=\"{$moduleSafe}\"\n";
-        $out .= "   onclick=\"NuApp.loadModule('{$moduleSafe}'); return false;\">\n";
+        // For types that support open-mode, pass it as a data attribute
+        // NuApp.loadModule() reads data-open-mode to decide inline/popup/preview/browse
+        $openModeAttr = in_array($type, self::$openModeTypes, true)
+            ? " data-open-mode=\"{$openMode}\""
+            : '';
+
+        // Use javascript:void(0) as href so no hashchange event fires
+        $out  = "<a href=\"javascript:void(0)\" class=\"nu-nav-item\" data-module=\"{$moduleSafe}\"{$openModeAttr}\n";
+        $out .= "   onclick=\"NuApp.loadModule('{$moduleSafe}', '{$openMode}'); return false;\">\n";
         $out .= self::svgIcon($svgBody);
         $out .= "  <span>{$label}</span>\n";
         $out .= "</a>\n";

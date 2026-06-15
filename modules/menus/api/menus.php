@@ -9,6 +9,7 @@ declare(strict_types=1);
  * POST action=update      — update an existing menu item
  * POST action=delete      — soft-delete (set menu_active=0) or hard-delete
  * POST action=reorder     — bulk update menu_order after drag-drop
+ * POST action=migrate     — add menu_open_mode column if missing
  */
 require_once dirname(__DIR__, 3) . '/core/module_bootstrap.php';
 
@@ -30,6 +31,9 @@ function mu_json(array $data): void {
     exit;
 }
 
+// Valid open modes
+$validOpenModes = ['inline', 'popup', 'preview', 'browse'];
+
 // Read POST body
 $body = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -38,24 +42,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!is_array($body)) $body = $_POST;
 }
 
+// ── AUTO-MIGRATE: ensure menu_open_mode column exists ─────────────────────
+try {
+    $db->query("ALTER TABLE nu_menus ADD COLUMN menu_open_mode VARCHAR(20) NOT NULL DEFAULT 'inline'");
+} catch (Throwable $ignored) {
+    // Column already exists — ignore
+}
+
 // ── GET single item ────────────────────────────────────────────
 if ($action === 'get') {
     $id  = (int)($_GET['id'] ?? 0);
     $row = $db->fetchOne("SELECT * FROM nu_menus WHERE menu_id = ?", [$id]);
     if (!$row) mu_json(['success' => false, 'message' => 'Not found']);
+    // Ensure open_mode has a default if column did not exist before
+    $row['menu_open_mode'] = $row['menu_open_mode'] ?? 'inline';
     mu_json(['success' => true, 'menu' => $row]);
 }
 
 // ── CREATE ─────────────────────────────────────────────────────
 if ($action === 'create') {
-    $label  = substr(trim((string)($body['label']  ?? '')), 0, 120);
-    $type   = preg_replace('/[^a-z_]/', '', (string)($body['type']   ?? 'form'));
-    $target = substr(trim((string)($body['target'] ?? '')), 0, 200);
-    $icon   = substr(trim((string)($body['icon']   ?? '☰')), 0, 60);
-    $parent = (int)($body['parent'] ?? 0);
-    $order  = (int)($body['order']  ?? 0);
-    $roles  = substr(trim((string)($body['roles']  ?? '')), 0, 255);
-    $active = isset($body['active']) ? (int)$body['active'] : 1;
+    $label    = substr(trim((string)($body['label']     ?? '')), 0, 120);
+    $type     = preg_replace('/[^a-z_]/', '', (string)($body['type']      ?? 'form'));
+    $target   = substr(trim((string)($body['target']   ?? '')), 0, 200);
+    $icon     = substr(trim((string)($body['icon']     ?? '☰')), 0, 60);
+    $parent   = (int)($body['parent']   ?? 0);
+    $order    = (int)($body['order']    ?? 0);
+    $roles    = substr(trim((string)($body['roles']    ?? '')), 0, 255);
+    $active   = isset($body['active']) ? (int)$body['active'] : 1;
+    $rawMode  = trim((string)($body['open_mode'] ?? 'inline'));
+    $openMode = in_array($rawMode, $GLOBALS['validOpenModes'] ?? ['inline','popup','preview','browse'], true) ? $rawMode : 'inline';
 
     if (!$label && $type !== 'divider') {
         mu_json(['success' => false, 'message' => 'Label is required']);
@@ -68,9 +83,10 @@ if ($action === 'create') {
     try {
         $db->query(
             "INSERT INTO nu_menus
-             (menu_code, menu_label, menu_type, menu_target, menu_icon, menu_order, menu_parent_id, menu_role_access, menu_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [$code, $label, $type, $target, $icon, $order, $parent ?: null, $roles ?: null, $active]
+             (menu_code, menu_label, menu_type, menu_target, menu_icon, menu_order,
+              menu_parent_id, menu_role_access, menu_active, menu_open_mode)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [$code, $label, $type, $target, $icon, $order, $parent ?: null, $roles ?: null, $active, $openMode]
         );
         $newId = $db->lastInsertId();
         mu_json(['success' => true, 'id' => $newId]);
@@ -82,15 +98,17 @@ if ($action === 'create') {
 
 // ── UPDATE ─────────────────────────────────────────────────────
 if ($action === 'update') {
-    $id     = (int)($body['id']     ?? 0);
-    $label  = substr(trim((string)($body['label']  ?? '')), 0, 120);
-    $type   = preg_replace('/[^a-z_]/', '', (string)($body['type']   ?? 'form'));
-    $target = substr(trim((string)($body['target'] ?? '')), 0, 200);
-    $icon   = substr(trim((string)($body['icon']   ?? '☰')), 0, 60);
-    $parent = (int)($body['parent'] ?? 0);
-    $order  = (int)($body['order']  ?? 0);
-    $roles  = substr(trim((string)($body['roles']  ?? '')), 0, 255);
-    $active = isset($body['active']) ? (int)$body['active'] : 1;
+    $id       = (int)($body['id']        ?? 0);
+    $label    = substr(trim((string)($body['label']     ?? '')), 0, 120);
+    $type     = preg_replace('/[^a-z_]/', '', (string)($body['type']      ?? 'form'));
+    $target   = substr(trim((string)($body['target']   ?? '')), 0, 200);
+    $icon     = substr(trim((string)($body['icon']     ?? '☰')), 0, 60);
+    $parent   = (int)($body['parent']   ?? 0);
+    $order    = (int)($body['order']    ?? 0);
+    $roles    = substr(trim((string)($body['roles']    ?? '')), 0, 255);
+    $active   = isset($body['active']) ? (int)$body['active'] : 1;
+    $rawMode  = trim((string)($body['open_mode'] ?? 'inline'));
+    $openMode = in_array($rawMode, ['inline','popup','preview','browse'], true) ? $rawMode : 'inline';
 
     if (!$id) mu_json(['success' => false, 'message' => 'Invalid ID']);
 
@@ -104,9 +122,10 @@ if ($action === 'update') {
                menu_order       = ?,
                menu_parent_id   = ?,
                menu_role_access = ?,
-               menu_active      = ?
+               menu_active      = ?,
+               menu_open_mode   = ?
              WHERE menu_id = ?",
-            [$label, $type, $target, $icon, $order, $parent ?: null, $roles ?: null, $active, $id]
+            [$label, $type, $target, $icon, $order, $parent ?: null, $roles ?: null, $active, $openMode, $id]
         );
         mu_json(['success' => true]);
     } catch (Throwable $e) {
@@ -120,7 +139,6 @@ if ($action === 'delete') {
     $id = (int)($body['id'] ?? 0);
     if (!$id) mu_json(['success' => false, 'message' => 'Invalid ID']);
     try {
-        // Delete item and its children
         $db->query("DELETE FROM nu_menus WHERE menu_id = ? OR menu_parent_id = ?", [$id, $id]);
         mu_json(['success' => true]);
     } catch (Throwable $e) {
