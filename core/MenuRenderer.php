@@ -153,9 +153,10 @@ class NuMenuRenderer
         if ($isGroup) {
             $groupId = 'nu-group-' . (int)$item['menu_id'];
             $out  = "<div class=\"nu-nav-group\">\n";
+            // NOTE: No inline onclick — toggle is handled exclusively by JS event
+            // delegation in NuApp.bindEvents() to avoid double-firing.
             $out .= "  <button class=\"nu-nav-group-label\" ";
-            $out .= "aria-expanded=\"true\" aria-controls=\"{$groupId}\" ";
-            $out .= "onclick=\"var e=this.getAttribute('aria-expanded')==='true';this.setAttribute('aria-expanded',e?'false':'true');document.getElementById('{$groupId}').classList.toggle('nu-nav-children--collapsed');\">"; 
+            $out .= "type=\"button\" aria-expanded=\"true\" aria-controls=\"{$groupId}\">";
             $out .= self::svgIcon($svgBody);
             $out .= "  <span>{$label}</span>";
             $out .= "  <svg class=\"nu-nav-chevron\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"/></svg>";
