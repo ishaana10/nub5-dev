@@ -39,8 +39,6 @@ class NuMenuRenderer
 
     // Types that render the form-action sub-buttons instead of loadModule
     private static array $formTypes = ['form'];
-    // Types that use browseForm but no preview/edit sub-buttons (future: report, query)
-    private static array $browseTypes = ['form', 'report', 'query'];
 
     public static function render(?array $currentUser): string
     {
@@ -61,13 +59,13 @@ class NuMenuRenderer
                  ORDER  BY menu_parent_id ASC, menu_order ASC, menu_id ASC"
             );
         } catch (Throwable $e) {
-            // Fallback without menu_open_mode (column may not exist yet)
+            // Fallback: menu_open_mode column may not exist yet
             try {
                 $db   = NuDatabase::getInstance();
                 $rows = $db->fetchAll(
                     "SELECT menu_id, menu_label, menu_type,
                             COALESCE(menu_target, '') AS menu_target,
-                            '' AS menu_code,
+                            COALESCE(menu_code,   '') AS menu_code,
                             menu_parent_id, menu_order, menu_roles,
                             menu_active, menu_icon,
                             'inline' AS menu_open_mode
@@ -118,7 +116,7 @@ class NuMenuRenderer
         $label    = htmlspecialchars((string)$item['menu_label'], ENT_QUOTES, 'UTF-8');
         $iconKey  = strtolower(trim($item['menu_icon'] ?? 'default'));
         $svgBody  = self::$icons[$iconKey] ?? self::$icons['default'];
-        $openMode = htmlspecialchars(trim($item['menu_open_mode'] ?? 'inline'), ENT_QUOTES, 'UTF-8');
+        $openMode = trim($item['menu_open_mode'] ?? 'inline');
 
         if ($type === 'divider') {
             return "<hr class=\"nu-nav-divider\">\n";
@@ -163,55 +161,73 @@ class NuMenuRenderer
         if ($module === '') {
             return "<!-- nu_menus id={$item['menu_id']} skipped: no target or code -->\n";
         }
+
+        // JS-safe string literals for inline onclick handlers
+        // Using JSON encoding so any quote/special chars in code or label are
+        // automatically escaped for safe embedding inside a double-quoted HTML attribute.
+        $jsCode  = json_encode($module, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT);
+        $jsLabel = json_encode((string)$item['menu_label'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT);
+
+        // HTML-safe value for data attributes
         $moduleSafe = htmlspecialchars($module, ENT_QUOTES, 'UTF-8');
 
-        // ── Form type: render inline label + action dropdown ─────────────────
-        // Calls browseForm/previewForm directly — never loadModule — so a
-        // non-existent module path can't redirect to dashboard.
+        // ── Form type: inline label + action dropdown ─────────────────────────
+        // Uses the SAME global function signatures as the working buttons:
+        //   browseForm(code, mode, filter, label, display)  — mode=1 means browse
+        //   previewForm(code, label)
+        // display arg: 'inline' | 'popup'  (nubuilder native terminology)
         if (in_array($type, self::$formTypes, true)) {
-            // Determine the primary browse mode from open_mode
-            // Supported: inline | popup (alias: modal) | fullpage
-            $browseMode = $openMode;
-            if ($browseMode === 'popup') $browseMode = 'modal';
 
-            $jsLabel    = json_encode($label,    JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT);
-            $jsCode     = json_encode($moduleSafe, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT);
-            $jsBrowse   = json_encode($browseMode, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT);
+            // Map menu_open_mode to nubuilder browseForm display arg
+            $primaryDisplay = ($openMode === 'popup' || $openMode === 'modal') ? 'popup' : 'inline';
+            $jsPrimaryDisplay = json_encode($primaryDisplay, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT);
+
+            $closeDropdown = "this.closest('.nu-nav-form-dropdown').classList.remove('open');";
 
             $out  = "<div class=\"nu-nav-form-item\" data-module=\"{$moduleSafe}\">\n";
-            // Primary label button (opens browse in configured mode)
+
+            // Primary label button — opens in the configured default mode
             $out .= "  <button type=\"button\" class=\"nu-nav-item nu-nav-form-primary\"\n";
-            $out .= "          onclick=\"NuApp.browseForm({$jsCode},1,'',{$jsLabel},{$jsBrowse}); return false;\">\n";
+            $out .= "          onclick=\"window.browseForm && browseForm({$jsCode},1,'',{$jsLabel},{$jsPrimaryDisplay}); return false;\">\n";
             $out .= self::svgIcon($svgBody);
             $out .= "    <span>{$label}</span>\n";
             $out .= "  </button>\n";
-            // Chevron button toggles the sub-action dropdown
+
+            // Chevron — toggles the dropdown
             $out .= "  <button type=\"button\" class=\"nu-nav-form-chevron\" aria-label=\"Open form actions\"\n";
             $out .= "          onclick=\"event.stopPropagation(); this.closest('.nu-nav-form-item').querySelector('.nu-nav-form-dropdown').classList.toggle('open');\">\n";
             $out .= "    <svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"/></svg>\n";
             $out .= "  </button>\n";
-            // Dropdown with three action options
+
+            // Dropdown
             $out .= "  <div class=\"nu-nav-form-dropdown\">\n";
+
+            // Browse Inline — browseForm(code, 1, '', label, 'inline')
             $out .= "    <button type=\"button\" class=\"nu-nav-form-action\"\n";
-            $out .= "            onclick=\"NuApp.browseForm({$jsCode},1,'',{$jsLabel},'inline'); this.closest('.nu-nav-form-dropdown').classList.remove('open');\">\n";
-            $out .= "      &#8862; Browse Inline\n";
+            $out .= "            onclick=\"window.browseForm && browseForm({$jsCode},1,'',{$jsLabel},'inline'); {$closeDropdown}\">\n";
+            $out .= "      &#8862;&nbsp;Browse Inline\n";
             $out .= "    </button>\n";
+
+            // Browse Popup — browseForm(code, 1, '', label, 'popup')
             $out .= "    <button type=\"button\" class=\"nu-nav-form-action\"\n";
-            $out .= "            onclick=\"NuApp.browseForm({$jsCode},1,'',{$jsLabel},'modal'); this.closest('.nu-nav-form-dropdown').classList.remove('open');\">\n";
-            $out .= "      &#9634; Browse Popup\n";
+            $out .= "            onclick=\"window.browseForm && browseForm({$jsCode},1,'',{$jsLabel},'popup'); {$closeDropdown}\">\n";
+            $out .= "      &#9634;&nbsp;Browse Popup\n";
             $out .= "    </button>\n";
+
+            // Preview Form — previewForm(code, label)
             $out .= "    <button type=\"button\" class=\"nu-nav-form-action\"\n";
-            $out .= "            onclick=\"NuApp.previewForm({$jsCode},{$jsLabel}); this.closest('.nu-nav-form-dropdown').classList.remove('open');\">\n";
-            $out .= "      &#9654; Preview Form\n";
+            $out .= "            onclick=\"window.previewForm && previewForm({$jsCode},{$jsLabel}); {$closeDropdown}\">\n";
+            $out .= "      &#9654;&nbsp;Preview Form\n";
             $out .= "    </button>\n";
+
             $out .= "  </div>\n";
             $out .= "</div>\n";
             return $out;
         }
 
-        // ── Standard leaf item (module, link, etc.) ───────────────────────────
+        // ── Standard leaf item (module, report, query, etc.) ──────────────────
         $out  = "<a href=\"javascript:void(0)\" class=\"nu-nav-item\" data-module=\"{$moduleSafe}\"\n";
-        $out .= "   onclick=\"NuApp.loadModule('{$moduleSafe}'); return false;\">\n";
+        $out .= "   onclick=\"NuApp.loadModule({$jsCode}); return false;\">\n";
         $out .= self::svgIcon($svgBody);
         $out .= "  <span>{$label}</span>\n";
         $out .= "</a>\n";
