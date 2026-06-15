@@ -20,6 +20,24 @@ $builtinIcons = [
   'workflow','calendar','ai','link','password','lock','alert','copy',
   'inspector','layout','group','default'
 ];
+
+/**
+ * Helper: derive display badges for a menu row using the new columns.
+ * Falls back gracefully for legacy rows that only have menu_open_mode.
+ */
+function nu_menu_mode_label(array $m): string {
+    $bm  = $m['menu_browse_mode']  ?? '';
+    $pm  = $m['menu_preview_mode'] ?? '';
+    $dv  = $m['menu_default_view'] ?? '';
+    // Legacy fallback
+    if (!$bm && !$pm) {
+        $old = $m['menu_open_mode'] ?? 'inline|browse';
+        [$bm, $dv] = array_pad(explode('|', $old, 2), 2, '');
+        $pm = 'inline'; if (!$dv) $dv = 'browse';
+    }
+    $bm = $bm ?: 'inline'; $pm = $pm ?: 'inline'; $dv = $dv ?: 'browse';
+    return 'default:' . $dv . '  browse:' . $bm . '  preview:' . $pm;
+}
 ?>
 
 <style>
@@ -84,12 +102,66 @@ $builtinIcons = [
 .nb-mtype-icon  { font-size:18px; margin-bottom:4px; }
 .nb-mtype-label { font-size:11px; font-weight:700; color:var(--text-primary); }
 
-/* ── Open Mode dropdowns ── */
-.nb-open-mode-row {
+/* ── Open Mode section ── */
+.nb-open-mode-section {
   grid-column:1/-1;
-  display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;
+  border:1px solid var(--border-color);
+  border-radius:10px;
+  padding:14px 16px;
+  background:var(--bg-elevated);
+  display:flex;
+  flex-direction:column;
+  gap:12px;
 }
-.nb-open-mode-row .nb-fp { flex:1; min-width:140px; }
+.nb-open-mode-section-title {
+  font-size:11px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--text-secondary);
+  margin:0 0 4px;
+}
+.nb-open-mode-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:12px;
+}
+@media(max-width:600px) {
+  .nb-open-mode-grid { grid-template-columns:1fr; }
+}
+.nb-open-mode-field { display:flex; flex-direction:column; gap:4px; }
+.nb-open-mode-field label {
+  font-size:11px; font-weight:600; color:var(--text-secondary);
+  display:flex; align-items:center; gap:5px;
+}
+.nb-open-mode-field label span.nb-om-hint {
+  font-weight:400; color:var(--text-tertiary); font-size:10px;
+}
+.nb-mode-pill-row { display:flex; gap:6px; }
+.nb-mode-pill {
+  flex:1; padding:6px 4px; border-radius:7px;
+  border:1.5px solid var(--border-color);
+  background:var(--bg-surface);
+  font-size:11px; font-weight:600; cursor:pointer;
+  text-align:center; transition:all .14s;
+  color:var(--text-secondary);
+}
+.nb-mode-pill:hover { border-color:var(--color-primary); color:var(--color-primary); }
+.nb-mode-pill.selected {
+  border-color:var(--color-primary);
+  background:color-mix(in oklch,var(--color-primary) 12%,var(--bg-surface));
+  color:var(--color-primary);
+}
+.nb-mode-pill .nb-mode-pill-icon { font-size:14px; display:block; margin-bottom:2px; }
+.nb-mode-pill .nb-mode-pill-label { font-size:10px; }
+
+/* Preview mode tags in list */
+.nb-mode-tag {
+  display:inline-flex; align-items:center; gap:3px;
+  font-size:9px; font-weight:700; padding:2px 7px; border-radius:20px;
+  flex-shrink:0;
+}
+.nb-mode-tag.inline  { background:color-mix(in oklch,#6366f1 10%,transparent); color:#4338ca; }
+.nb-mode-tag.popup   { background:color-mix(in oklch,#f59e0b 10%,transparent); color:#b45309; }
+.nb-mode-tag.browse  { background:color-mix(in oklch,#10b981 10%,transparent); color:#047857; }
+.nb-mode-tag.preview { background:color-mix(in oklch,#8b5cf6 10%,transparent); color:#6d28d9; }
 
 /* Icon picker tabs */
 .nb-icon-tabs { display:flex; gap:0; border:1px solid var(--border-color); border-radius:8px; overflow:hidden; margin-bottom:8px; }
@@ -126,12 +198,7 @@ $builtinIcons = [
 .nb-menu-preview-icon svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:2; }
 .nb-menu-preview-label { font-size:13px; font-weight:600; color:var(--text-primary); flex:1; }
 .nb-menu-preview-badge { font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:2px 8px; border-radius:20px; }
-.nb-preview-mode-tag {
-  font-size:10px; font-weight:600;
-  padding:2px 8px; border-radius:20px;
-  background:color-mix(in oklch,#6366f1 12%,transparent);
-  color:#4338ca;
-}
+.nb-preview-mode-tags { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
 
 .nb-group-notice {
   display:none;
@@ -171,74 +238,60 @@ $builtinIcons = [
         </div>
         <?php else: ?>
         <?php
+        function nu_render_menu_item(array $m, bool $isChild = false): void {
+            $mid    = (int)$m['menu_id'];
+            $label  = htmlspecialchars($m['menu_label'], ENT_QUOTES);
+            $type   = htmlspecialchars($m['menu_type']  ?? 'form', ENT_QUOTES);
+            $target = htmlspecialchars($m['menu_target'] ?? '', ENT_QUOTES);
+            $icon   = htmlspecialchars($m['menu_icon']   ?? 'default', ENT_QUOTES);
+            $order  = (int)$m['menu_order'];
+            $bm     = htmlspecialchars($m['menu_browse_mode']  ?? 'inline', ENT_QUOTES);
+            $pm     = htmlspecialchars($m['menu_preview_mode'] ?? 'inline', ENT_QUOTES);
+            $dv     = htmlspecialchars($m['menu_default_view'] ?? 'browse', ENT_QUOTES);
+            $isDivider = $type === 'divider';
+            $childCls  = $isChild ? ' is-child' : '';
+            $pid       = $isChild ? ' data-parent="' . $mid . '"' : '';
+            $supportsModes = in_array($type, ['form','report','query']);
+            ?>
+            <div class="nb-menu-item<?= $isDivider ? ' is-divider' : '' ?><?= $childCls ?>" data-id="<?= $mid ?>"<?= $pid ?> draggable="true">
+              <span class="nb-menu-drag-handle" title="Drag to reorder">&#9776;</span>
+              <div class="nb-menu-icon-preview" title="icon: <?= $icon ?>">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="9"/>
+                </svg>
+              </div>
+              <span class="nb-menu-label">
+                <?= htmlspecialchars($m['menu_label']) ?>
+                <?php if ($target): ?><span class="nb-menu-label-sub">&rarr; <?= $target ?></span><?php endif; ?>
+                <?php if ($type === 'group'): ?><span class="nb-menu-label-sub" style="color:#1d4ed8;">(group)</span><?php endif; ?>
+              </span>
+              <?php if ($supportsModes): ?>
+              <span class="nb-mode-tag <?= $dv ?>" title="Default view"><?= $dv === 'browse' ? '&#x1F5C2;' : '&#x1F441;' ?> <?= $dv ?></span>
+              <span class="nb-mode-tag <?= $bm ?>" title="Browse opens as"><?= $bm === 'inline' ? '&#x1F4F0;' : '&#x1F5D4;' ?> browse</span>
+              <span class="nb-mode-tag <?= $pm ?>" title="Preview opens as"><?= $pm === 'inline' ? '&#x1F4F0;' : '&#x1F5D4;' ?> prev</span>
+              <?php endif; ?>
+              <span class="nb-menu-type-badge <?= $type ?>"><?= ucfirst($type) ?></span>
+              <span class="nb-menu-order-badge"><?= $order ?></span>
+              <div class="nb-menu-actions">
+                <?php if (!$isChild): ?>
+                <button class="nb-menu-btn" onclick="nuMenuBuilder.addChild(<?= $mid ?>, '<?= $label ?>')">+ Child</button>
+                <?php endif; ?>
+                <button class="nb-menu-btn" onclick="nuMenuBuilder.edit(<?= $mid ?>)">&#x270E; Edit</button>
+                <button class="nb-menu-btn del" onclick="nuMenuBuilder.del(<?= $mid ?>, '<?= $label ?>')">Delete</button>
+              </div>
+            </div>
+        <?php
+        }
+
         $topItems = $menuMap[0] ?? [];
         foreach ($topItems as $m):
-          $mid    = (int)$m['menu_id'];
-          $label  = htmlspecialchars($m['menu_label'], ENT_QUOTES);
-          $type   = htmlspecialchars($m['menu_type']  ?? 'form', ENT_QUOTES);
-          $target = htmlspecialchars($m['menu_target'] ?? '', ENT_QUOTES);
-          $icon   = htmlspecialchars($m['menu_icon']   ?? 'default', ENT_QUOTES);
-          $order  = (int)$m['menu_order'];
-          $omode  = htmlspecialchars($m['menu_open_mode'] ?? 'inline|browse', ENT_QUOTES);
-          $isDivider = $type === 'divider';
+            nu_render_menu_item($m, false);
+            $children = $menuMap[(int)$m['menu_id']] ?? [];
+            foreach ($children as $c):
+                nu_render_menu_item($c, true);
+            endforeach;
+        endforeach;
         ?>
-        <div class="nb-menu-item<?= $isDivider ? ' is-divider' : '' ?>" data-id="<?= $mid ?>" draggable="true">
-          <span class="nb-menu-drag-handle" title="Drag to reorder">&#9776;</span>
-          <div class="nb-menu-icon-preview" title="icon: <?= $icon ?>">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="9"/>
-            </svg>
-          </div>
-          <span class="nb-menu-label">
-            <?= htmlspecialchars($m['menu_label']) ?>
-            <?php if ($target): ?><span class="nb-menu-label-sub">&rarr; <?= $target ?></span><?php endif; ?>
-            <?php if ($type === 'group'): ?><span class="nb-menu-label-sub" style="color:#1d4ed8;">(group &mdash; collapsible section)</span><?php endif; ?>
-            <?php if (in_array($type, ['form','report','query']) && $omode): ?>
-            <span class="nb-menu-label-sub" style="color:#4338ca;font-style:italic;">[<?= $omode ?>]</span>
-            <?php endif; ?>
-          </span>
-          <span class="nb-menu-type-badge <?= $type ?>"><?= ucfirst($type) ?></span>
-          <span class="nb-menu-order-badge"><?= $order ?></span>
-          <div class="nb-menu-actions">
-            <button class="nb-menu-btn" onclick="nuMenuBuilder.addChild(<?= $mid ?>, '<?= $label ?>')">+ Child</button>
-            <button class="nb-menu-btn" onclick="nuMenuBuilder.edit(<?= $mid ?>)">&#x270E; Edit</button>
-            <button class="nb-menu-btn del" onclick="nuMenuBuilder.del(<?= $mid ?>, '<?= $label ?>')">Delete</button>
-          </div>
-        </div>
-        <?php
-        $children = $menuMap[$mid] ?? [];
-        foreach ($children as $c):
-          $cid    = (int)$c['menu_id'];
-          $clabel = htmlspecialchars($c['menu_label'], ENT_QUOTES);
-          $ctype  = htmlspecialchars($c['menu_type']  ?? 'form', ENT_QUOTES);
-          $ctarget= htmlspecialchars($c['menu_target'] ?? '', ENT_QUOTES);
-          $cicon  = htmlspecialchars($c['menu_icon']   ?? 'default', ENT_QUOTES);
-          $corder = (int)$c['menu_order'];
-          $comode = htmlspecialchars($c['menu_open_mode'] ?? 'inline|browse', ENT_QUOTES);
-        ?>
-        <div class="nb-menu-item is-child" data-id="<?= $cid ?>" data-parent="<?= $mid ?>" draggable="true">
-          <span class="nb-menu-drag-handle" title="Drag to reorder">&#9776;</span>
-          <div class="nb-menu-icon-preview" style="font-size:12px;" title="icon: <?= $cicon ?>">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="9"/>
-            </svg>
-          </div>
-          <span class="nb-menu-label">
-            <?= htmlspecialchars($c['menu_label']) ?>
-            <?php if ($ctarget): ?><span class="nb-menu-label-sub">&rarr; <?= $ctarget ?></span><?php endif; ?>
-            <?php if (in_array($ctype, ['form','report','query']) && $comode): ?>
-            <span class="nb-menu-label-sub" style="color:#4338ca;font-style:italic;">[<?= $comode ?>]</span>
-            <?php endif; ?>
-          </span>
-          <span class="nb-menu-type-badge <?= $ctype ?>"><?= ucfirst($ctype) ?></span>
-          <span class="nb-menu-order-badge"><?= $corder ?></span>
-          <div class="nb-menu-actions">
-            <button class="nb-menu-btn" onclick="nuMenuBuilder.edit(<?= $cid ?>)">&#x270E; Edit</button>
-            <button class="nb-menu-btn del" onclick="nuMenuBuilder.del(<?= $cid ?>, '<?= $clabel ?>')">Delete</button>
-          </div>
-        </div>
-        <?php endforeach; ?>
-        <?php endforeach; ?>
         <?php endif; ?>
       </div>
     </div>
@@ -247,10 +300,9 @@ $builtinIcons = [
 
   <!-- ── Builder Panel ──────────────────────────────────────────── -->
   <div class="nu-card" id="menuBuilderCard" style="display:none;margin-top:24px;">
-    <input type="hidden" id="editMenuId" value="">
+    <input type="hidden" id="editMenuId"       value="">
     <input type="hidden" id="editMenuParentId" value="0">
-    <input type="hidden" id="editMenuIcon" value="default">
-    <input type="hidden" id="editOpenMode" value="inline|browse">
+    <input type="hidden" id="editMenuIcon"     value="default">
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <h3 class="nu-card-title" id="menuBuilderTitle">New Menu Item</h3>
@@ -264,15 +316,18 @@ $builtinIcons = [
       </div>
       <span class="nb-menu-preview-label" id="nbPreviewLabel">Label</span>
       <span class="nb-menu-preview-badge" id="nbPreviewBadge" style="background:color-mix(in oklch,var(--color-primary) 12%,transparent);color:var(--color-primary);">Form</span>
-      <span class="nb-preview-mode-tag" id="nbPreviewModeTag" style="display:none;">inline &bull; browse</span>
+      <div class="nb-preview-mode-tags" id="nbPreviewModeTags" style="display:none;">
+        <span class="nb-mode-tag browse" id="nbPreviewDefaultTag">&#x1F5C2; browse</span>
+        <span class="nb-mode-tag inline" id="nbPreviewBrowseTag">&#x1F4F0; browse-mode</span>
+        <span class="nb-mode-tag inline" id="nbPreviewPreviewTag">&#x1F4F0; prev-mode</span>
+      </div>
       <span style="font-size:11px;color:var(--text-tertiary);margin-left:4px;">&#x2190; live preview</span>
     </div>
 
     <!-- Group notice -->
     <div class="nb-group-notice" id="nbGroupNotice">
       <strong>&#x1F4C2; Group item</strong> &mdash; A group is a <em>collapsible section header</em> in the sidebar.
-      It does <strong>not</strong> navigate to any page. The <strong>Target field is intentionally hidden</strong> &mdash;
-      add child items under this group to make them appear inside it.
+      It does <strong>not</strong> navigate to any page. Add child items under this group.
     </div>
 
     <div style="margin-bottom:16px;">
@@ -359,23 +414,76 @@ $builtinIcons = [
         </label>
       </div>
 
-      <!-- ── Open Mode dropdowns (form / report / query only) ── -->
-      <div class="nb-open-mode-row" id="nbOpenModeRow">
-        <div class="nb-fp">
-          <label>Display Mode</label>
-          <select id="menuDisplayMode" class="nu-input" onchange="nuMenuBuilder.onModeChange()">
-            <option value="inline">&#x1F4F0; Inline &mdash; opens in main area</option>
-            <option value="popup">&#x1F5D4; Popup &mdash; modal dialog</option>
-          </select>
-        </div>
-        <div class="nb-fp">
-          <label>View Mode</label>
-          <select id="menuViewMode" class="nu-input" onchange="nuMenuBuilder.onModeChange()">
-            <option value="browse">&#x1F5C2; Browse &mdash; list / record view</option>
-            <option value="preview">&#x1F441; Preview &mdash; read-only panel</option>
-          </select>
-        </div>
-      </div>
+      <!-- ══════════════════════════════════════════════════════════
+           Open Mode Section  (form / report / query only)
+      ══════════════════════════════════════════════════════════ -->
+      <div class="nb-open-mode-section" id="nbOpenModeSection">
+        <p class="nb-open-mode-section-title">&#x2699;&#xFE0F; Open Mode Settings</p>
+
+        <div class="nb-open-mode-grid">
+
+          <!-- 1. Default View -->
+          <div class="nb-open-mode-field">
+            <label>
+              Default View
+              <span class="nb-om-hint">opens first on click</span>
+            </label>
+            <div class="nb-mode-pill-row">
+              <button type="button" class="nb-mode-pill selected" id="pillDefaultBrowse"
+                      onclick="nuMenuBuilder.setDefaultView('browse')">
+                <span class="nb-mode-pill-icon">&#x1F5C2;</span>
+                <span class="nb-mode-pill-label">Browse</span>
+              </button>
+              <button type="button" class="nb-mode-pill" id="pillDefaultPreview"
+                      onclick="nuMenuBuilder.setDefaultView('preview')">
+                <span class="nb-mode-pill-icon">&#x1F441;</span>
+                <span class="nb-mode-pill-label">Preview</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. Browse Mode -->
+          <div class="nb-open-mode-field">
+            <label>
+              Browse Opens As
+              <span class="nb-om-hint">list / record view</span>
+            </label>
+            <div class="nb-mode-pill-row">
+              <button type="button" class="nb-mode-pill selected" id="pillBrowseInline"
+                      onclick="nuMenuBuilder.setBrowseMode('inline')">
+                <span class="nb-mode-pill-icon">&#x1F4F0;</span>
+                <span class="nb-mode-pill-label">Inline</span>
+              </button>
+              <button type="button" class="nb-mode-pill" id="pillBrowsePopup"
+                      onclick="nuMenuBuilder.setBrowseMode('popup')">
+                <span class="nb-mode-pill-icon">&#x1F5D4;</span>
+                <span class="nb-mode-pill-label">Popup</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. Preview Mode -->
+          <div class="nb-open-mode-field">
+            <label>
+              Preview Opens As
+              <span class="nb-om-hint">read-only panel</span>
+            </label>
+            <div class="nb-mode-pill-row">
+              <button type="button" class="nb-mode-pill selected" id="pillPreviewInline"
+                      onclick="nuMenuBuilder.setPreviewMode('inline')">
+                <span class="nb-mode-pill-icon">&#x1F4F0;</span>
+                <span class="nb-mode-pill-label">Inline</span>
+              </button>
+              <button type="button" class="nb-mode-pill" id="pillPreviewPopup"
+                      onclick="nuMenuBuilder.setPreviewMode('popup')">
+                <span class="nb-mode-pill-icon">&#x1F5D4;</span>
+                <span class="nb-mode-pill-label">Popup</span>
+              </button>
+            </div>
+          </div>
+
+        </div><!-- end open-mode-grid -->
+      </div><!-- end open-mode-section -->
 
       <!-- ── Icon Picker ── -->
       <div class="nb-fp nb-fp-full">
@@ -416,7 +524,7 @@ $builtinIcons = [
               'alert'      => '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
               'copy'       => '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
               'layout'     => '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>',
-              'group'      => '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>',
+              'group'      => '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>',
               'default'    => '<circle cx="12" cy="12" r="9"/>',
             ];
             foreach ($iconSvgs as $key => $svgBody):
@@ -510,30 +618,45 @@ if (!window._nbMenusModuleInit) {
     divider:'var(--bg-elevated)'
   };
 
-  // Types that support open-mode
   var NB_OPEN_MODE_TYPES = ['form', 'report', 'query'];
+
+  // Internal state for the three open-mode fields
+  var _nbDefaultView  = 'browse';   // 'browse' | 'preview'
+  var _nbBrowseMode   = 'inline';   // 'inline' | 'popup'
+  var _nbPreviewMode  = 'inline';   // 'inline' | 'popup'
 
   window.nuMenuBuilder = {
 
     _currentIconMode: 'builtin',
 
-    // Called whenever either dropdown changes
-    onModeChange: function() {
-      var disp = document.getElementById('menuDisplayMode').value || 'inline';
-      var view = document.getElementById('menuViewMode').value || 'browse';
-      document.getElementById('editOpenMode').value = disp + '|' + view;
+    // ── Open mode pill setters ────────────────────────────────────
+    setDefaultView: function(val) {
+      _nbDefaultView = val;
+      document.getElementById('pillDefaultBrowse').classList.toggle('selected', val === 'browse');
+      document.getElementById('pillDefaultPreview').classList.toggle('selected', val === 'preview');
+      this.updatePreview();
+    },
+    setBrowseMode: function(val) {
+      _nbBrowseMode = val;
+      document.getElementById('pillBrowseInline').classList.toggle('selected', val === 'inline');
+      document.getElementById('pillBrowsePopup').classList.toggle('selected',  val === 'popup');
+      this.updatePreview();
+    },
+    setPreviewMode: function(val) {
+      _nbPreviewMode = val;
+      document.getElementById('pillPreviewInline').classList.toggle('selected', val === 'inline');
+      document.getElementById('pillPreviewPopup').classList.toggle('selected',  val === 'popup');
       this.updatePreview();
     },
 
-    // Restore both dropdowns from a combined 'disp|view' string
-    _restoreOpenMode: function(combined) {
-      var parts = (combined || 'inline|browse').split('|');
-      var disp  = parts[0] || 'inline';
-      var view  = parts[1] || 'browse';
-      document.getElementById('menuDisplayMode').value = disp;
-      document.getElementById('menuViewMode').value    = view;
-      document.getElementById('editOpenMode').value    = disp + '|' + view;
-      this.updatePreview();
+    // ── Restore all three fields from saved values ────────────────
+    _restoreOpenModes: function(browseMode, previewMode, defaultView) {
+      _nbBrowseMode  = ['inline','popup'].indexOf(browseMode)  !== -1 ? browseMode  : 'inline';
+      _nbPreviewMode = ['inline','popup'].indexOf(previewMode) !== -1 ? previewMode : 'inline';
+      _nbDefaultView = ['browse','preview'].indexOf(defaultView) !== -1 ? defaultView : 'browse';
+      this.setDefaultView(_nbDefaultView);
+      this.setBrowseMode(_nbBrowseMode);
+      this.setPreviewMode(_nbPreviewMode);
     },
 
     open: function(parentId, parentLabel) {
@@ -546,20 +669,20 @@ if (!window._nbMenusModuleInit) {
       document.getElementById('menuRoles').value    = '';
       document.getElementById('menuActive').checked = true;
       document.getElementById('editMenuIcon').value = 'default';
-      document.getElementById('menuIconCustom').value = '';
-      document.getElementById('menuIconExtUrl').value  = '';
+      document.getElementById('menuIconCustom').value  = '';
+      document.getElementById('menuIconExtUrl').value   = '';
       document.getElementById('menuParent').value   = parentId || 0;
       document.getElementById('menuTargetSelect').value = '';
       document.getElementById('menuTargetUrl').value    = '';
       document.getElementById('menuTargetCode').value   = '';
       this.switchIconTab('builtin');
       this.selectType('form', document.querySelector('.nb-mtype-card[data-type="form"]'));
-      this._restoreOpenMode('inline|browse');
+      this._restoreOpenModes('inline', 'inline', 'browse');
       document.querySelectorAll('.nb-icon-btn').forEach(function(b){ b.classList.remove('selected'); });
       var defBtn = document.querySelector('.nb-icon-btn[data-icon="default"]');
       if (defBtn) defBtn.classList.add('selected');
-      document.getElementById('menuListSection').style.display = 'none';
-      document.getElementById('menuBuilderCard').style.display = '';
+      document.getElementById('menuListSection').style.display  = 'none';
+      document.getElementById('menuBuilderCard').style.display  = '';
       this.updatePreview();
     },
 
@@ -579,7 +702,6 @@ if (!window._nbMenusModuleInit) {
           var m    = d.menu;
           var type = m.menu_type || 'form';
           var icon = m.menu_icon || 'default';
-          var omode = m.menu_open_mode || 'inline|browse';
 
           document.getElementById('editMenuId').value       = m.menu_id;
           document.getElementById('editMenuParentId').value = m.menu_parent_id || 0;
@@ -594,11 +716,16 @@ if (!window._nbMenusModuleInit) {
           self.selectType(type, typeCard);
 
           var target = m.menu_target || '';
-          if (type === 'url')        document.getElementById('menuTargetUrl').value  = target;
-          else if (type === 'query') document.getElementById('menuTargetCode').value = target;
+          if (type === 'url')        document.getElementById('menuTargetUrl').value    = target;
+          else if (type === 'query') document.getElementById('menuTargetCode').value   = target;
           else                       document.getElementById('menuTargetSelect').value = target;
 
-          self._restoreOpenMode(omode);
+          // Restore three open-mode fields
+          self._restoreOpenModes(
+            m.menu_browse_mode  || 'inline',
+            m.menu_preview_mode || 'inline',
+            m.menu_default_view || 'browse'
+          );
 
           document.getElementById('editMenuIcon').value = icon;
           var isExternal = icon.indexOf('http://') === 0 || icon.indexOf('https://') === 0;
@@ -643,21 +770,20 @@ if (!window._nbMenusModuleInit) {
       var radio = document.querySelector('input[name="menuItemType"][value="' + type + '"]');
       if (radio) radio.checked = true;
 
-      var labelEl  = document.getElementById('menuTargetLabel');
-      var selEl    = document.getElementById('menuTargetSelect');
-      var urlEl    = document.getElementById('menuTargetUrl');
-      var codeEl   = document.getElementById('menuTargetCode');
-      var wrapEl   = document.getElementById('menuTargetWrap');
-      var noticeEl = document.getElementById('nbGroupNotice');
-      var omodeRow = document.getElementById('nbOpenModeRow');
+      var labelEl    = document.getElementById('menuTargetLabel');
+      var selEl      = document.getElementById('menuTargetSelect');
+      var urlEl      = document.getElementById('menuTargetUrl');
+      var codeEl     = document.getElementById('menuTargetCode');
+      var wrapEl     = document.getElementById('menuTargetWrap');
+      var noticeEl   = document.getElementById('nbGroupNotice');
+      var omodeSection = document.getElementById('nbOpenModeSection');
 
       selEl.style.display  = 'none';
       urlEl.style.display  = 'none';
       codeEl.style.display = 'none';
       noticeEl.style.display = 'none';
 
-      // Show open-mode dropdowns only for types that support it
-      omodeRow.style.display = (NB_OPEN_MODE_TYPES.indexOf(type) !== -1) ? '' : 'none';
+      omodeSection.style.display = (NB_OPEN_MODE_TYPES.indexOf(type) !== -1) ? '' : 'none';
 
       if (type === 'form' || type === 'report') {
         wrapEl.style.display = '';
@@ -708,12 +834,14 @@ if (!window._nbMenusModuleInit) {
       var label = document.getElementById('menuLabel').value || 'Label';
       var radio = document.querySelector('input[name="menuItemType"]:checked');
       var type  = radio ? radio.value : 'form';
-      var omode = document.getElementById('editOpenMode').value || 'inline|browse';
 
-      var iconEl    = document.getElementById('nbPreviewIcon');
-      var labelEl   = document.getElementById('nbPreviewLabel');
-      var badgeEl   = document.getElementById('nbPreviewBadge');
-      var modeTagEl = document.getElementById('nbPreviewModeTag');
+      var iconEl        = document.getElementById('nbPreviewIcon');
+      var labelEl       = document.getElementById('nbPreviewLabel');
+      var badgeEl       = document.getElementById('nbPreviewBadge');
+      var modeTagsEl    = document.getElementById('nbPreviewModeTags');
+      var defaultTagEl  = document.getElementById('nbPreviewDefaultTag');
+      var browseTagEl   = document.getElementById('nbPreviewBrowseTag');
+      var previewTagEl  = document.getElementById('nbPreviewPreviewTag');
 
       labelEl.textContent = label;
       badgeEl.textContent = type.charAt(0).toUpperCase() + type.slice(1);
@@ -721,11 +849,18 @@ if (!window._nbMenusModuleInit) {
       badgeEl.style.color      = NB_TYPE_COLORS[type] || NB_TYPE_COLORS.form;
 
       if (NB_OPEN_MODE_TYPES.indexOf(type) !== -1) {
-        var parts = omode.split('|');
-        modeTagEl.style.display = '';
-        modeTagEl.textContent   = (parts[0] || 'inline') + ' \u2022 ' + (parts[1] || 'browse');
+        modeTagsEl.style.display = '';
+        // Default view tag
+        defaultTagEl.className   = 'nb-mode-tag ' + _nbDefaultView;
+        defaultTagEl.textContent = (_nbDefaultView === 'browse' ? '\uD83D\uDDC2' : '\uD83D\uDC41') + ' ' + _nbDefaultView;
+        // Browse mode tag
+        browseTagEl.className    = 'nb-mode-tag ' + _nbBrowseMode;
+        browseTagEl.textContent  = (_nbBrowseMode === 'inline' ? '\uD83D\uDCF0' : '\uD83D\uDDD4') + ' browse';
+        // Preview mode tag
+        previewTagEl.className   = 'nb-mode-tag ' + _nbPreviewMode;
+        previewTagEl.textContent = (_nbPreviewMode === 'inline' ? '\uD83D\uDCF0' : '\uD83D\uDDD4') + ' preview';
       } else {
-        modeTagEl.style.display = 'none';
+        modeTagsEl.style.display = 'none';
       }
 
       var isExternal = icon.indexOf('http://') === 0 || icon.indexOf('https://') === 0;
@@ -748,7 +883,6 @@ if (!window._nbMenusModuleInit) {
       var roles  = document.getElementById('menuRoles').value.trim();
       var active = document.getElementById('menuActive').checked ? 1 : 0;
       var icon   = document.getElementById('editMenuIcon').value || 'default';
-      var omode  = document.getElementById('editOpenMode').value || 'inline|browse';
 
       var target = '';
       if (type === 'url')        target = document.getElementById('menuTargetUrl').value.trim();
@@ -757,9 +891,14 @@ if (!window._nbMenusModuleInit) {
 
       if (!label && type !== 'divider') { document.getElementById('menuLabel').focus(); return; }
 
-      var payload = { id:id, type:type, label:label, target:target,
-                      parent:parent, order:order, roles:roles, active:active,
-                      icon:icon, open_mode:omode };
+      var payload = {
+        id: id, type: type, label: label, target: target,
+        parent: parent, order: order, roles: roles, active: active, icon: icon,
+        browse_mode:  _nbBrowseMode,
+        preview_mode: _nbPreviewMode,
+        default_view: _nbDefaultView
+      };
+
       fetch(NU_MENUS_API + '?action=' + (id ? 'update' : 'create'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
