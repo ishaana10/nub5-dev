@@ -3,13 +3,19 @@ declare(strict_types=1);
 /**
  * NuMenuRenderer
  * Renders the sidebar <nav> from nu_menus, filtered by the current user's role.
+ *
+ * Each navigable link emits three data attributes consumed by NuApp JS:
+ *   data-default-view  = 'browse' | 'preview'
+ *   data-browse-mode   = 'inline' | 'popup'
+ *   data-preview-mode  = 'inline' | 'popup'
  */
 class NuMenuRenderer
 {
+    // ── Built-in SVG icon library ────────────────────────────────────────────
     private static array $icons = [
         'dashboard'  => '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
         'forms'      => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
-        'file-text'  => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+        'file-text'  => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>',
         'reports'    => '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
         'pie-chart'  => '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
         'queries'    => '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
@@ -37,106 +43,145 @@ class NuMenuRenderer
         'default'    => '<circle cx="12" cy="12" r="9"/>',
     ];
 
-    // Types that support open-mode
+    /** Item types that carry open-mode attributes */
     private static array $openModeTypes = ['form', 'report', 'query'];
 
+    // ────────────────────────────────────────────────────────────────────────
+    // Public entry point
+    // ────────────────────────────────────────────────────────────────────────
     public static function render(?array $currentUser): string
     {
         $userRole = strtolower((string)($currentUser['usr_role'] ?? ''));
-        $isAdmin  = ($userRole === 'globeadmin' || $userRole === 'admin');
+        $isAdmin  = in_array($userRole, ['globeadmin', 'admin'], true);
 
-        try {
-            $db   = NuDatabase::getInstance();
-            $rows = $db->fetchAll(
-                "SELECT menu_id, menu_label, menu_type,
-                        COALESCE(menu_target, '') AS menu_target,
-                        COALESCE(menu_code,   '') AS menu_code,
-                        menu_parent_id, menu_order, menu_roles,
-                        menu_active, menu_icon,
-                        COALESCE(menu_open_mode, 'inline') AS menu_open_mode
-                 FROM   nu_menus
-                 WHERE  menu_active = 1
-                 ORDER  BY menu_parent_id ASC, menu_order ASC, menu_id ASC"
-            );
-        } catch (Throwable $e) {
-            // Fallback without menu_open_mode (column may not exist yet)
-            try {
-                $db   = NuDatabase::getInstance();
-                $rows = $db->fetchAll(
-                    "SELECT menu_id, menu_label, menu_type,
-                            COALESCE(menu_target, '') AS menu_target,
-                            '' AS menu_code,
-                            menu_parent_id, menu_order, menu_roles,
-                            menu_active, menu_icon,
-                            'inline' AS menu_open_mode
-                     FROM   nu_menus
-                     WHERE  menu_active = 1
-                     ORDER  BY menu_parent_id ASC, menu_order ASC, menu_id ASC"
-                );
-            } catch (Throwable $e2) {
-                error_log('[MenuRenderer] ' . $e2->getMessage());
-                return '';
-            }
-        }
-
+        $rows = self::fetchMenuRows();
         if (empty($rows)) return '';
 
+        // ── Role filtering ───────────────────────────────────────────────────
         $visible = array_filter($rows, static function (array $item) use ($userRole, $isAdmin): bool {
-            $roles = trim($item['menu_roles'] ?? '');
-            if ($roles === '') return true;
-            if ($isAdmin)      return true;
+            // menu_role_access: blank = visible to everyone
+            $roles = trim($item['menu_role_access'] ?? '');
+            if ($roles === '' || $isAdmin) return true;
             $allowed = array_map('trim', explode(',', strtolower($roles)));
             return in_array($userRole, $allowed, true);
         });
 
+        if (empty($visible)) return '';
+
+        // ── Build parent → children map ──────────────────────────────────────
         $topLevel = [];
-        $children = [];
+        $childMap = [];
         foreach ($visible as $item) {
-            $pid = (int)$item['menu_parent_id'];
+            $pid = (int)($item['menu_parent_id'] ?? 0);
             if ($pid === 0) {
                 $topLevel[] = $item;
             } else {
-                $children[$pid][] = $item;
+                $childMap[$pid][] = $item;
             }
         }
 
         if (empty($topLevel)) return '';
 
+        // ── Render ───────────────────────────────────────────────────────────
         $html = "\n<nav class=\"nu-nav\" id=\"nuDynNav\">\n";
         foreach ($topLevel as $item) {
-            $html .= self::renderItem($item, $children[$item['menu_id']] ?? []);
+            $html .= self::renderItem($item, $childMap[(int)$item['menu_id']] ?? []);
         }
         $html .= "</nav>\n";
         return $html;
     }
 
+    // ────────────────────────────────────────────────────────────────────────
+    // DB fetch — tries the full column list first, falls back for old schemas
+    // ────────────────────────────────────────────────────────────────────────
+    private static function fetchMenuRows(): array
+    {
+        $db = NuDatabase::getInstance();
+
+        // Primary query — all columns incl. phase-8 additions
+        try {
+            return $db->fetchAll(
+                "SELECT
+                    menu_id, menu_label, menu_type,
+                    COALESCE(menu_target,      '')       AS menu_target,
+                    COALESCE(menu_code,        '')       AS menu_code,
+                    menu_parent_id, menu_order,
+                    COALESCE(menu_role_access, '')       AS menu_role_access,
+                    menu_active,
+                    COALESCE(menu_icon,        'default') AS menu_icon,
+                    COALESCE(menu_browse_mode,  'inline') AS menu_browse_mode,
+                    COALESCE(menu_preview_mode, 'inline') AS menu_preview_mode,
+                    COALESCE(menu_default_view, 'browse') AS menu_default_view
+                 FROM  nu_menus
+                 WHERE menu_active = 1
+                 ORDER BY menu_parent_id ASC, menu_order ASC, menu_id ASC"
+            );
+        } catch (Throwable $e) {
+            error_log('[MenuRenderer] Phase-8 columns missing, using fallback: ' . $e->getMessage());
+        }
+
+        // Fallback — derive from old menu_open_mode combined string
+        try {
+            $rows = $db->fetchAll(
+                "SELECT
+                    menu_id, menu_label, menu_type,
+                    COALESCE(menu_target,      '')       AS menu_target,
+                    COALESCE(menu_code,        '')       AS menu_code,
+                    menu_parent_id, menu_order,
+                    COALESCE(menu_role_access, '')       AS menu_role_access,
+                    menu_active,
+                    COALESCE(menu_icon,        'default') AS menu_icon,
+                    COALESCE(menu_open_mode,   'inline|browse') AS menu_open_mode
+                 FROM  nu_menus
+                 WHERE menu_active = 1
+                 ORDER BY menu_parent_id ASC, menu_order ASC, menu_id ASC"
+            );
+
+            // Split the legacy combined string into individual columns
+            return array_map(static function (array $row): array {
+                $parts = explode('|', $row['menu_open_mode'] ?? 'inline|browse', 2);
+                $disp  = in_array($parts[0] ?? '', ['inline','popup']) ? $parts[0] : 'inline';
+                $view  = in_array($parts[1] ?? '', ['browse','preview']) ? $parts[1] : 'browse';
+                $row['menu_browse_mode']  = $disp;
+                $row['menu_preview_mode'] = 'inline';   // safe default for legacy
+                $row['menu_default_view'] = $view;
+                return $row;
+            }, $rows);
+
+        } catch (Throwable $e2) {
+            error_log('[MenuRenderer] Fallback query also failed: ' . $e2->getMessage());
+            return [];
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Render a single item (recursively renders children inside groups)
+    // ────────────────────────────────────────────────────────────────────────
     private static function renderItem(array $item, array $kids): string
     {
-        $type     = $item['menu_type'];
-        $label    = htmlspecialchars((string)$item['menu_label'], ENT_QUOTES, 'UTF-8');
-        $iconKey  = strtolower(trim($item['menu_icon'] ?? 'default'));
-        $svgBody  = self::$icons[$iconKey] ?? self::$icons['default'];
-        $openMode = htmlspecialchars(trim($item['menu_open_mode'] ?? 'inline'), ENT_QUOTES, 'UTF-8');
+        $type   = (string)($item['menu_type'] ?? 'form');
+        $label  = htmlspecialchars((string)($item['menu_label'] ?? ''), ENT_QUOTES, 'UTF-8');
 
+        // ── Divider ──────────────────────────────────────────────────────────
         if ($type === 'divider') {
             return "<hr class=\"nu-nav-divider\">\n";
         }
 
-        $rawTarget = trim($item['menu_target'] ?? '');
-        $rawCode   = trim($item['menu_code']   ?? '');
+        // ── Icon (built-in SVG | external URL | emoji/text) ──────────────────
+        $iconHtml = self::resolveIcon($item['menu_icon'] ?? 'default');
 
-        // ── Group: collapsible, toggle-only ──────────────────────────────────
+        // ── Group with children ──────────────────────────────────────────────
         if (!empty($kids)) {
             $groupId = 'nu-group-' . (int)$item['menu_id'];
-
             $out  = "<div class=\"nu-nav-group\">\n";
-            $out .= "  <button class=\"nu-nav-group-label\" type=\"button\"";
-            $out .= " aria-expanded=\"true\" aria-controls=\"{$groupId}\"";
-            $out .= ">\n";
-            $out .= self::svgIcon($svgBody);
-            $out .= "  <span>{$label}</span>\n";
-            $out .= "  <svg class=\"nu-nav-chevron\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"/></svg>\n";
-            $out .= "</button>\n";
+            $out .= "  <button class=\"nu-nav-group-label\" type=\"button\"
+                        aria-expanded=\"true\" aria-controls=\"{$groupId}\">\n";
+            $out .= $iconHtml;
+            $out .= "    <span>{$label}</span>\n";
+            $out .= "    <svg class=\"nu-nav-chevron\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\"
+                        fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\">
+                        <polyline points=\"6 9 12 15 18 9\"/></svg>\n";
+            $out .= "  </button>\n";
             $out .= "  <ul class=\"nu-nav-children\" id=\"{$groupId}\">\n";
             foreach ($kids as $child) {
                 $out .= "    <li>" . self::renderItem($child, []) . "</li>\n";
@@ -146,41 +191,109 @@ class NuMenuRenderer
             return $out;
         }
 
-        // ── URL item ──────────────────────────────────────────────────────────
+        // ── URL item (external link) ─────────────────────────────────────────
         if ($type === 'url') {
-            $href = htmlspecialchars($rawTarget ?: $rawCode ?: '#', ENT_QUOTES, 'UTF-8');
+            $rawTarget = trim($item['menu_target'] ?? $item['menu_code'] ?? '');
+            $href = htmlspecialchars($rawTarget ?: '#', ENT_QUOTES, 'UTF-8');
             $out  = "<a href=\"{$href}\" class=\"nu-nav-item\" target=\"_blank\" rel=\"noopener noreferrer\">\n";
-            $out .= self::svgIcon($svgBody);
+            $out .= $iconHtml;
             $out .= "  <span>{$label}</span>\n";
             $out .= "</a>\n";
             return $out;
         }
 
-        // ── Standard leaf item ────────────────────────────────────────────────
-        $module = $rawTarget !== '' ? $rawTarget : $rawCode;
+        // ── Standard leaf item (form / report / query) ───────────────────────
+        $module = trim($item['menu_target'] ?? '') !== ''
+            ? trim($item['menu_target'])
+            : trim($item['menu_code'] ?? '');
+
         if ($module === '') {
-            return "<!-- nu_menus id={$item['menu_id']} skipped: no target or code -->\n";
+            return "<!-- nu_menus id={$item['menu_id']} skipped: no target/code -->\n";
         }
+
         $moduleSafe = htmlspecialchars($module, ENT_QUOTES, 'UTF-8');
 
-        // For types that support open-mode, pass it as a data attribute
-        // NuApp.loadModule() reads data-open-mode to decide inline/popup/preview/browse
-        $openModeAttr = in_array($type, self::$openModeTypes, true)
-            ? " data-open-mode=\"{$openMode}\""
-            : '';
+        // Resolve and sanitise the three open-mode values
+        $browseMode  = self::sanitiseDisplay($item['menu_browse_mode']  ?? 'inline');
+        $previewMode = self::sanitiseDisplay($item['menu_preview_mode'] ?? 'inline');
+        $defaultView = self::sanitiseView($item['menu_default_view']    ?? 'browse');
 
-        // Use javascript:void(0) as href so no hashchange event fires
-        $out  = "<a href=\"javascript:void(0)\" class=\"nu-nav-item\" data-module=\"{$moduleSafe}\"{$openModeAttr}\n";
-        $out .= "   onclick=\"NuApp.loadModule('{$moduleSafe}', '{$openMode}'); return false;\">\n";
-        $out .= self::svgIcon($svgBody);
+        // Build data-* attributes only for types that support open-mode
+        $openAttrs = '';
+        if (in_array($type, self::$openModeTypes, true)) {
+            $openAttrs  = " data-default-view=\"{$defaultView}\"";
+            $openAttrs .= " data-browse-mode=\"{$browseMode}\"";
+            $openAttrs .= " data-preview-mode=\"{$previewMode}\"";
+        }
+
+        // JS call passes all three values so NuApp can decide how to open
+        $jsCall = "NuApp.loadModule("
+            . "'{$moduleSafe}',"
+            . "'{$defaultView}',"
+            . "'{$browseMode}',"
+            . "'{$previewMode}'"
+            . "); return false;";
+
+        $out  = "<a href=\"javascript:void(0)\" class=\"nu-nav-item\"
+               data-module=\"{$moduleSafe}\"{$openAttrs}\n";
+        $out .= "   onclick=\"{$jsCall}\">\n";
+        $out .= $iconHtml;
         $out .= "  <span>{$label}</span>\n";
         $out .= "</a>\n";
         return $out;
     }
 
-    private static function svgIcon(string $body): string
+    // ────────────────────────────────────────────────────────────────────────
+    // Icon resolution
+    // ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Returns ready-to-embed HTML for an icon.
+     * Handles three cases:
+     *   1. Built-in key  → inline <svg>
+     *   2. http(s):// URL → <img> tag
+     *   3. Anything else → <span> (emoji / custom text)
+     */
+    private static function resolveIcon(string $raw): string
     {
-        if ($body === '') return '';
-        return "  <svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\">\n    {$body}\n  </svg>\n";
+        $raw = trim($raw);
+        if ($raw === '') $raw = 'default';
+
+        // External URL
+        if (str_starts_with($raw, 'http://') || str_starts_with($raw, 'https://')) {
+            $src = htmlspecialchars($raw, ENT_QUOTES, 'UTF-8');
+            return "  <img src=\"{$src}\" class=\"nu-nav-icon-img\"
+                       width=\"20\" height=\"20\" alt=\"\" aria-hidden=\"true\">\n";
+        }
+
+        // Built-in SVG
+        $key     = strtolower($raw);
+        $svgBody = self::$icons[$key] ?? null;
+        if ($svgBody !== null) {
+            if ($svgBody === '') return '';  // divider has no icon
+            return "  <svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\"
+                       fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\">\n"
+                 . "    {$svgBody}\n  </svg>\n";
+        }
+
+        // Emoji / custom text fallback
+        $safe = htmlspecialchars($raw, ENT_QUOTES, 'UTF-8');
+        return "  <span class=\"nu-nav-icon-emoji\" aria-hidden=\"true\">{$safe}</span>\n";
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Value sanitisers (mirror the PHP API helpers)
+    // ────────────────────────────────────────────────────────────────────────
+
+    private static function sanitiseDisplay(string $v): string
+    {
+        $v = strtolower(trim($v));
+        return in_array($v, ['inline', 'popup'], true) ? $v : 'inline';
+    }
+
+    private static function sanitiseView(string $v): string
+    {
+        $v = strtolower(trim($v));
+        return in_array($v, ['browse', 'preview'], true) ? $v : 'browse';
     }
 }
