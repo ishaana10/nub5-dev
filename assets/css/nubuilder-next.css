@@ -121,6 +121,8 @@ body {
   background: rgba(255,255,255,.15);
   border-radius: 4px;
 }
+
+/* ── Standard nav items (flat links) ── */
 .nu-nav-item {
   display: flex;
   align-items: center;
@@ -146,6 +148,113 @@ body {
 }
 /* hide admin label in collapsed mode */
 .nu-app.sidebar-collapsed .nu-nav [style*="font-size:10px"] { display: none; }
+
+/* ── Collapsible nav groups ─────────────────────────────────────────────────
+   Rendered by MenuRenderer::renderItem() for type=group rows.
+   Structure:
+     <div class="nu-nav-group">
+       <button class="nu-nav-group-label" aria-expanded="true|false">
+         <svg/>  <span>Label</span>  <svg class="nu-nav-chevron"/>
+       </button>
+       <ul class="nu-nav-children" id="nu-group-{id}">
+         <li><a class="nu-nav-item">…</a></li>
+       </ul>
+     </div>
+   Toggle: JS adds/removes nu-nav-children--collapsed on the <ul>.
+   Chevron rotates via aria-expanded on the button.
+*/
+
+.nu-nav-group {
+  margin-bottom: 2px;
+}
+
+/* The group header button */
+.nu-nav-group-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background var(--transition), color var(--transition);
+  /* push chevron to the right */
+  justify-content: flex-start;
+}
+.nu-nav-group-label:hover {
+  background: var(--bg-sidebar-hover);
+  color: #fff;
+}
+.nu-nav-group-label svg:first-child {
+  flex-shrink: 0;
+  opacity: .6;
+}
+.nu-nav-group-label span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Chevron — sits at the end, rotates when collapsed */
+.nu-nav-chevron {
+  flex-shrink: 0;
+  transition: transform .2s ease;
+  margin-left: auto;
+  opacity: .6;
+}
+/* When aria-expanded=false the button signals collapsed state */
+.nu-nav-group-label[aria-expanded="false"] .nu-nav-chevron {
+  transform: rotate(-90deg);
+}
+
+/* Children list */
+.nu-nav-children {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 4px 0;
+  overflow: hidden;
+  /* Smooth height animation */
+  max-height: 1000px;
+  transition: max-height .25s ease, opacity .2s ease;
+  opacity: 1;
+}
+/* Collapsed state — toggled by JS */
+.nu-nav-children--collapsed {
+  max-height: 0 !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Indent child items slightly */
+.nu-nav-children .nu-nav-item {
+  padding-left: 16px;
+}
+
+/* Divider */
+.nu-nav-divider {
+  border: none;
+  border-top: 1px solid rgba(255,255,255,.07);
+  margin: 6px 8px;
+}
+
+/* Collapsed sidebar: hide group labels */
+.nu-app.sidebar-collapsed .nu-nav-group-label span,
+.nu-app.sidebar-collapsed .nu-nav-chevron { display: none; }
+.nu-app.sidebar-collapsed .nu-nav-group-label {
+  justify-content: center;
+  padding: 10px;
+}
 
 /* ── Sidebar footer ── */
 .nu-sidebar-footer {
@@ -384,9 +493,7 @@ body {
 .nb-tab-panel.active { display: block; }
 .nb-canvas.drag-over { border: 2px dashed var(--primary); background: rgba(14,165,233,.04); }
 
-/* ── col-span badge on field cards ──────────────────────────────────────────
-   Shows "col-6" etc. next to the type badge so the designer can see span at a
-   glance without opening the field panel.                                     */
+/* ── col-span badge on field cards ──────────────────────────────────────────*/
 .nb-col-badge {
   display: inline-flex;
   align-items: center;
@@ -403,8 +510,7 @@ body {
   user-select: none;
 }
 
-/* ── Canvas toolbar  (+ Row | + Section | + Group) ──────────────────────────
-   Sits above the canvas drop zone.                                            */
+/* ── Canvas toolbar ──────────────────────────────────────────────────────────*/
 .nb-canvas-toolbar {
   display: flex;
   gap: 8px;
@@ -418,8 +524,7 @@ body {
 .drag-source   { opacity: .45; }
 .drag-over     { outline: 2px dashed var(--primary); outline-offset: 2px; background: rgba(14,165,233,.04) !important; border-radius: var(--radius-sm); }
 
-/* ── Container drag handle ───────────────────────────────────────────────────
-   The ⠇ grip icon that appears in section / group / row headers.             */
+/* ── Container drag handle ───────────────────────────────────────────────────*/
 .nb-container-drag {
   cursor: grab;
   font-size: 18px;
@@ -442,7 +547,6 @@ body {
 }
 .nb-row:hover { border-color: var(--primary); }
 
-/* The actual 12-col CSS grid drop zone inside a row */
 .nb-row-drop {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
@@ -450,11 +554,7 @@ body {
   min-height: 52px;
   align-items: start;
 }
-/* Field cards inside a row span their col value */
-.nb-row-drop > .nb-cfield {
-  /* col span is applied inline via dataset.col — handled via JS */
-  margin-bottom: 0;
-}
+.nb-row-drop > .nb-cfield { margin-bottom: 0; }
 
 /* ══ Builder canvas — SECTION container ════════════════════════════════════ */
 .nb-section {
@@ -468,7 +568,6 @@ body {
 .nb-section:focus-within { box-shadow: 0 0 0 3px rgba(14,165,233,.15); }
 
 .nb-section > div:first-child {
-  /* section header bar */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -479,12 +578,9 @@ body {
   border-bottom: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
 }
 
-.nb-section-body {
-  padding: 12px;
-}
+.nb-section-body { padding: 12px; }
 .nb-section-body.collapsed { display: none; }
 
-/* inline label input in the section header — looks like a heading */
 .nb-section-label {
   flex: 1;
   font-weight: 700;
@@ -520,9 +616,7 @@ body {
   border-bottom: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 25%, transparent);
 }
 
-.nb-group-body {
-  padding: 10px 12px;
-}
+.nb-group-body { padding: 10px 12px; }
 .nb-group-body.collapsed { display: none; }
 
 .nb-group-label {
@@ -538,12 +632,7 @@ body {
 }
 .nb-group-label::placeholder { color: color-mix(in srgb, var(--warning, #f59e0b) 50%, transparent); }
 
-/* ══ PREVIEW FORM — nu-generated-form ════════════════════════════════════════
-   Styles for the HTML produced by nu_render_form_html() / nu_render_layout_node()
-   These apply inside the preview modal and the edit-record modal.            */
-
-/* Every field wrapper sits inside a 12-col grid row.
-   grid-column:span N is set inline by the PHP renderer.                      */
+/* ══ PREVIEW FORM — nu-generated-form ════════════════════════════════════════*/
 .nu-field-wrapper {
   display: flex;
   flex-direction: column;
@@ -558,7 +647,6 @@ body {
   display: block;
 }
 
-/* Row: 12-col grid */
 .nu-form-row {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
@@ -567,7 +655,6 @@ body {
   align-items: start;
 }
 
-/* ── Preview SECTION ─────────────────────────────────────────────────────────*/
 .nu-section {
   border-radius: 10px;
   margin-bottom: 20px;
@@ -585,11 +672,8 @@ body {
 .nu-section-header[onclick] { cursor: pointer; }
 .nu-section-header:has([data-target]):hover { filter: brightness(.97); }
 
-.nu-section-body {
-  padding: 16px;
-}
+.nu-section-body { padding: 16px; }
 
-/* collapse/expand triangle button */
 .nu-section-toggle,
 .nu-group-toggle {
   background: none;
@@ -602,7 +686,6 @@ body {
   transition: transform .2s;
 }
 
-/* ── Preview GROUP ───────────────────────────────────────────────────────────*/
 .nu-group {
   border: 1px solid var(--border-color, #e2e8f0);
   border-radius: 8px;
@@ -622,11 +705,8 @@ body {
 }
 .nu-group-header[onclick] { cursor: pointer; }
 
-.nu-group-body {
-  padding: 14px;
-}
+.nu-group-body { padding: 14px; }
 
-/* ── Inputs inside generated forms ──────────────────────────────────────────*/
 .nu-generated-form .nu-input {
   width: 100%;
   padding: 8px 11px;
@@ -644,17 +724,11 @@ body {
   box-shadow: 0 0 0 3px rgba(14,165,233,.12);
 }
 
-/* Submit button row at bottom of generated form */
 .nu-generated-form > [type="submit"],
-.nu-generated-form .nu-form-footer {
-  margin-top: 20px;
-}
+.nu-generated-form .nu-form-footer { margin-top: 20px; }
 
-/* ── Dark-mode overrides for preview form ───────────────────────────────────*/
 [data-theme="dark"] .nu-section,
-[data-theme="dark"] .nu-group {
-  background: var(--bg-card);
-}
+[data-theme="dark"] .nu-group { background: var(--bg-card); }
 [data-theme="dark"] .nu-group-header {
   background: var(--bg-subtle);
   border-color: var(--border-color);
