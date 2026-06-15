@@ -118,7 +118,9 @@ class NuMenuRenderer
         $rawTarget = trim($item['menu_target'] ?? '');
         $rawCode   = trim($item['menu_code']   ?? '');
 
-        // ── Any item that has children renders as a collapsible group ─────────
+        // ── Any item that has children renders as a collapsible group.
+        //    The group-label button is TOGGLE-ONLY — no onclick, no data-module.
+        //    All navigation is handled exclusively by the child <a> items. ──────
         if (!empty($kids)) {
             $groupId = 'nu-group-' . (int)$item['menu_id'];
 
@@ -149,54 +151,18 @@ class NuMenuRenderer
             return $out;
         }
 
-        // ── Form item — split button: primary action + dropdown for open modes ─
-        if ($type === 'form') {
-            $formCode = $rawTarget !== '' ? $rawTarget : $rawCode;
-            if ($formCode === '') {
-                return "<!-- nu_menus id={$item['menu_id']} skipped: no form code -->\n";
-            }
-            $codeSafe  = htmlspecialchars($formCode, ENT_QUOTES, 'UTF-8');
-            $labelSafe = htmlspecialchars($label,    ENT_QUOTES, 'UTF-8');
-            $menuId    = (int)$item['menu_id'];
-
-            $out  = "<div class=\"nu-nav-form-item nu-nav-item\" data-module=\"{$codeSafe}\">\n";
-            $out .= "  <button class=\"nu-nav-form-main\" type=\"button\"\n";
-            $out .= "          onclick=\"NuApp.browseForm('{$codeSafe}',1,'','{$labelSafe}','inline'); return false;\">\n";
-            $out .= self::svgIcon($svgBody);
-            $out .= "    <span>{$label}</span>\n";
-            $out .= "  </button>\n";
-            $out .= "  <button class=\"nu-nav-form-caret\" type=\"button\" aria-label=\"Open options\"\n";
-            $out .= "          onclick=\"event.stopPropagation();this.closest('.nu-nav-form-item').querySelector('.nu-nav-form-dropdown').classList.toggle('open');\">\n";
-            $out .= "    <svg width=\"10\" height=\"10\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"/></svg>\n";
-            $out .= "  </button>\n";
-            $out .= "  <ul class=\"nu-nav-form-dropdown\" id=\"nu-form-dd-{$menuId}\">\n";
-            $out .= "    <li><button type=\"button\" onclick=\"NuApp.browseForm('{$codeSafe}',1,'','{$labelSafe}','inline');this.closest('.nu-nav-form-dropdown').classList.remove('open');\">\n";
-            $out .= "      <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><line x1=\"3\" y1=\"9\" x2=\"21\" y2=\"9\"/><line x1=\"9\" y1=\"21\" x2=\"9\" y2=\"9\"/></svg>\n";
-            $out .= "      Open Inline</button></li>\n";
-            $out .= "    <li><button type=\"button\" onclick=\"NuApp.previewForm('{$codeSafe}','{$labelSafe}','modal');this.closest('.nu-nav-form-dropdown').classList.remove('open');\">\n";
-            $out .= "      <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/></svg>\n";
-            $out .= "      Preview Form</button></li>\n";
-            $out .= "    <li><button type=\"button\" onclick=\"NuApp.browseForm('{$codeSafe}',1,'','{$labelSafe}','modal');this.closest('.nu-nav-form-dropdown').classList.remove('open');\">\n";
-            $out .= "      <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><rect x=\"5\" y=\"2\" width=\"14\" height=\"20\" rx=\"2\"/></svg>\n";
-            $out .= "      Open Popup</button></li>\n";
-            $out .= "  </ul>\n";
-            $out .= "</div>\n";
-            return $out;
-        }
-
-        // ── Standard leaf item (module) ───────────────────────────────────────
+        // ── Standard leaf item (module or form) ───────────────────────────────────
         $module = $rawTarget !== '' ? $rawTarget : $rawCode;
         if ($module === '') {
             return "<!-- nu_menus id={$item['menu_id']} skipped: no target or code -->\n";
         }
         $moduleSafe = htmlspecialchars($module, ENT_QUOTES, 'UTF-8');
 
-        // Use button+onclick instead of <a href="#..."> to avoid triggering hashchange
-        $out  = "<button class=\"nu-nav-item\" type=\"button\" data-module=\"{$moduleSafe}\"\n";
-        $out .= "        onclick=\"NuApp.loadModule('{$moduleSafe}')\">\n";
+        $out  = "<a href=\"#{$moduleSafe}\" class=\"nu-nav-item\" data-module=\"{$moduleSafe}\"\n";
+        $out .= "   onclick=\"NuApp.loadModule('{$moduleSafe}'); return false;\">\n";
         $out .= self::svgIcon($svgBody);
         $out .= "  <span>{$label}</span>\n";
-        $out .= "</button>\n";
+        $out .= "</a>\n";
         return $out;
     }
 
