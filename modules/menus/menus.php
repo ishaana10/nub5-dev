@@ -77,6 +77,7 @@ $builtinIcons = [
 #menuBuilderCard .nb-fp-full { grid-column:1/-1; }
 
 .nb-mtype-cards { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:0; }
+/* Each card now carries data-type="form" etc for safe JS lookup */
 .nb-mtype-card { flex:1; min-width:90px; border:2px solid var(--border-color); border-radius:10px; padding:10px 8px; cursor:pointer; background:var(--bg-surface); transition:all .15s; text-align:center; }
 .nb-mtype-card:hover { border-color:var(--color-primary); background:var(--bg-elevated); }
 .nb-mtype-card.selected { border-color:var(--color-primary); background:color-mix(in oklch,var(--color-primary) 8%,var(--bg-surface)); }
@@ -257,28 +258,29 @@ $builtinIcons = [
 
     <div style="margin-bottom:16px;">
       <label class="nu-label" style="margin-bottom:8px;display:block;">Item Type</label>
+      <!-- data-type attribute used for safe JS lookup — no querySelector-on-onclick needed -->
       <div class="nb-mtype-cards" id="nbMenuTypeCards">
-        <label class="nb-mtype-card selected" onclick="nuMenuBuilder.selectType('form',this)">
+        <label class="nb-mtype-card selected" data-type="form" onclick="nuMenuBuilder.selectType('form',this)">
           <input type="radio" name="menuItemType" value="form" checked>
           <div class="nb-mtype-icon">&#x229E;</div><div class="nb-mtype-label">Form</div>
         </label>
-        <label class="nb-mtype-card" onclick="nuMenuBuilder.selectType('report',this)">
+        <label class="nb-mtype-card" data-type="report" onclick="nuMenuBuilder.selectType('report',this)">
           <input type="radio" name="menuItemType" value="report">
           <div class="nb-mtype-icon">&#x1F4CA;</div><div class="nb-mtype-label">Report</div>
         </label>
-        <label class="nb-mtype-card" onclick="nuMenuBuilder.selectType('query',this)">
+        <label class="nb-mtype-card" data-type="query" onclick="nuMenuBuilder.selectType('query',this)">
           <input type="radio" name="menuItemType" value="query">
           <div class="nb-mtype-icon">&#x1F50D;</div><div class="nb-mtype-label">Query</div>
         </label>
-        <label class="nb-mtype-card" onclick="nuMenuBuilder.selectType('url',this)">
+        <label class="nb-mtype-card" data-type="url" onclick="nuMenuBuilder.selectType('url',this)">
           <input type="radio" name="menuItemType" value="url">
           <div class="nb-mtype-icon">&#x1F517;</div><div class="nb-mtype-label">URL</div>
         </label>
-        <label class="nb-mtype-card" onclick="nuMenuBuilder.selectType('group',this)">
+        <label class="nb-mtype-card" data-type="group" onclick="nuMenuBuilder.selectType('group',this)">
           <input type="radio" name="menuItemType" value="group">
           <div class="nb-mtype-icon">&#x1F4C2;</div><div class="nb-mtype-label">Group</div>
         </label>
-        <label class="nb-mtype-card" onclick="nuMenuBuilder.selectType('divider',this)">
+        <label class="nb-mtype-card" data-type="divider" onclick="nuMenuBuilder.selectType('divider',this)">
           <input type="radio" name="menuItemType" value="divider">
           <div class="nb-mtype-icon">&mdash;</div><div class="nb-mtype-label">Divider</div>
         </label>
@@ -353,7 +355,6 @@ $builtinIcons = [
         <div class="nb-icon-tab-pane active" id="nbIconPaneBuiltin">
           <div class="nb-icon-grid" id="iconGrid">
             <?php
-            // SVG paths keyed by name — mirrors MenuRenderer::$icons
             $iconSvgs = [
               'dashboard'  => '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
               'forms'      => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
@@ -431,7 +432,6 @@ if (!window._nbMenusModuleInit) {
 
   var NU_MENUS_API = 'modules/menus/api/menus.php';
 
-  // Built-in icon SVG bodies (mirrors MenuRenderer.php) for live preview
   var NB_ICON_SVGS = {
     'dashboard' :'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
     'forms'     :'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
@@ -476,7 +476,7 @@ if (!window._nbMenusModuleInit) {
 
   window.nuMenuBuilder = {
 
-    _currentIconMode: 'builtin', // 'builtin' | 'external' | 'emoji'
+    _currentIconMode: 'builtin',
 
     open: function(parentId, parentLabel) {
       document.getElementById('editMenuId').value       = '';
@@ -494,8 +494,8 @@ if (!window._nbMenusModuleInit) {
       document.getElementById('menuTargetSelect').value = '';
       document.getElementById('menuTargetUrl').value    = '';
       document.getElementById('menuTargetCode').value   = '';
-      this.switchIconTab('builtin', document.querySelector('.nb-icon-tab'));
-      this.selectType('form', document.querySelector('.nb-mtype-card'));
+      this.switchIconTab('builtin');
+      this.selectType('form', document.querySelector('.nb-mtype-card[data-type="form"]'));
       document.querySelectorAll('.nb-icon-btn').forEach(function(b){ b.classList.remove('selected'); });
       var defBtn = document.querySelector('.nb-icon-btn[data-icon="default"]');
       if (defBtn) defBtn.classList.add('selected');
@@ -530,29 +530,29 @@ if (!window._nbMenusModuleInit) {
           document.getElementById('menuActive').checked = (m.menu_active == 1);
           document.getElementById('menuParent').value   = m.menu_parent_id || 0;
 
-          var typeCard = document.querySelector('.nb-mtype-card[onclick*="\'" + type + "\'"]');
+          // FIXED: use data-type attribute instead of broken onclick querySelector
+          var typeCard = document.querySelector('.nb-mtype-card[data-type="' + type + '"]');
           self.selectType(type, typeCard);
 
           var target = m.menu_target || '';
-          if (type === 'url')   document.getElementById('menuTargetUrl').value  = target;
+          if (type === 'url')        document.getElementById('menuTargetUrl').value  = target;
           else if (type === 'query') document.getElementById('menuTargetCode').value = target;
-          else document.getElementById('menuTargetSelect').value = target;
+          else                       document.getElementById('menuTargetSelect').value = target;
 
-          // Determine icon mode
           document.getElementById('editMenuIcon').value = icon;
-          var isExternal = icon.startsWith('http://') || icon.startsWith('https://');
+          var isExternal = icon.indexOf('http://') === 0 || icon.indexOf('https://') === 0;
           var isBuiltin  = !isExternal && (icon in NB_ICON_SVGS);
           if (isExternal) {
-            self.switchIconTab('external', null);
+            self.switchIconTab('external');
             document.getElementById('menuIconExtUrl').value = icon;
             self.setExternalIcon(icon);
           } else if (isBuiltin) {
-            self.switchIconTab('builtin', null);
+            self.switchIconTab('builtin');
             document.querySelectorAll('.nb-icon-btn').forEach(function(b){
               b.classList.toggle('selected', b.dataset.icon === icon);
             });
           } else {
-            self.switchIconTab('emoji', null);
+            self.switchIconTab('emoji');
             document.getElementById('menuIconCustom').value = icon;
           }
 
@@ -563,16 +563,16 @@ if (!window._nbMenusModuleInit) {
         .catch(function(e) { console.error(e); alert('Network error loading menu item.'); });
     },
 
-    switchIconTab: function(mode, clickedBtn) {
+    switchIconTab: function(mode) {
       this._currentIconMode = mode;
       document.querySelectorAll('.nb-icon-tab').forEach(function(t){ t.classList.remove('active'); });
       document.querySelectorAll('.nb-icon-tab-pane').forEach(function(p){ p.classList.remove('active'); });
-      var tabEl  = document.getElementById('nbIconPane' + mode.charAt(0).toUpperCase() + mode.slice(1));
-      if (tabEl) tabEl.classList.add('active');
-      // Activate matching tab button
-      var tabs = document.querySelectorAll('.nb-icon-tab');
+      var paneId = 'nbIconPane' + mode.charAt(0).toUpperCase() + mode.slice(1);
+      var pane = document.getElementById(paneId);
+      if (pane) pane.classList.add('active');
       var modes = ['builtin','external','emoji'];
       var idx = modes.indexOf(mode);
+      var tabs = document.querySelectorAll('.nb-icon-tab');
       if (tabs[idx]) tabs[idx].classList.add('active');
     },
 
@@ -598,7 +598,6 @@ if (!window._nbMenusModuleInit) {
         wrapEl.style.display = '';
         labelEl.textContent  = (type === 'form') ? 'Form' : 'Report';
         selEl.style.display  = '';
-        Array.from(selEl.options).forEach(function(opt){ opt.style.display = ''; });
       } else if (type === 'query') {
         wrapEl.style.display = '';
         labelEl.textContent  = 'Query Code';
@@ -608,8 +607,7 @@ if (!window._nbMenusModuleInit) {
         labelEl.textContent  = 'URL';
         urlEl.style.display  = '';
       } else {
-        // group / divider — no target, show info notice for group
-        wrapEl.style.display   = 'none';
+        wrapEl.style.display = 'none';
         if (type === 'group') noticeEl.style.display = '';
       }
       this.updatePreview();
@@ -626,7 +624,7 @@ if (!window._nbMenusModuleInit) {
       document.getElementById('editMenuIcon').value = val || 'default';
       var previewWrap = document.getElementById('nbExtIconPreview');
       var previewImg  = document.getElementById('nbExtIconImg');
-      if (val && (val.startsWith('http://') || val.startsWith('https://'))) {
+      if (val && (val.indexOf('http://') === 0 || val.indexOf('https://') === 0)) {
         previewImg.src  = val;
         previewWrap.style.display = 'flex';
       } else {
@@ -637,16 +635,14 @@ if (!window._nbMenusModuleInit) {
 
     setCustomIcon: function(val) {
       document.getElementById('editMenuIcon').value = val || 'default';
-      document.querySelectorAll('.nb-icon-btn').forEach(function(b){
-        b.classList.toggle('selected', b.dataset.icon === val);
-      });
       this.updatePreview();
     },
 
     updatePreview: function() {
       var icon  = document.getElementById('editMenuIcon').value || 'default';
       var label = document.getElementById('menuLabel').value || 'Label';
-      var type  = (document.querySelector('input[name="menuItemType"]:checked') || {}).value || 'form';
+      var radio = document.querySelector('input[name="menuItemType"]:checked');
+      var type  = radio ? radio.value : 'form';
 
       var iconEl  = document.getElementById('nbPreviewIcon');
       var labelEl = document.getElementById('nbPreviewLabel');
@@ -654,23 +650,23 @@ if (!window._nbMenusModuleInit) {
 
       labelEl.textContent = label;
       badgeEl.textContent = type.charAt(0).toUpperCase() + type.slice(1);
-      badgeEl.style.background = NB_TYPE_BG[type]  || NB_TYPE_BG.form;
+      badgeEl.style.background = NB_TYPE_BG[type]    || NB_TYPE_BG.form;
       badgeEl.style.color      = NB_TYPE_COLORS[type] || NB_TYPE_COLORS.form;
 
-      var isExternal = icon.startsWith('http://') || icon.startsWith('https://');
+      var isExternal = icon.indexOf('http://') === 0 || icon.indexOf('https://') === 0;
       if (isExternal) {
         iconEl.innerHTML = '<img src="' + icon + '" style="width:20px;height:20px;object-fit:contain;">';
       } else if (NB_ICON_SVGS[icon]) {
         iconEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">' + NB_ICON_SVGS[icon] + '</svg>';
       } else {
-        // emoji / custom text
         iconEl.innerHTML = '<span style="font-size:18px;line-height:1;">' + icon + '</span>';
       }
     },
 
     save: function() {
       var id     = document.getElementById('editMenuId').value.trim();
-      var type   = (document.querySelector('input[name="menuItemType"]:checked') || {}).value || 'form';
+      var radio  = document.querySelector('input[name="menuItemType"]:checked');
+      var type   = radio ? radio.value : 'form';
       var label  = document.getElementById('menuLabel').value.trim();
       var order  = parseInt(document.getElementById('menuOrder').value, 10) || 0;
       var parent = parseInt(document.getElementById('menuParent').value, 10) || 0;
@@ -678,12 +674,10 @@ if (!window._nbMenusModuleInit) {
       var active = document.getElementById('menuActive').checked ? 1 : 0;
       var icon   = document.getElementById('editMenuIcon').value || 'default';
 
-      // Enforce: group and divider MUST have empty target
       var target = '';
-      if (type === 'url')    target = document.getElementById('menuTargetUrl').value.trim();
+      if (type === 'url')        target = document.getElementById('menuTargetUrl').value.trim();
       else if (type === 'query') target = document.getElementById('menuTargetCode').value.trim();
       else if (type === 'form' || type === 'report') target = document.getElementById('menuTargetSelect').value;
-      // group / divider: target stays ''
 
       if (!label && type !== 'divider') { document.getElementById('menuLabel').focus(); return; }
 
