@@ -738,3 +738,122 @@ body {
   border-color: var(--border-color);
   color: var(--text-primary);
 }
+
+/* ══ Nav Form Item — inline label + action dropdown ══════════════════════════
+   Rendered by MenuRenderer for type=form items.
+   The label (primary button) is always visible.
+   The dropdown with Browse Inline / Browse Popup / Preview Form is HIDDEN
+   by default and only shown when the chevron button is clicked.
+   The sidebar nav overflow:hidden on .nu-nav means we use
+   position:fixed for the dropdown so it escapes the clipping context.
+══════════════════════════════════════════════════════════════════════════════ */
+
+/* Wrapper: just a flex row, no extra height */
+.nu-nav-form-item {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-sm);
+  margin-bottom: 1px;
+}
+
+/* Primary label button — takes most of the row width, looks like nu-nav-item */
+.nu-nav-form-primary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 4px 9px 10px;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  color: var(--text-sidebar);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 500;
+  font-family: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: left;
+  transition: background var(--transition), color var(--transition);
+}
+.nu-nav-form-primary:hover { background: var(--bg-sidebar-hover); color: #fff; }
+.nu-nav-form-item.active .nu-nav-form-primary {
+  background: var(--bg-sidebar-active);
+  color: var(--primary);
+}
+
+/* Chevron toggle — small button beside the label */
+.nu-nav-form-chevron {
+  flex-shrink: 0;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: background var(--transition), color var(--transition);
+}
+.nu-nav-form-chevron:hover { background: var(--bg-sidebar-hover); color: #fff; }
+.nu-nav-form-chevron svg {
+  transition: transform .2s ease;
+  pointer-events: none;
+  display: block;
+}
+/* Rotate when open */
+.nu-nav-form-item.open .nu-nav-form-chevron svg {
+  transform: rotate(180deg);
+}
+
+/* Dropdown — HIDDEN by default, floats below the item */
+.nu-nav-form-dropdown {
+  display: none;                    /* ← hidden until .open is added by JS */
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  background: #1a2540;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  z-index: 9999;
+  overflow: hidden;
+}
+.nu-nav-form-dropdown.open {
+  display: block;                   /* ← JS adds this class to show it */
+}
+
+/* Individual action buttons in the dropdown */
+.nu-nav-form-action {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-sidebar);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition), color var(--transition);
+}
+.nu-nav-form-action:hover { background: var(--bg-sidebar-hover); color: #fff; }
+.nu-nav-form-action + .nu-nav-form-action {
+  border-top: 1px solid rgba(255,255,255,.06);
+}
+
+/* Collapsed sidebar: hide label text, hide chevron */
+.nu-app.sidebar-collapsed .nu-nav-form-primary span { display: none; }
+.nu-app.sidebar-collapsed .nu-nav-form-primary {
+  justify-content: center;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+}
+.nu-app.sidebar-collapsed .nu-nav-form-chevron { display: none; }
