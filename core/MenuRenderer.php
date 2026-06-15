@@ -10,9 +10,6 @@ declare(strict_types=1);
  *   display : inline | popup
  *   view    : browse | preview
  *
- * The sidebar renders a single clean nav item per menu row using the saved mode.
- * All mode selection is configured in the menu editor (menus.php), not at runtime.
- *
  * IMPORTANT – all onclick attributes use SINGLE quotes as delimiters so that the
  * double-quoted strings produced by json_encode are safe inside the attribute
  * without any \u0022 / JSON_HEX_QUOT mangling that breaks the HTML parser.
@@ -55,15 +52,11 @@ class NuMenuRenderer
 
     /**
      * JSON-encode a value safe for embedding inside a SINGLE-QUOTED HTML attribute.
-     * Only apostrophes need escaping (\'  is not valid in JSON; we use \u0027).
-     * We do NOT escape double-quotes here because the attribute delimiter is '.'.
+     * Only apostrophes need escaping; double-quotes are fine inside onclick='...'.
      */
     private static function jsValue(mixed $value): string
     {
-        return json_encode(
-            $value,
-            JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS
-        );
+        return json_encode($value, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS);
     }
 
     public static function render(?array $currentUser): string
@@ -165,9 +158,7 @@ class NuMenuRenderer
             $out .= " aria-expanded=\"false\" aria-controls=\"{$groupId}\">\n";
             $out .= self::svgIcon($svgBody);
             $out .= "  <span>{$label}</span>\n";
-            $out .= "  <svg class=\"nu-nav-chevron\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\"";
-            $out .= " fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\">";
-            $out .= "<polyline points=\"6 9 12 15 18 9\"/></svg>\n";
+            $out .= "  <svg class=\"nu-nav-chevron\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"/></svg>\n";
             $out .= "</button>\n";
             $out .= "  <ul class=\"nu-nav-children\" id=\"{$groupId}\">\n";
             foreach ($kids as $child) {
@@ -194,24 +185,21 @@ class NuMenuRenderer
             return "<!-- nu_menus id={$item['menu_id']} skipped: no target or code -->\n";
         }
 
-        // Values encoded for SINGLE-QUOTED onclick attributes.
-        // json_encode produces double-quoted strings (e.g. "test") which are
-        // perfectly safe inside onclick='...' — no escaping of " needed.
+        // Encoded for SINGLE-QUOTED onclick attrs — double quotes inside are fine.
         $jsCode     = self::jsValue($module);
         $jsLabel    = self::jsValue((string)$item['menu_label']);
         $moduleSafe = htmlspecialchars($module, ENT_QUOTES, 'UTF-8');
 
-        // ── Form type: single button, opens using the saved mode ──────────────
+        // ── Form type: opens using the saved display/view mode ────────────────
         if (in_array($type, self::$formTypes, true)) {
             $jsDisplay = self::jsValue($display);
 
             if ($view === 'preview') {
-                $onclick = "window.previewForm && previewForm({$jsCode},{$jsLabel}); return false;";
+                $onclick = "NuApp.previewForm({$jsCode},{$jsLabel}); return false;";
             } else {
-                $onclick = "window.browseForm && browseForm({$jsCode},1,'',{$jsLabel},{$jsDisplay}); return false;";
+                $onclick = "NuApp.browseForm({$jsCode},1,'',{$jsLabel},{$jsDisplay}); return false;";
             }
 
-            // Note: onclick uses SINGLE quotes as the HTML attribute delimiter.
             $out  = "<button type=\"button\" class=\"nu-nav-item\" data-module=\"{$moduleSafe}\"\n";
             $out .= "        onclick='{$onclick}'>\n";
             $out .= self::svgIcon($svgBody);
@@ -221,7 +209,6 @@ class NuMenuRenderer
         }
 
         // ── Standard leaf item (module, report, query, etc.) ──────────────────
-        // Also uses single-quoted onclick for consistency.
         $out  = "<a href=\"javascript:void(0)\" class=\"nu-nav-item\" data-module=\"{$moduleSafe}\"\n";
         $out .= "   onclick='NuApp.loadModule({$jsCode}); return false;'>\n";
         $out .= self::svgIcon($svgBody);
@@ -233,7 +220,6 @@ class NuMenuRenderer
     private static function svgIcon(string $body): string
     {
         if ($body === '') return '';
-        return "  <svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\"";
-             . " stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\">\n    {$body}\n  </svg>\n";
+        return "  <svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\">\n    {$body}\n  </svg>\n";
     }
 }
