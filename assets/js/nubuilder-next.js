@@ -22,6 +22,24 @@ window.NuApp = {
         this.loadModule(module);
       }
     });
+
+    // ── Collapsible nav groups ──────────────────────────────────────────────
+    // Uses event delegation on .nu-nav so it works after dynamic re-renders.
+    // Clicks on .nu-nav-group-label toggle aria-expanded + the --collapsed
+    // class on the sibling .nu-nav-children list.
+    // CSS handles chevron rotation and max-height animation automatically.
+    const nav = document.querySelector('.nu-nav');
+    if (nav) {
+      nav.addEventListener('click', (e) => {
+        const btn = e.target.closest('.nu-nav-group-label');
+        if (!btn) return;
+        const children = btn.nextElementSibling;
+        if (!children || !children.classList.contains('nu-nav-children')) return;
+        const isOpen = btn.getAttribute('aria-expanded') !== 'false';
+        btn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+        children.classList.toggle('nu-nav-children--collapsed', isOpen);
+      });
+    }
   },
 
   async logout() {
@@ -47,7 +65,18 @@ window.NuApp = {
   setActiveNavByModule(module) {
     document.querySelectorAll('.nu-nav-item').forEach((item) => item.classList.remove('active'));
     const active = document.querySelector('.nu-nav-item[data-module="' + module + '"]');
-    if (active) active.classList.add('active');
+    if (active) {
+      active.classList.add('active');
+      // Auto-expand the parent group if the active item is inside one
+      const parentChildren = active.closest('.nu-nav-children');
+      if (parentChildren) {
+        parentChildren.classList.remove('nu-nav-children--collapsed');
+        const parentBtn = parentChildren.previousElementSibling;
+        if (parentBtn && parentBtn.classList.contains('nu-nav-group-label')) {
+          parentBtn.setAttribute('aria-expanded', 'true');
+        }
+      }
+    }
   },
 
   toast(message, type) {
