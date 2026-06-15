@@ -10,9 +10,12 @@ declare(strict_types=1);
  *   display : inline | popup
  *   view    : browse | preview
  *
- * The sidebar just renders a single <button> or <a> per item using the saved
- * mode — no dropdown, no extra action buttons.  All mode selection happens in
- * the menu editor (menus.php) at setup time, not at runtime in the sidebar.
+ * The sidebar renders a single clean nav item per menu row using the saved mode.
+ * All mode selection is configured in the menu editor (menus.php), not at runtime.
+ *
+ * IMPORTANT – all onclick attributes use SINGLE quotes as delimiters so that the
+ * double-quoted strings produced by json_encode are safe inside the attribute
+ * without any \u0022 / JSON_HEX_QUOT mangling that breaks the HTML parser.
  */
 class NuMenuRenderer
 {
@@ -49,6 +52,19 @@ class NuMenuRenderer
 
     // Types that open a form action (vs loadModule)
     private static array $formTypes = ['form'];
+
+    /**
+     * JSON-encode a value safe for embedding inside a SINGLE-QUOTED HTML attribute.
+     * Only apostrophes need escaping (\'  is not valid in JSON; we use \u0027).
+     * We do NOT escape double-quotes here because the attribute delimiter is '.'.
+     */
+    private static function jsValue(mixed $value): string
+    {
+        return json_encode(
+            $value,
+            JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS
+        );
+    }
 
     public static function render(?array $currentUser): string
     {
@@ -122,16 +138,16 @@ class NuMenuRenderer
 
     private static function renderItem(array $item, array $kids): string
     {
-        $type     = $item['menu_type'];
-        $label    = htmlspecialchars((string)$item['menu_label'], ENT_QUOTES, 'UTF-8');
-        $iconKey  = strtolower(trim($item['menu_icon'] ?? 'default'));
-        $svgBody  = self::$icons[$iconKey] ?? self::$icons['default'];
+        $type    = $item['menu_type'];
+        $label   = htmlspecialchars((string)$item['menu_label'], ENT_QUOTES, 'UTF-8');
+        $iconKey = strtolower(trim($item['menu_icon'] ?? 'default'));
+        $svgBody = self::$icons[$iconKey] ?? self::$icons['default'];
 
         // Parse saved open_mode: "<display>|<view>"  e.g. "inline|browse"
-        $rawMode  = trim($item['menu_open_mode'] ?? 'inline|browse');
+        $rawMode   = trim($item['menu_open_mode'] ?? 'inline|browse');
         $modeParts = explode('|', $rawMode);
-        $display  = isset($modeParts[0]) && $modeParts[0] !== '' ? $modeParts[0] : 'inline';
-        $view     = isset($modeParts[1]) && $modeParts[1] !== '' ? $modeParts[1] : 'browse';
+        $display   = ($modeParts[0] ?? '') !== '' ? $modeParts[0] : 'inline';
+        $view      = ($modeParts[1] ?? '') !== '' ? $modeParts[1] : 'browse';
 
         if ($type === 'divider') {
             return "<hr class=\"nu-nav-divider\">\n";
@@ -140,17 +156,18 @@ class NuMenuRenderer
         $rawTarget = trim($item['menu_target'] ?? '');
         $rawCode   = trim($item['menu_code']   ?? '');
 
-        // ── Group: collapsible section, toggle-only ───────────────────────────
+        // ── Group: collapsible section ────────────────────────────────────────
         if (!empty($kids)) {
             $groupId = 'nu-group-' . (int)$item['menu_id'];
 
             $out  = "<div class=\"nu-nav-group\">\n";
             $out .= "  <button class=\"nu-nav-group-label\" type=\"button\"";
-            $out .= " aria-expanded=\"true\" aria-controls=\"{$groupId}\"";
-            $out .= ">\n";
+            $out .= " aria-expanded=\"false\" aria-controls=\"{$groupId}\">\n";
             $out .= self::svgIcon($svgBody);
             $out .= "  <span>{$label}</span>\n";
-            $out .= "  <svg class=\"nu-nav-chevron\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"/></svg>\n";
+            $out .= "  <svg class=\"nu-nav-chevron\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\"";
+            $out .= " fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\">";
+            $out .= "<polyline points=\"6 9 12 15 18 9\"/></svg>\n";
             $out .= "</button>\n";
             $out .= "  <ul class=\"nu-nav-children\" id=\"{$groupId}\">\n";
             foreach ($kids as $child) {
@@ -177,34 +194,26 @@ class NuMenuRenderer
             return "<!-- nu_menus id={$item['menu_id']} skipped: no target or code -->\n";
         }
 
-        // JS-safe string literals
-        $jsCode  = json_encode($module, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT);
-        $jsLabel = json_encode((string)$item['menu_label'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT);
+        // Values encoded for SINGLE-QUOTED onclick attributes.
+        // json_encode produces double-quoted strings (e.g. "test") which are
+        // perfectly safe inside onclick='...' — no escaping of " needed.
+        $jsCode     = self::jsValue($module);
+        $jsLabel    = self::jsValue((string)$item['menu_label']);
         $moduleSafe = htmlspecialchars($module, ENT_QUOTES, 'UTF-8');
 
         // ── Form type: single button, opens using the saved mode ──────────────
-        //
-        // The mode was configured in the menu editor (menus.php):
-        //   display = inline | popup
-        //   view    = browse | preview
-        //
-        // browse  → browseForm(code, 1, '', label, display)
-        // preview → previewForm(code, label)   [always opens in its own panel]
-        //
-        // NO dropdown, NO extra action buttons here.
-        // All mode selection is done at setup time in menus.php, not at runtime.
         if (in_array($type, self::$formTypes, true)) {
-            $jsDisplay = json_encode($display, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT);
+            $jsDisplay = self::jsValue($display);
 
             if ($view === 'preview') {
                 $onclick = "window.previewForm && previewForm({$jsCode},{$jsLabel}); return false;";
             } else {
-                // browse (default)
                 $onclick = "window.browseForm && browseForm({$jsCode},1,'',{$jsLabel},{$jsDisplay}); return false;";
             }
 
+            // Note: onclick uses SINGLE quotes as the HTML attribute delimiter.
             $out  = "<button type=\"button\" class=\"nu-nav-item\" data-module=\"{$moduleSafe}\"\n";
-            $out .= "        onclick=\"{$onclick}\">\n";
+            $out .= "        onclick='{$onclick}'>\n";
             $out .= self::svgIcon($svgBody);
             $out .= "  <span>{$label}</span>\n";
             $out .= "</button>\n";
@@ -212,8 +221,9 @@ class NuMenuRenderer
         }
 
         // ── Standard leaf item (module, report, query, etc.) ──────────────────
+        // Also uses single-quoted onclick for consistency.
         $out  = "<a href=\"javascript:void(0)\" class=\"nu-nav-item\" data-module=\"{$moduleSafe}\"\n";
-        $out .= "   onclick=\"NuApp.loadModule({$jsCode}); return false;\">\n";
+        $out .= "   onclick='NuApp.loadModule({$jsCode}); return false;'>\n";
         $out .= self::svgIcon($svgBody);
         $out .= "  <span>{$label}</span>\n";
         $out .= "</a>\n";
@@ -223,6 +233,7 @@ class NuMenuRenderer
     private static function svgIcon(string $body): string
     {
         if ($body === '') return '';
-        return "  <svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\">\n    {$body}\n  </svg>\n";
+        return "  <svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\"";
+             . " stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\">\n    {$body}\n  </svg>\n";
     }
 }
