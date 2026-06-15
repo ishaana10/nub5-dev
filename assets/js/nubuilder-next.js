@@ -28,15 +28,12 @@ window.NuApp = {
     if (logoutBtn) {
       logoutBtn.addEventListener('click', () => this.logout());
     }
-    window.addEventListener('hashchange', () => {
-      const module = (window.location.hash || '').replace('#', '');
-      if (module && module !== this.currentModule) {
-        this.loadModule(module);
-      }
-    });
+
+    // NOTE: No hashchange listener — nav is driven entirely by onclick.
+    // A hashchange listener caused child nav items to retrigger loadModule
+    // for the previous (current) module instead of the new one.
 
     // ── Collapsible nav groups ──────────────────────────────────────────────
-    // Event delegation on .nu-nav — works for all groups including user-created ones.
     const nav = document.querySelector('.nu-nav');
     if (nav) {
       nav.addEventListener('click', (e) => {
@@ -51,6 +48,13 @@ window.NuApp = {
         ul.classList.toggle('nu-nav-children--collapsed', isOpen);
       });
     }
+
+    // ── Close any open nav form-mode dropdowns when clicking outside ────────
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.nu-nav-form-item')) {
+        document.querySelectorAll('.nu-nav-form-dropdown').forEach(d => d.classList.remove('open'));
+      }
+    });
   },
 
   async logout() {
@@ -78,7 +82,6 @@ window.NuApp = {
     const active = document.querySelector('.nu-nav-item[data-module="' + module + '"]');
     if (active) {
       active.classList.add('active');
-      // Auto-expand the parent group if the active item is inside one
       const group = active.closest('.nu-nav-group');
       if (group) {
         const ul  = group.querySelector('.nu-nav-children');
