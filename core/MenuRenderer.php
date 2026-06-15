@@ -3,20 +3,6 @@ declare(strict_types=1);
 /**
  * NuMenuRenderer
  * Renders the sidebar <nav> from nu_menus, filtered by the current user's role.
- *
- * Usage (in index.php):
- *   require_once __DIR__ . '/core/MenuRenderer.php';
- *   echo NuMenuRenderer::render($currentUser);
- *
- * Fallback:
- *   If nu_menus is empty OR the table doesn't exist yet, the renderer returns
- *   an empty string and index.php falls back to the hardcoded nav partial.
- *
- * Slug resolution (per item):
- *   menu_target  is preferred (new schema).
- *   menu_code    is the fallback (legacy rows created before menu_target existed).
- *   If BOTH are empty the item is skipped for form/report/query types to avoid
- *   calling NuApp.loadModule('') which causes a 403.
  */
 class NuMenuRenderer
 {
@@ -52,17 +38,12 @@ class NuMenuRenderer
         'default'    => '<circle cx="12" cy="12" r="9"/>',
     ];
 
-    /**
-     * Main entry-point.
-     * Returns empty string if nu_menus has no active rows (caller shows hardcoded fallback).
-     */
     public static function render(?array $currentUser): string
     {
         $userRole = strtolower((string)($currentUser['usr_role'] ?? ''));
         $isAdmin  = ($userRole === 'globeadmin' || $userRole === 'admin');
 
         try {
-            // Select both menu_code (legacy) and menu_target (new schema).
             $db   = NuDatabase::getInstance();
             $rows = $db->fetchAll(
                 "SELECT menu_id, menu_label, menu_type,
@@ -75,7 +56,6 @@ class NuMenuRenderer
                  ORDER  BY menu_parent_id ASC, menu_order ASC, menu_id ASC"
             );
         } catch (Throwable $e) {
-            // menu_code column may not exist on fresh installs — retry without it.
             try {
                 $db   = NuDatabase::getInstance();
                 $rows = $db->fetchAll(
@@ -94,11 +74,8 @@ class NuMenuRenderer
             }
         }
 
-        if (empty($rows)) {
-            return '';  // triggers hardcoded fallback in index.php
-        }
+        if (empty($rows)) return '';
 
-        // ── Filter by role ────────────────────────────────────────────────────
         $visible = array_filter($rows, static function (array $item) use ($userRole, $isAdmin): bool {
             $roles = trim($item['menu_roles'] ?? '');
             if ($roles === '') return true;
@@ -107,7 +84,6 @@ class NuMenuRenderer
             return in_array($userRole, $allowed, true);
         });
 
-        // ── Separate top-level and children ───────────────────────────────────
         $topLevel = [];
         $children = [];
         foreach ($visible as $item) {
@@ -121,7 +97,6 @@ class NuMenuRenderer
 
         if (empty($topLevel)) return '';
 
-        // ── Build HTML ────────────────────────────────────────────────────────
         $html = "\n<nav class=\"nu-nav\" id=\"nuDynNav\">\n";
         foreach ($topLevel as $item) {
             $html .= self::renderItem($item, $children[$item['menu_id']] ?? []);
@@ -130,7 +105,6 @@ class NuMenuRenderer
         return $html;
     }
 
-    // ── Render a single item (with optional children) ─────────────────────────
     private static function renderItem(array $item, array $kids): string
     {
         $type    = $item['menu_type'];
@@ -146,15 +120,12 @@ class NuMenuRenderer
         $rawTarget = trim($item['menu_target'] ?? '');
         $rawCode   = trim($item['menu_code']   ?? '');
 
-        // ── Group (collapsible section header — NEVER calls loadModule) ───────
-        // Treat as group if: type=group  OR  both target+code are empty and has kids.
+        // ── Pure group (collapsible section header — no loadModule) ───────────
         $isGroup = ($type === 'group') || ($rawTarget === '' && $rawCode === '' && !empty($kids));
 
         if ($isGroup) {
             $groupId = 'nu-group-' . (int)$item['menu_id'];
             $out  = "<div class=\"nu-nav-group\">\n";
-            // NOTE: No inline onclick — toggle is handled exclusively by JS event
-            // delegation in NuApp.bindEvents() to avoid double-firing.
             $out .= "  <button class=\"nu-nav-group-label\" ";
             $out .= "type=\"button\" aria-expanded=\"true\" aria-controls=\"{$groupId}\">";
             $out .= self::svgIcon($svgBody);
@@ -181,39 +152,51 @@ class NuMenuRenderer
         }
 
         // ── Standard module item (form / report / query) ──────────────────────
-        // Slug = menu_target first, fall back to menu_code (legacy rows).
         $module = $rawTarget !== '' ? $rawTarget : $rawCode;
 
-        // Skip items with no resolvable slug — prevents loadModule('') → 403.
         if ($module === '') {
             return "<!-- nu_menus id={$item['menu_id']} skipped: no target or code -->\n";
         }
 
-        $module    = htmlspecialchars($module, ENT_QUOTES, 'UTF-8');
-        $hasKids   = !empty($kids);
-        $itemClass = 'nu-nav-item' . ($hasKids ? ' nu-nav-item--has-children' : '');
+        $moduleSafe = htmlspecialchars($module, ENT_QUOTES, 'UTF-8');
+        $hasKids    = !empty($kids);
 
-        $out  = "<a href=\"#{$module}\" class=\"{$itemClass}\" data-module=\"{$module}\"\n";
-        $out .= "   onclick=\"NuApp.loadModule('{$module}'); return false;\">\n";
+        // ── Standard item WITHOUT children — plain <a> ────────────────────────
+        if (!$hasKids) {
+            $out  = "<a href=\"#{$moduleSafe}\" class=\"nu-nav-item\" data-module=\"{$moduleSafe}\"\n";
+            $out .= "   onclick=\"NuApp.loadModule('{$moduleSafe}'); return false;\">\n";
+            $out .= self::svgIcon($svgBody);
+            $out .= "  <span>{$label}</span>\n";
+            $out .= "</a>\n";
+            return $out;
+        }
+
+        // ── Standard item WITH children — wrap in nu-nav-group so toggle works ─
+        // The parent link row uses a <button> for the toggle chevron, plus a
+        // separate <a> for the actual module navigation, keeping both behaviours.
+        $groupId = 'nu-group-' . (int)$item['menu_id'];
+        $out  = "<div class=\"nu-nav-group\">\n";
+        // Top row: icon + label navigates to module; chevron button toggles children
+        $out .= "  <div class=\"nu-nav-item nu-nav-item--has-children\" data-module=\"{$moduleSafe}\">\n";
+        $out .= "    <a href=\"#{$moduleSafe}\" class=\"nu-nav-item-link\"\n";
+        $out .= "       onclick=\"NuApp.loadModule('{$moduleSafe}'); return false;\">\n";
         $out .= self::svgIcon($svgBody);
-        $out .= "  <span>{$label}</span>\n";
-        if ($hasKids) {
-            $out .= "  <svg class=\"nu-nav-chevron\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"/></svg>\n";
+        $out .= "      <span>{$label}</span>\n";
+        $out .= "    </a>\n";
+        $out .= "    <button class=\"nu-nav-chevron-btn\" type=\"button\"\n";
+        $out .= "            aria-expanded=\"true\" aria-controls=\"{$groupId}\">\n";
+        $out .= "      <svg class=\"nu-nav-chevron\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"/></svg>\n";
+        $out .= "    </button>\n";
+        $out .= "  </div>\n";
+        $out .= "  <ul class=\"nu-nav-children\" id=\"{$groupId}\">\n";
+        foreach ($kids as $child) {
+            $out .= "    <li>" . self::renderItem($child, []) . "</li>\n";
         }
-        $out .= "</a>\n";
-
-        if ($hasKids) {
-            $out .= "<ul class=\"nu-nav-children\">\n";
-            foreach ($kids as $child) {
-                $out .= "<li>" . self::renderItem($child, []) . "</li>\n";
-            }
-            $out .= "</ul>\n";
-        }
-
+        $out .= "  </ul>\n";
+        $out .= "</div>\n";
         return $out;
     }
 
-    // ── Inline SVG helper ─────────────────────────────────────────────────────
     private static function svgIcon(string $body): string
     {
         if ($body === '') return '';
