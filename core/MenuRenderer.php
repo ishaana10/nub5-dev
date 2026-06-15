@@ -118,29 +118,15 @@ class NuMenuRenderer
         $rawTarget = trim($item['menu_target'] ?? '');
         $rawCode   = trim($item['menu_code']   ?? '');
 
-        $isGroup = ($type === 'group') || ($rawTarget === '' && $rawCode === '' && !empty($kids));
-
-        // ── Any item with children (pure group OR module-with-kids) uses identical
-        //    nu-nav-group structure so the same toggle JS handles both. ───────────
-        if ($isGroup || !empty($kids)) {
-            $groupId    = 'nu-group-' . (int)$item['menu_id'];
-            $moduleSafe = '';
-            if (!$isGroup) {
-                $module = $rawTarget !== '' ? $rawTarget : $rawCode;
-                if ($module !== '') {
-                    $moduleSafe = htmlspecialchars($module, ENT_QUOTES, 'UTF-8');
-                }
-            }
+        // ── Any item that has children renders as a collapsible group.
+        //    The group-label button is TOGGLE-ONLY — no onclick, no data-module.
+        //    All navigation is handled exclusively by the child <a> items. ──────
+        if (!empty($kids)) {
+            $groupId = 'nu-group-' . (int)$item['menu_id'];
 
             $out  = "<div class=\"nu-nav-group\">\n";
-            // Single button — handles both toggle AND optional loadModule.
-            // data-module attribute lets the JS (or active-state logic) identify it.
             $out .= "  <button class=\"nu-nav-group-label\" type=\"button\"";
             $out .= " aria-expanded=\"true\" aria-controls=\"{$groupId}\"";
-            if ($moduleSafe !== '') {
-                $out .= " data-module=\"{$moduleSafe}\"";
-                $out .= " onclick=\"NuApp.loadModule('{$moduleSafe}')\"";
-            }
             $out .= ">\n";
             $out .= self::svgIcon($svgBody);
             $out .= "  <span>{$label}</span>\n";
@@ -155,7 +141,7 @@ class NuMenuRenderer
             return $out;
         }
 
-        // ── URL item ─────────────────────────────────────────────────────────────
+        // ── URL item ──────────────────────────────────────────────────────────
         if ($type === 'url') {
             $href = htmlspecialchars($rawTarget ?: $rawCode ?: '#', ENT_QUOTES, 'UTF-8');
             $out  = "<a href=\"{$href}\" class=\"nu-nav-item\" target=\"_blank\" rel=\"noopener noreferrer\">\n";
@@ -165,7 +151,7 @@ class NuMenuRenderer
             return $out;
         }
 
-        // ── Standard leaf item ──────────────────────────────────────────────────
+        // ── Standard leaf item (module or form) ───────────────────────────────
         $module = $rawTarget !== '' ? $rawTarget : $rawCode;
         if ($module === '') {
             return "<!-- nu_menus id={$item['menu_id']} skipped: no target or code -->\n";
