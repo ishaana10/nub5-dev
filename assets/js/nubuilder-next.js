@@ -2,6 +2,15 @@ window.NuApp = {
   currentModule: 'dashboard',
   _previewModalSize: 'standard', // compact | standard | full
 
+  // ── System modules that always load their PHP shell directly ──────────────
+  // Everything NOT in this list that comes from a nav link is treated as a
+  // form/report/query and routed through the open-mode logic.
+  _systemModules: new Set([
+    'dashboard','forms','reports','queries','calendar','ai','integrations',
+    'menus','users','roles','audit','files','workflow','inspector','errorlog',
+    'password_policy','appcloner','password'
+  ]),
+
   init() {
     this.bindEvents();
     this.loadTheme();
@@ -30,8 +39,6 @@ window.NuApp = {
     }
 
     // NOTE: No hashchange listener — nav is driven entirely by onclick.
-    // A hashchange listener caused child nav items to retrigger loadModule
-    // for the previous (current) module instead of the new one.
 
     // ── Collapsible nav groups ──────────────────────────────────────────────
     const nav = document.querySelector('.nu-nav');
@@ -119,38 +126,102 @@ window.NuApp = {
     });
   },
 
-  async loadModule(module) {
+  // ─── LOAD MODULE ─────────────────────────────────────────────────────────
+  //
+  // Signature (all params after `module` are optional, default to safe values):
+  //
+  //   NuApp.loadModule(module)
+  //   NuApp.loadModule(module, defaultView, browseMode, previewMode)
+  //
+  //   module       – module code or form/report/query code
+  //   defaultView  – 'browse' (default) | 'preview'
+  //                  Which view opens when the nav link is clicked.
+  //   browseMode   – 'inline' (default) | 'popup'
+  //                  How the browse/list view is displayed (only used when
+  //                  defaultView === 'browse').
+  //   previewMode  – 'inline' (default) | 'popup'
+  //                  How the preview/read-only form is displayed (only used
+  //                  when defaultView === 'preview').
+  //
+  // Rules:
+  //   • Only ONE view opens per click — either browse OR preview, never both.
+  //   • System modules (dashboard, forms, users …) always fetch their PHP
+  //     shell directly, ignoring the open-mode params.
+  //   • Any unrecognised module code is also treated as a system module
+  //     fallback (fetches the PHP shell).
+  //
+  async loadModule(module, defaultView, browseMode, previewMode) {
+    // Sanitise / default every argument
+    module      = (module      || 'dashboard').trim();
+    defaultView = ['browse','preview'].includes(defaultView) ? defaultView : 'browse';
+    browseMode  = ['inline','popup'].includes(browseMode)    ? browseMode  : 'inline';
+    previewMode = ['inline','popup'].includes(previewMode)   ? previewMode : 'inline';
+
     this._exitFullPage();
     this.currentModule = module;
+
     const container = document.getElementById('contentArea');
-    const pageTitle = document.getElementById('pageTitle');
+    const pageTitle  = document.getElementById('pageTitle');
     if (!container) { console.error('contentArea not found'); return; }
+
     if (pageTitle) {
       pageTitle.textContent = module.charAt(0).toUpperCase() + module.slice(1);
     }
     this.setActiveNavByModule(module);
-    container.innerHTML = '<div class="nu-spinner" style="margin:40px auto;"></div>';
-    try {
-      const res = await fetch('modules/' + module + '/' + module + '.php', { credentials: 'same-origin' });
-      const html = await res.text();
-      if (!res.ok) {
+
+    // ── System module → fetch PHP shell as before ───────────────────────────
+    if (this._systemModules.has(module)) {
+      container.innerHTML = '<div class="nu-spinner" style="margin:40px auto;"></div>';
+      try {
+        const res  = await fetch('modules/' + module + '/' + module + '.php', { credentials: 'same-origin' });
+        const html = await res.text();
+        if (!res.ok) {
+          container.innerHTML =
+            '<div style="padding:24px;border:2px solid red;background:#fee;">' +
+            '<h3>Module load failed</h3><p>Status: ' + res.status + '</p>' +
+            '<pre style="font-size:12px;overflow:auto;">' + html.substring(0, 2000) + '</pre></div>';
+          return;
+        }
+        container.innerHTML = html;
+        container.style.display     = 'block';
+        container.style.visibility  = 'visible';
+        container.style.opacity     = '1';
+        this._execModuleScripts(container);
+        this.initModuleScripts(module);
+      } catch (err) {
+        console.error('loadModule error', err);
         container.innerHTML =
           '<div style="padding:24px;border:2px solid red;background:#fee;">' +
-          '<h3>Module load failed</h3><p>Status: ' + res.status + '</p>' +
-          '<pre style="font-size:12px;overflow:auto;">' + html.substring(0, 2000) + '</pre></div>';
-        return;
+          '<h3>Error</h3><p>' + String(err.message || err) + '</p></div>';
       }
-      container.innerHTML = html;
-      container.style.display = 'block';
-      container.style.visibility = 'visible';
-      container.style.opacity = '1';
-      this._execModuleScripts(container);
-      this.initModuleScripts(module);
-    } catch (err) {
-      console.error('loadModule error', err);
-      container.innerHTML =
-        '<div style="padding:24px;border:2px solid red;background:#fee;">' +
-        '<h3>Error</h3><p>' + String(err.message || err) + '</p></div>';
+      return;
+    }
+
+    // ── Form / report / query module → open-mode routing ───────────────────
+    //
+    //  defaultView === 'preview'  → open the read-only form directly
+    //    previewMode === 'popup'  → modal overlay
+    //    previewMode === 'inline' → inside the content area
+    //
+    //  defaultView === 'browse' (default) → open the record list first
+    //    browseMode === 'popup'   → modal overlay
+    //    browseMode === 'inline'  → inside the content area
+    //
+    if (defaultView === 'preview') {
+      if (previewMode === 'popup') {
+        // Read-only form in a modal — reuses existing previewForm modal path
+        return this.previewForm(module, module, 'modal');
+      } else {
+        // Read-only form inline in the content area
+        return this._openFormInline(module, module, null, true);
+      }
+    } else {
+      // Browse (list) view
+      if (browseMode === 'popup') {
+        return this._browseModal(module, 1, '', module);
+      } else {
+        return this._browseInline(module, 1, '', module);
+      }
     }
   },
 
@@ -163,7 +234,7 @@ window.NuApp = {
   },
 
   async apiJson(url, options) {
-    const res = await fetch(url, options || {});
+    const res  = await fetch(url, options || {});
     const text = await res.text();
     console.log('api raw response:', url, text);
     let json = null;
