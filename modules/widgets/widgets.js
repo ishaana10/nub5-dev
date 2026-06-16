@@ -151,11 +151,11 @@
       '<label class="nu-label" style="color:#006494;margin-bottom:8px;">',
       '&#10148;&nbsp;Drill-down arrow link <small style="color:#888;font-weight:400;">(optional)</small>',
       '</label>',
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">',
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">',
       '<div class="nu-field" style="margin:0;">',
       '<label class="nu-label" style="font-size:.75rem;">Form Code</label>',
       '<input class="nu-input" id="nuWLinkModule" placeholder="e.g. zxy1234567890"',
-      '       title="The NuBuilder form code — clicking › opens that form\'s browse/inline view">',
+      '       title="The NuBuilder form code">',
       '</div>',
       '<div class="nu-field" style="margin:0;">',
       '<label class="nu-label" style="font-size:.75rem;">— or — External URL</label>',
@@ -163,9 +163,18 @@
       '       title="External URL (used only if Form Code is blank)">',
       '</div>',
       '</div>',
+      // ── Open mode toggle ────────────────────────────────────────────────
+      '<div style="display:flex;align-items:center;gap:10px;margin-top:4px;">',
+      '<label style="font-size:.8rem;color:#555;font-weight:600;white-space:nowrap;">Open as:</label>',
+      '<label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer;">',
+      '<input type="radio" name="nuWLinkMode" id="nuWLinkModeInline" value="inline" checked style="accent-color:#006494;"> Inline browse',
+      '</label>',
+      '<label style="display:flex;align-items:center;gap:5px;font-size:.8rem;cursor:pointer;">',
+      '<input type="radio" name="nuWLinkMode" id="nuWLinkModePopup" value="popup" style="accent-color:#006494;"> Popup',
+      '</label>',
+      '</div>',
       '<small style="color:#888;font-size:11px;display:block;margin-top:6px;">',
-      'Enter the NuBuilder <strong>form code</strong> (found in the form builder). ',
-      'Clicking › opens that form inline. External URL is used if no form code is set.',
+      '<strong>Inline</strong> replaces the main view. <strong>Popup</strong> opens the form in a floating modal window.',
       '</small>',
       '</div>'
     ].join('');
@@ -324,6 +333,16 @@
         var luEl = document.getElementById('nuWLinkUrl');
         if (lmEl) lmEl.value = cfg.link_module || '';
         if (luEl) luEl.value = cfg.link_url    || '';
+        // Restore open mode (inline vs popup)
+        var modePopup  = document.getElementById('nuWLinkModePopup');
+        var modeInline = document.getElementById('nuWLinkModeInline');
+        if (modePopup && modeInline) {
+          if (cfg.link_mode === 'popup') {
+            modePopup.checked = true;
+          } else {
+            modeInline.checked = true;
+          }
+        }
 
         loadRolesIntoDropdown(w.widget_role || '');
       } else {
@@ -361,8 +380,11 @@
       var sql   = sqlEl ? sqlEl.value.trim() : '';
       switch (type) {
         case 'stat': {
-          var lm  = ((document.getElementById('nuWLinkModule') || {}).value || '').trim();
-          var lu  = ((document.getElementById('nuWLinkUrl')    || {}).value || '').trim();
+          var lm   = ((document.getElementById('nuWLinkModule') || {}).value || '').trim();
+          var lu   = ((document.getElementById('nuWLinkUrl')    || {}).value || '').trim();
+          // Read open-mode radio (inline or popup)
+          var modeEl = document.querySelector('input[name="nuWLinkMode"]:checked');
+          var mode   = modeEl ? modeEl.value : 'inline';
           var cfg = {
             sql:      sql,
             subtitle: (document.getElementById('nuWSubtitle') || {}).value || '',
@@ -370,6 +392,7 @@
           };
           if (lm) cfg.link_module = lm;
           if (lu && !lm) cfg.link_url = lu; // url only when no module set
+          if (lm || lu) cfg.link_mode = mode; // only save when there is a link
           return cfg;
         }
         case 'chart_bar': case 'chart_line': case 'chart_pie': case 'table':
@@ -502,29 +525,89 @@
       if (rEl) setTimeout(function () { rEl.focus(); }, 150);
     },
 
+    // ── Popup helper ────────────────────────────────────────────────────────
+    // Opens a form in a floating modal overlay rather than replacing the main view.
+    // Tries NuApp.openPopup / NuApp.showPopup first (native NuBuilder popup if it exists),
+    // then falls back to a minimal self-contained overlay built on the fly.
+    _openPopup: function (formCode) {
+      // 1. Try native NuBuilder popup APIs
+      if (window.NuApp) {
+        if (typeof NuApp.openPopup  === 'function') { NuApp.openPopup(formCode);  return; }
+        if (typeof NuApp.showPopup  === 'function') { NuApp.showPopup(formCode);  return; }
+        if (typeof NuApp.openDialog === 'function') { NuApp.openDialog(formCode); return; }
+      }
+      // 2. Fallback: build a lightweight iframe overlay
+      var existingOverlay = document.getElementById('nuDashPopupOverlay');
+      if (existingOverlay) existingOverlay.remove();
+
+      var overlay = document.createElement('div');
+      overlay.id = 'nuDashPopupOverlay';
+      overlay.style.cssText = [
+        'position:fixed;inset:0;z-index:2000;',
+        'background:rgba(0,0,0,.55);',
+        'display:flex;align-items:center;justify-content:center;',
+        'padding:20px;'
+      ].join('');
+
+      // Close on backdrop click
+      overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) overlay.remove();
+      });
+
+      var box = document.createElement('div');
+      box.style.cssText = [
+        'background:#fff;border-radius:.75rem;',
+        'width:min(960px,100%);height:min(780px,90vh);',
+        'display:flex;flex-direction:column;',
+        'box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;'
+      ].join('');
+
+      // Header bar
+      var header = document.createElement('div');
+      header.style.cssText = [
+        'display:flex;align-items:center;justify-content:space-between;',
+        'padding:12px 16px;',
+        'border-bottom:1px solid #e5e7eb;',
+        'background:var(--color-surface-offset,#f8f9fa);',
+        'flex-shrink:0;'
+      ].join('');
+      header.innerHTML = '<span style="font-size:.875rem;font-weight:700;color:#111;">Form: ' + formCode + '</span>'
+                       + '<button onclick="document.getElementById(\'nuDashPopupOverlay\').remove()" '
+                       + 'style="background:none;border:none;cursor:pointer;font-size:1.25rem;color:#888;line-height:1;padding:2px 6px;" '
+                       + 'title="Close">&times;</button>';
+
+      // Iframe
+      var iframe = document.createElement('iframe');
+      // Build the same URL pattern NuBuilder uses for forms
+      var src = (window.location.pathname.replace(/\/[^\/]*$/, '/') || '/') + '?form=' + encodeURIComponent(formCode);
+      // If NuApp exposes its base path, use that
+      if (window.NuApp && NuApp.baseUrl) src = NuApp.baseUrl + '?form=' + encodeURIComponent(formCode);
+      iframe.src = src;
+      iframe.style.cssText = 'flex:1;border:none;width:100%;';
+      iframe.setAttribute('allowfullscreen', '');
+
+      box.appendChild(header);
+      box.appendChild(iframe);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+    },
+
     // ── Arrow drill-down handler ─────────────────────────────────────────────
-    // Called from the › button rendered by wu_render() in widgets.php.
-    // formCode = the NuBuilder form code stored in link_module.
-    // Uses NuApp._browseInline if available (same as the rest of the app),
-    // falls back to NuApp.openForm, then NuApp.loadModule as a last resort.
-    drillDown: function (formCode) {
+    // formCode = NuBuilder form code, mode = 'inline' (default) | 'popup'
+    drillDown: function (formCode, mode) {
       if (!formCode) return;
       try {
-        if (window.NuApp) {
-          if (typeof NuApp._browseInline === 'function') {
-            NuApp._browseInline(formCode);
-            return;
-          }
-          if (typeof NuApp.openForm === 'function') {
-            NuApp.openForm(formCode);
-            return;
-          }
-          if (typeof NuApp.loadModule === 'function') {
-            NuApp.loadModule(formCode);
-            return;
-          }
+        // Popup mode
+        if (mode === 'popup') {
+          this._openPopup(formCode);
+          return;
         }
-        // Last resort: build the URL the app itself would use
+        // Inline browse mode (default)
+        if (window.NuApp) {
+          if (typeof NuApp._browseInline === 'function') { NuApp._browseInline(formCode); return; }
+          if (typeof NuApp.openForm      === 'function') { NuApp.openForm(formCode);      return; }
+          if (typeof NuApp.loadModule    === 'function') { NuApp.loadModule(formCode);    return; }
+        }
         window.location.href = '?form=' + encodeURIComponent(formCode);
       } catch (e) {
         console.error('[nuDash drillDown]', e);

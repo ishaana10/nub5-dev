@@ -108,20 +108,19 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                 $val = $rows[0]['value'] ?? (isset($rows[0]) ? reset($rows[0]) : 0);
                 $sub = htmlspecialchars($cfg['subtitle'] ?? '');
 
-                // link_module = NuBuilder form code; link_url = external URL fallback
                 $linkFormCode = trim($cfg['link_module'] ?? '');
                 $linkUrl      = trim($cfg['link_url']    ?? '');
+                $linkMode     = ($cfg['link_mode'] ?? 'inline') === 'popup' ? 'popup' : 'inline';
                 $hasLink      = ($linkFormCode !== '' || $linkUrl !== '');
                 $arrowHtml    = '';
 
                 if ($hasLink) {
                     if ($linkFormCode !== '') {
-                        // Pass the form code to nuDash.drillDown() which uses
-                        // NuApp._browseInline — the same inline browse the rest
-                        // of the app uses. This avoids the "Form not found" 404
-                        // that NuApp.loadModule was causing.
                         $safeCode  = htmlspecialchars($linkFormCode, ENT_QUOTES);
-                        $arrowHtml = '<button class="nu-stat-arrow" onclick="nuDash.drillDown(\'' . $safeCode . '\')" title="View records" aria-label="View records">'
+                        $safeMode  = htmlspecialchars($linkMode, ENT_QUOTES);
+                        $arrowHtml = '<button class="nu-stat-arrow" onclick="nuDash.drillDown(\'' . $safeCode . '\',\'' . $safeMode . '\')" '
+                                   . 'title="' . ($linkMode === 'popup' ? 'Open in popup' : 'View records') . '" '
+                                   . 'aria-label="' . ($linkMode === 'popup' ? 'Open in popup' : 'View records') . '">'
                                    . '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>'
                                    . '</button>';
                     } else {
@@ -199,7 +198,6 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                     $lbl   = htmlspecialchars($item['label'] ?? '');
                     $mod   = htmlspecialchars($item['module'] ?? '');
                     $url   = htmlspecialchars($item['url']    ?? '');
-                    // Use nuDash.drillDown for form codes (consistent with stat arrow)
                     $click = $mod ? "nuDash.drillDown('$mod')" : "window.open('$url','_blank')";
                     $html .= "<button class=\"nu-btn nu-btn-ghost\" style=\"justify-content:flex-start;\" onclick=\"$click\">$lbl</button>";
                 }
@@ -253,20 +251,15 @@ $roleGroups     = [];
 
 if ($showRoleGroups) {
     // ── KEY FIX: seed ALL roles as empty buckets first ─────────────────────
-    // This ensures every role shows up as a group even if it has 0 widgets.
-    // Without this, only roles that already have widgets are displayed.
     try {
         $allRoles = $db->fetchAll('SELECT role_code FROM nu_roles ORDER BY role_name');
         foreach ($allRoles as $r) {
             $rc = $r['role_code'];
-            if (strtolower($rc) === 'globeadmin') continue; // skip self
+            if (strtolower($rc) === 'globeadmin') continue;
             if (!isset($roleGroups[$rc])) $roleGroups[$rc] = [];
         }
-    } catch (Throwable $e) {
-        // If nu_roles query fails, fall through — widgets will still populate below
-    }
+    } catch (Throwable $e) {}
 
-    // Fill in actual widgets into their role buckets
     foreach ($widgets as $w) {
         $isRoleWgt = ($w['widget_user_id'] === null || $w['widget_user_id'] === '');
         $key = $isRoleWgt ? ($w['widget_role'] ?? 'unassigned') : '__personal__';
@@ -376,6 +369,12 @@ $groupIdx = 0;
     text-decoration: none;
 }
 .nu-stat-arrow:hover { background: rgba(1,105,111,.18); color: #0c4e54; }
+/* Popup overlay close-on-esc */
+#nuDashPopupOverlay { animation: nuPopupIn .2s ease; }
+@keyframes nuPopupIn {
+    from { opacity:0; transform:scale(.97); }
+    to   { opacity:1; transform:scale(1); }
+}
 .nu-dash-toolbar {
     display: flex;
     align-items: center;
@@ -746,3 +745,13 @@ window.NUDASH_WIDGET_DATA = <?= $widgetsJson ?>;
 window.NUDASH_CAN_MANAGE  = <?= $canManage ? 'true' : 'false' ?>;
 </script>
 <script src="modules/widgets/widgets.js?v=<?= filemtime(__DIR__ . '/widgets.js') ?>"></script>
+
+<script>
+// Close popup overlay with Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    var overlay = document.getElementById('nuDashPopupOverlay');
+    if (overlay) overlay.remove();
+  }
+});
+</script>
