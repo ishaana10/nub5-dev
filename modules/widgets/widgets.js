@@ -8,8 +8,7 @@
   var LS_KEY = 'nuDash_groupCollapsed';
   var WIDGET_DATA = window.NUDASH_WIDGET_DATA || {};
 
-  // ── Font Awesome icon list (solid set — common icons) ─────────────────────
-  // Format: ['class-without-fa-prefix', 'label']
+  // ── Font Awesome icon list (solid set) ────────────────────────────────────
   var FA_ICONS = [
     ['fa-house','home'],['fa-user','user'],['fa-users','users'],['fa-gear','settings'],
     ['fa-bell','bell'],['fa-bookmark','bookmark'],['fa-calendar','calendar'],
@@ -42,33 +41,27 @@
     ['fa-clipboard','clipboard'],['fa-clipboard-list','clipboard-list'],
     ['fa-coins','coins'],['fa-compass','compass'],['fa-copy','copy'],
     ['fa-crown','crown'],['fa-desktop','desktop'],['fa-diagram-project','diagram'],
-    ['fa-dice','dice'],['fa-download','download'],['fa-droplet','water'],
-    ['fa-earth-americas','earth'],['fa-ellipsis','more'],['fa-exclamation','exclamation'],
-    ['fa-eye','view'],['fa-filter','filter'],['fa-fire','fire'],
-    ['fa-floppy-disk','save'],['fa-forward','forward'],['fa-gauge','gauge'],
+    ['fa-download','download'],['fa-droplet','water'],['fa-earth-americas','earth'],
+    ['fa-ellipsis','more'],['fa-eye','view'],['fa-filter','filter'],
+    ['fa-fire','fire'],['fa-floppy-disk','save'],['fa-gauge','gauge'],
     ['fa-hand','hand'],['fa-hashtag','hash'],['fa-headset','support'],
-    ['fa-hourglass','hourglass'],['fa-house-medical','medical'],['fa-laptop','laptop'],
-    ['fa-leaf','leaf'],['fa-lightbulb','idea'],['fa-location-dot','location'],
-    ['fa-mobile','mobile'],['fa-moon','night'],['fa-network-wired','network'],
-    ['fa-newspaper','news'],['fa-palette','palette'],['fa-passport','passport'],
-    ['fa-pencil','pencil'],['fa-percent','percent'],['fa-person','person'],
-    ['fa-phone-flip','phone-flip'],['fa-plug','plug'],['fa-puzzle-piece','puzzle'],
-    ['fa-qrcode','qr'],['fa-quote-left','quote'],['fa-rocket','rocket'],
-    ['fa-route','route'],['fa-rss','rss'],['fa-school','school'],
-    ['fa-screwdriver-wrench','tools'],['fa-share','share'],['fa-signal','signal'],
-    ['fa-sitemap','sitemap'],['fa-skull','skull'],['fa-snowflake','snow'],
-    ['fa-sort','sort'],['fa-spa','spa'],['fa-spinner','loading'],
-    ['fa-square-check','square-check'],['fa-store','store'],['fa-suitcase','suitcase'],
-    ['fa-sun','sun'],['fa-syringe','medical2'],['fa-temperature-half','temp'],
-    ['fa-thumbtack','pin2'],['fa-timeline','timeline'],['fa-tint','tint'],
+    ['fa-hourglass','hourglass'],['fa-laptop','laptop'],['fa-leaf','leaf'],
+    ['fa-lightbulb','idea'],['fa-location-dot','location'],['fa-mobile','mobile'],
+    ['fa-moon','night'],['fa-network-wired','network'],['fa-newspaper','news'],
+    ['fa-palette','palette'],['fa-pencil','pencil'],['fa-percent','percent'],
+    ['fa-person','person'],['fa-phone-flip','phone-flip'],['fa-plug','plug'],
+    ['fa-puzzle-piece','puzzle'],['fa-qrcode','qr'],['fa-rocket','rocket'],
+    ['fa-route','route'],['fa-school','school'],['fa-screwdriver-wrench','tools'],
+    ['fa-share','share'],['fa-signal','signal'],['fa-sitemap','sitemap'],
+    ['fa-sort','sort'],['fa-spinner','loading'],['fa-square-check','sq-check'],
+    ['fa-store','store'],['fa-suitcase','suitcase'],['fa-sun','sun'],
+    ['fa-table-columns','columns'],['fa-timeline','timeline'],
     ['fa-toggle-on','toggle'],['fa-trophy','trophy'],['fa-truck-fast','delivery'],
     ['fa-umbrella','umbrella'],['fa-unlock','unlock'],['fa-video','video'],
-    ['fa-virus','virus'],['fa-volume-high','volume'],['fa-wind','wind'],
-    ['fa-graduation-cap','graduate']
+    ['fa-volume-high','volume'],['fa-wind','wind']
   ];
 
   var _faFilterVal = '';
-  var _faCallback  = null;
 
   function initCharts() {
     document.querySelectorAll('[data-chartjs]').forEach(function (canvas) {
@@ -128,7 +121,7 @@
   var TYPE_CONFIGS = {
     stat: [
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">',
-      '<div class="nu-field"><label class="nu-label">SQL <small style="color:#888">→ <code>value</code> column</small></label>',
+      '<div class="nu-field"><label class="nu-label">SQL <small style="color:#888">&rarr; <code>value</code> column</small></label>',
       '<textarea class="nu-input" id="nuWSql" rows="3" placeholder="SELECT COUNT(*) as value FROM my_table"></textarea></div>',
       '<div class="nu-field"><label class="nu-label">Subtitle (optional)</label>',
       '<input class="nu-input" id="nuWSubtitle" placeholder="e.g. Pending tasks"></div></div>',
@@ -137,24 +130,22 @@
       '<select class="nu-input" id="nuWColor">',
       '<option value="primary">Teal</option><option value="success">Green</option>',
       '<option value="warning">Orange</option><option value="error">Red</option>',
-      '</select></div>',
-      '<div class="nu-field"><label class="nu-label">Accent colour</label><div style="display:flex;gap:6px;">',
-      '</div></div></div>',
+      '</select></div></div>',
       '<div style="padding:10px;background:var(--color-surface-offset,#f5f5f5);border-radius:.5rem;border-left:3px solid #01696f;margin-bottom:4px;">',
       '<div class="nu-label" style="margin-bottom:8px;color:#01696f;">&#10148; Drill-down (optional)</div>',
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">',
       '<div class="nu-field"><label class="nu-label">Module name</label>',
       '<input class="nu-input" id="nuWLinkModule" placeholder="e.g. pending_tasks"></div>',
-      '<div class="nu-field"><label class="nu-label">— or — External URL</label>',
+      '<div class="nu-field"><label class="nu-label">&mdash; or &mdash; External URL</label>',
       '<input class="nu-input" id="nuWLinkUrl" placeholder="https://..."></div>',
       '</div>',
-      '<small style="color:#888;font-size:11px;">When filled, a › arrow button appears on the stat card. Module name takes priority over URL.</small>',
+      '<small style="color:#888;font-size:11px;">When filled, a &rsaquo; arrow button appears on the stat card.</small>',
       '</div>'
     ].join(''),
     chart_bar:  '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT status AS label, COUNT(*) AS value FROM my_table GROUP BY status"></textarea></div>',
     chart_line: '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT DATE(created_at) AS label, COUNT(*) AS value FROM my_table GROUP BY DATE(created_at) ORDER BY label"></textarea></div>',
     chart_pie:  '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT category AS label, COUNT(*) AS value FROM my_table GROUP BY category"></textarea></div>',
-    table:      '<div class="nu-field"><label class="nu-label">SQL <small style="color:#888">use <code>{{user_id}}</code> to filter by current user</small></label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT title AS Task, status AS Status FROM my_tasks LIMIT 10"></textarea></div>',
+    table:      '<div class="nu-field"><label class="nu-label">SQL <small style="color:#888">use <code>{{user_id}}</code> for current user</small></label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT title AS Task, status AS Status FROM my_tasks LIMIT 10"></textarea></div>',
     list:       '<div class="nu-field"><label class="nu-label">Links (one per line: <code>Label|module_name</code> or <code>Label|https://url</code>)</label><textarea class="nu-input" id="nuWLinks" rows="5" placeholder="Open Forms|forms\nMy Reports|reports"></textarea></div>',
     progress:   '<div class="nu-field" style="margin-bottom:12px;"><label class="nu-label">SQL (columns: <code>done</code>, <code>total</code>)</label><textarea class="nu-input" id="nuWSql" rows="3"></textarea></div><div class="nu-field"><label class="nu-label">Label</label><input class="nu-input" id="nuWSubtitle" placeholder="Tasks completed"></div>',
     custom:     '<div class="nu-field"><label class="nu-label">HTML Content</label><textarea class="nu-input" id="nuWHtml" rows="6" placeholder="<p>Any HTML here...</p>"></textarea></div>'
@@ -170,7 +161,7 @@
     editMode:  false,
     editingId: null,
 
-    // ── FA Picker ──────────────────────────────────────────────────────────
+    // ── FA Picker ────────────────────────────────────────────────────────
     openFaPicker: function () {
       var modal = document.getElementById('nuFaPickerModal');
       if (!modal) return;
@@ -198,14 +189,12 @@
       var current = (document.getElementById('nuWIcon') || {}).value || '';
       var html = '';
       FA_ICONS.forEach(function (item) {
-        var cls   = item[0]; // e.g. 'fa-clock'
+        var cls   = item[0];
         var label = item[1];
         if (filter && cls.indexOf(filter) === -1 && label.indexOf(filter) === -1) return;
-        var isSelected = (current === cls) ? ' nu-selected' : '';
-        html += '<button class="nu-fa-picker-btn' + isSelected + '" data-fa="' + cls + '" title="' + cls + '" onclick="nuDash.selectFaIcon(\'' + cls + '\')">' +
-                '<i class="fas ' + cls + '"></i>' +
-                '<span>' + label + '</span>' +
-                '</button>';
+        var sel = (current === cls) ? ' nu-selected' : '';
+        html += '<button class="nu-fa-picker-btn' + sel + '" data-fa="' + cls + '" title="' + cls + '" onclick="nuDash.selectFaIcon(\'' + cls + '\')">' +
+                '<i class="fas ' + cls + '"></i><span>' + label + '</span></button>';
       });
       if (!html) html = '<div style="grid-column:1/-1;text-align:center;color:#888;padding:24px;">No icons match.</div>';
       grid.innerHTML = html;
@@ -213,10 +202,7 @@
 
     selectFaIcon: function (cls) {
       var iconEl = document.getElementById('nuWIcon');
-      if (iconEl) {
-        iconEl.value = cls;
-        iconEl.readOnly = false; // allow clear
-      }
+      if (iconEl) iconEl.value = cls;
       this.closeFaPicker();
       this.updateIconPreview();
     },
@@ -238,17 +224,16 @@
       badge.style.background = accent;
       var iconHtml = '';
       if (iconVal) {
-        // FA class (starts with fa-) or emoji
         var isFa = iconVal.indexOf('fa-') !== -1;
         iconHtml = isFa
           ? '<i class="fas ' + iconVal + '" style="font-size:.9rem;"></i>'
           : '<span style="font-size:1rem;">' + iconVal + '</span>';
       }
       badge.innerHTML = (iconHtml ? iconHtml + ' ' : '') + title;
-      wrap.style.display = iconVal || title ? 'block' : 'none';
+      wrap.style.display = (iconVal || title) ? 'block' : 'none';
     },
 
-    // ── Group toggle ───────────────────────────────────────────────────────
+    // ── Group toggle ─────────────────────────────────────────────────────
     toggleGroup: function (bodyId, roleCode) {
       var body    = document.getElementById(bodyId);
       var chevron = document.getElementById(bodyId + '_chevron');
@@ -265,14 +250,14 @@
         });
       } else {
         body.style.maxHeight = body.scrollHeight + 'px';
-        body.offsetHeight;
+        body.offsetHeight; // force reflow
         body.classList.add('nu-group-collapsed');
         if (chevron) chevron.classList.add('nu-group-collapsed');
         setGroupCollapsed(roleCode, true);
       }
     },
 
-    // ── Builder open/close ─────────────────────────────────────────────────
+    // ── Builder open/close ───────────────────────────────────────────────
     openBuilder: function (id) {
       this.editingId = id || null;
       var sid = id ? String(id) : null;
@@ -341,7 +326,7 @@
       this.updateIconPreview();
     },
 
-    // ── Config building ────────────────────────────────────────────────────
+    // ── Config building ──────────────────────────────────────────────────
     buildConfig: function () {
       var type  = document.getElementById('nuWType').value;
       var sqlEl = document.getElementById('nuWSql');
@@ -367,7 +352,9 @@
           var lines = ((document.getElementById('nuWLinks')||{}).value||'').split('\n').filter(Boolean);
           return { items: lines.map(function (l) {
             var p = l.split('|'); var t = (p[1]||'').trim();
-            return t.indexOf('http') === 0 ? { label:(p[0]||'').trim(), url:t } : { label:(p[0]||'').trim(), module:t };
+            return t.indexOf('http') === 0
+              ? { label:(p[0]||'').trim(), url:t }
+              : { label:(p[0]||'').trim(), module:t };
           })};
         }
         case 'custom':
@@ -391,7 +378,11 @@
       wrap.style.display = 'block';
       prev.innerHTML = '<span style="color:#888">Loading...</span>';
       if (!cfg.sql) { prev.innerHTML = '<em>No SQL to preview.</em>'; return; }
-      fetch(API + '?action=run_sql', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sql:cfg.sql}) })
+      fetch(API + '?action=run_sql', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({sql: cfg.sql})
+      })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           prev.innerHTML = d.error
@@ -419,22 +410,36 @@
       if (targetRole) payload.target_role = targetRole;
       if (id) payload.id = id;
       fetch(API + '?action=' + (id ? 'update' : 'add'), {
-        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
       })
         .then(function (r) { return r.json(); })
-        .then(function (d) { if (d.ok) { self.closeBuilder(); location.reload(); } else alert('Error: ' + (d.error||'Unknown')); })
+        .then(function (d) {
+          if (d.ok) { self.closeBuilder(); location.reload(); }
+          else alert('Error: ' + (d.error||'Unknown'));
+        })
         .catch(function (e) { alert('Request failed: ' + e.message); });
     },
 
     removeWidget: function (id) {
       if (!confirm('Remove this widget?')) return;
-      fetch(API + '?action=remove', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:id}) })
+      fetch(API + '?action=remove', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({id: id})
+      })
         .then(function (r) { return r.json(); })
         .then(function (d) { if (d.ok) location.reload(); else alert('Error: '+(d.error||'')); })
         .catch(function () { alert('Request failed'); });
     },
 
     editWidget: function (id) { this.openBuilder(id); },
+
+    drillDown: function (moduleName) {
+      if (window.NuApp && NuApp.loadModule) { NuApp.loadModule(moduleName); }
+      else if (window.loadModule) { loadModule(moduleName); }
+    },
 
     toggleEditMode: function () {
       this.editMode = !this.editMode;
@@ -472,12 +477,16 @@
       var order = Array.prototype.slice.call(document.querySelectorAll('.nu-widget-card')).map(function (c, i) {
         return { id: parseInt(c.dataset.widgetId, 10), position: (i+1)*10 };
       });
-      fetch(API + '?action=reorder', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({order:order}) });
+      fetch(API + '?action=reorder', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({order: order})
+      });
     },
 
     resetLayout: function () {
       if (!confirm('Reset to role default? Personal widgets will be removed.')) return;
-      fetch(API + '?action=reset', { method:'POST' })
+      fetch(API + '?action=reset', { method: 'POST' })
         .then(function (r) { return r.json(); })
         .then(function (d) { if (d.ok) location.reload(); })
         .catch(function () { alert('Request failed'); });
