@@ -1,8 +1,5 @@
 <?php
 declare(strict_types=1);
-/**
- * modules/widgets/widgets.php
- */
 if (!defined('NU_BOOTSTRAP_DONE')) {
     require_once dirname(__DIR__, 2) . '/core/module_bootstrap.php';
 }
@@ -14,7 +11,6 @@ $isAdmin      = in_array($role, ['globeadmin', 'admin'], true);
 $isGlobeAdmin = ($role === 'globeadmin');
 $canManage    = $isGlobeAdmin;
 
-// ── helpers ───────────────────────────────────────────────────────────────────
 function wu_resolve_widgets(NuDatabase $db, int $userId, string $role, bool $isGlobeAdmin): array {
     try {
         $personal = $db->fetchAll(
@@ -50,10 +46,10 @@ function wu_run_sql(NuDatabase $db, string $sql, int $userId): array {
 
 function wu_accent(string $color): string {
     switch ($color) {
-        case 'success': return 'var(--color-success,#437a22)';
-        case 'warning': return 'var(--color-warning,#964219)';
-        case 'error':   return 'var(--color-error,#a12c7b)';
-        default:        return 'var(--color-primary,#01696f)';
+        case 'success': return '#437a22';
+        case 'warning': return '#964219';
+        case 'error':   return '#a12c7b';
+        default:        return '#01696f';
     }
 }
 
@@ -63,28 +59,28 @@ function wu_chart_type(string $t): string {
     return 'bar';
 }
 
-/** Returns [icon, label, accent-css-var] for a widget type */
-function wu_type_meta(string $type): array {
+/** Returns hex accent color for a widget type */
+function wu_type_accent(string $type): string {
     switch ($type) {
-        case 'stat':       return ['🔢', 'Stat',     'var(--color-primary,#01696f)'];
-        case 'chart_bar':  return ['📊', 'Bar',      '#006494'];
-        case 'chart_line': return ['📈', 'Line',     '#7a39bb'];
-        case 'chart_pie':  return ['🥧', 'Pie',      '#da7101'];
-        case 'table':      return ['📋', 'Table',    'var(--color-success,#437a22)'];
-        case 'list':       return ['🔗', 'Links',    '#006494'];
-        case 'progress':   return ['⏳', 'Progress', 'var(--color-warning,#964219)'];
-        case 'custom':     return ['✏️',  'Custom',   'var(--color-error,#a12c7b)'];
-        default:           return ['🧩', 'Widget',   'var(--color-primary,#01696f)'];
+        case 'stat':       return '#01696f';
+        case 'chart_bar':  return '#006494';
+        case 'chart_line': return '#7a39bb';
+        case 'chart_pie':  return '#da7101';
+        case 'table':      return '#437a22';
+        case 'list':       return '#006494';
+        case 'progress':   return '#964219';
+        case 'custom':     return '#a12c7b';
+        default:           return '#01696f';
     }
 }
 
 function wu_empty_hint(int $wid): string {
-    return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 12px;color:var(--color-text-muted,#888);text-align:center;gap:8px;">'
+    return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 12px;color:#888;text-align:center;gap:8px;">'
          . '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">'
          . '<circle cx="12" cy="12" r="3"/>'
          . '<path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>'
          . '</svg>'
-         . '<span style="font-size:var(--text-xs,.75rem);">Not configured &mdash; click the gear icon to set up.</span></div>';
+         . '<span style="font-size:.75rem;">Not configured &mdash; click the gear icon to set up.</span></div>';
 }
 
 function wu_render(array $w, NuDatabase $db, int $userId): string {
@@ -98,12 +94,12 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                 $sql = trim($cfg['sql'] ?? '');
                 if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
                 $rows = wu_run_sql($db, $sql, $userId);
-                if (isset($rows[0]['_error'])) return '<p style="color:var(--color-error);font-size:12px;">SQL error: ' . htmlspecialchars($rows[0]['_error']) . '</p>';
+                if (isset($rows[0]['_error'])) return '<p style="color:#a12c7b;font-size:12px;">SQL error: ' . htmlspecialchars($rows[0]['_error']) . '</p>';
                 $val = $rows[0]['value'] ?? (isset($rows[0]) ? reset($rows[0]) : 0);
                 $sub = htmlspecialchars($cfg['subtitle'] ?? '');
                 return '<div style="display:flex;flex-direction:column;gap:4px;padding:4px 0;">'
                      . '<div style="font-size:2.5rem;font-weight:800;line-height:1;color:' . $accent . ';font-variant-numeric:tabular-nums;">' . number_format((float)$val) . '</div>'
-                     . ($sub ? '<div style="font-size:var(--text-xs,.75rem);color:var(--color-text-muted,#888);">' . $sub . '</div>' : '') . '</div>';
+                     . ($sub ? '<div style="font-size:.75rem;color:#888;">' . $sub . '</div>' : '') . '</div>';
 
             case 'chart_bar':
             case 'chart_line':
@@ -111,7 +107,7 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                 $sql = trim($cfg['sql'] ?? '');
                 if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
                 $rows = wu_run_sql($db, $sql, $userId);
-                if (isset($rows[0]['_error'])) return '<p style="color:var(--color-error);font-size:12px;">SQL error: ' . htmlspecialchars($rows[0]['_error']) . '</p>';
+                if (isset($rows[0]['_error'])) return '<p style="color:#a12c7b;font-size:12px;">SQL error: ' . htmlspecialchars($rows[0]['_error']) . '</p>';
                 $ctype     = wu_chart_type($type);
                 $id        = 'wc_' . $w['widget_id'];
                 $bgColor   = ($ctype === 'pie') ? ['#01696f','#437a22','#006494','#7a39bb','#da7101','#a12c7b'] : 'rgba(1,105,111,0.75)';
@@ -142,8 +138,8 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                 $sql = trim($cfg['sql'] ?? '');
                 if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
                 $rows = wu_run_sql($db, $sql, $userId);
-                if (isset($rows[0]['_error'])) return '<p style="color:var(--color-error);font-size:12px;">SQL error: ' . htmlspecialchars($rows[0]['_error']) . '</p>';
-                if (empty($rows)) return '<p style="color:var(--color-text-muted,#888);padding:12px 0;">No data</p>';
+                if (isset($rows[0]['_error'])) return '<p style="color:#a12c7b;font-size:12px;">SQL error: ' . htmlspecialchars($rows[0]['_error']) . '</p>';
+                if (empty($rows)) return '<p style="color:#888;padding:12px 0;">No data</p>';
                 $cols = array_keys($rows[0]);
                 $html = '<div class="nu-table-wrap"><table class="nu-table"><thead><tr>';
                 foreach ($cols as $c) $html .= '<th>' . htmlspecialchars(ucfirst($c)) . '</th>';
@@ -172,14 +168,14 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                 $sql = trim($cfg['sql'] ?? '');
                 if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
                 $rows  = wu_run_sql($db, $sql, $userId);
-                if (isset($rows[0]['_error'])) return '<p style="color:var(--color-error);font-size:12px;">SQL error</p>';
+                if (isset($rows[0]['_error'])) return '<p style="color:#a12c7b;font-size:12px;">SQL error</p>';
                 $total = (float)($rows[0]['total'] ?? 1);
                 $done  = (float)($rows[0]['done']  ?? 0);
                 $pct   = $total > 0 ? min(100, (int)round($done / $total * 100)) : 0;
                 $lbl   = htmlspecialchars($cfg['label'] ?? "$done / $total");
                 return '<div style="margin-top:4px;">'
-                     . '<div style="display:flex;justify-content:space-between;font-size:var(--text-xs,.75rem);color:var(--color-text-muted);margin-bottom:6px;"><span>' . $lbl . '</span><span>' . $pct . '%</span></div>'
-                     . '<div style="height:8px;border-radius:var(--radius-full,9999px);background:var(--color-surface-offset,#eee);overflow:hidden;">'
+                     . '<div style="display:flex;justify-content:space-between;font-size:.75rem;color:#888;margin-bottom:6px;"><span>' . $lbl . '</span><span>' . $pct . '%</span></div>'
+                     . '<div style="height:8px;border-radius:9999px;background:#eee;overflow:hidden;">'
                      . '<div style="width:' . $pct . '%;height:100%;background:' . $accent . ';border-radius:inherit;transition:width .6s ease;"></div>'
                      . '</div></div>';
 
@@ -188,15 +184,15 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                 return $html !== '' ? $html : wu_empty_hint((int)$w['widget_id']);
 
             default:
-                return '<p style="color:var(--color-text-muted);">Unknown widget type: ' . htmlspecialchars($type) . '</p>';
+                return '<p style="color:#888;">Unknown widget type: ' . htmlspecialchars($type) . '</p>';
         }
     } catch (Throwable $e) {
         error_log('[widget render] id=' . ($w['widget_id'] ?? '?') . ' ' . $e->getMessage());
-        return '<p style="color:var(--color-error);font-size:12px;">Widget error: ' . htmlspecialchars($e->getMessage()) . '</p>';
+        return '<p style="color:#a12c7b;font-size:12px;">Widget error: ' . htmlspecialchars($e->getMessage()) . '</p>';
     }
 }
 
-// ── Resolve & prepare ─────────────────────────────────────────────────────────
+// ── Resolve & prepare
 $widgets = wu_resolve_widgets($db, $userId, $role, $isGlobeAdmin);
 
 try {
@@ -228,7 +224,7 @@ if ($showRoleGroups) {
         foreach ($rRows as $r) {
             $roleNames[$r['role_code']] = $r['role_name'];
         }
-    } catch (Throwable $e) { /* non-fatal */ }
+    } catch (Throwable $e) {}
 }
 
 $widgetsForJs = [];
@@ -239,19 +235,12 @@ if ($canManage) {
 }
 $widgetsJson = json_encode($widgetsForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
 
-$groupAccents = [
-    'var(--color-primary,#01696f)',
-    'var(--color-success,#437a22)',
-    '#006494',
-    '#7a39bb',
-    'var(--color-warning,#964219)',
-    'var(--color-error,#a12c7b)',
-];
+// All hex so alpha suffix (cc) works correctly in CSS gradients
+$groupAccents = ['#01696f','#437a22','#006494','#7a39bb','#964219','#a12c7b'];
 $accentIdx = 0;
 ?>
 
 <style>
-/* ── 12-column widget grid ───────────────────────────────────────────────── */
 #nuWidgetGrid {
     display: grid;
     grid-template-columns: repeat(12, 1fr);
@@ -271,7 +260,6 @@ $accentIdx = 0;
     margin-top: 0 !important;
     pointer-events: none;
 }
-/* ── widget card ─────────────────────────────────────────────────────────── */
 .nu-widget-card {
     transition: transform .18s ease, box-shadow .18s ease;
     border-radius: var(--radius-lg, .75rem);
@@ -281,32 +269,29 @@ $accentIdx = 0;
     transform: translateY(-3px);
     box-shadow: 0 8px 24px rgba(0,0,0,.10);
 }
-/* accent bar at top of each card */
-.nu-widget-card .nu-widget-accent-bar {
-    height: 3px;
-    width: 100%;
-    margin: -16px -16px 12px -16px; /* bleed to card edges */
-    width: calc(100% + 32px);
-    border-radius: var(--radius-lg,.75rem) var(--radius-lg,.75rem) 0 0;
-}
-/* type badge pill */
-.nu-widget-type-badge {
+/* Title badge */
+.nu-widget-title-badge {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: .04em;
-    padding: 2px 7px;
-    border-radius: var(--radius-full, 9999px);
+    gap: 6px;
+    font-size: .8rem;
+    font-weight: 700;
+    padding: 4px 12px 4px 8px;
+    border-radius: 9999px;
     color: #fff;
     line-height: 1.4;
-    vertical-align: middle;
-    margin-left: 6px;
-    opacity: .92;
+    letter-spacing: .01em;
+    max-width: 100%;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-/* ── toolbar ─────────────────────────────────────────────────────────────── */
+.nu-widget-title-icon {
+    font-size: 1rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+/* Toolbar */
 .nu-dash-toolbar {
     display: flex;
     align-items: center;
@@ -320,29 +305,24 @@ $accentIdx = 0;
     border: 1px solid var(--color-border, #e5e7eb);
 }
 .nu-dash-toolbar-title {
-    font-size: var(--text-sm, .875rem);
+    font-size: .875rem;
     font-weight: 700;
     color: var(--color-text, #111);
     display: flex;
     align-items: center;
     gap: 8px;
 }
-.nu-dash-toolbar-title .nu-dash-mode-badge {
-    font-size: var(--text-xs, .75rem);
+.nu-dash-mode-badge {
+    font-size: .75rem;
     font-weight: 500;
     background: var(--color-surface, #fff);
     border: 1px solid var(--color-border, #e5e7eb);
-    border-radius: var(--radius-full, 9999px);
+    border-radius: 9999px;
     padding: 2px 10px;
     color: var(--color-text-muted, #888);
 }
-.nu-dash-btn-group {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    align-items: center;
-}
-/* ── role group header ───────────────────────────────────────────────────── */
+.nu-dash-btn-group { display:flex;gap:6px;flex-wrap:wrap;align-items:center; }
+/* Role group */
 .nu-role-group-header {
     display: flex;
     align-items: center;
@@ -352,36 +332,28 @@ $accentIdx = 0;
     cursor: pointer;
     user-select: none;
     margin-bottom: 12px;
-    transition: background .15s ease;
+    transition: filter .15s ease;
 }
-.nu-role-group-header:hover {
-    filter: brightness(.97);
-}
-.nu-group-chevron {
-    transition: transform .3s ease;
-    flex-shrink: 0;
-}
-.nu-group-chevron.nu-group-collapsed {
-    transform: rotate(-90deg);
-}
+.nu-role-group-header:hover { filter: brightness(.94); }
+.nu-group-chevron { transition: transform .3s ease; flex-shrink: 0; }
+.nu-group-chevron.nu-group-collapsed { transform: rotate(-90deg); }
 .nu-role-code-badge {
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 11px; font-weight: 700;
     padding: 3px 10px;
-    border-radius: var(--radius-full, 9999px);
+    border-radius: 9999px;
     color: #fff;
     letter-spacing: .05em;
+    background: rgba(255,255,255,.22);
 }
 .nu-role-count-badge {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 11px; font-weight: 600;
     padding: 2px 8px;
-    border-radius: var(--radius-full, 9999px);
+    border-radius: 9999px;
     background: var(--color-surface, #fff);
     border: 1px solid var(--color-border, #e5e7eb);
     color: var(--color-text-muted, #888);
 }
-/* ── empty state ─────────────────────────────────────────────────────────── */
+/* Empty state */
 .nu-widget-empty-state {
     grid-column: 1 / -1;
     border: 2px dashed var(--color-border, #e5e7eb);
@@ -397,10 +369,9 @@ $accentIdx = 0;
 </style>
 
 <?php if ($canManage): ?>
-<!-- ── Toolbar (globeadmin only) ──────────────────────────────────────────── -->
 <div class="nu-dash-toolbar" id="nuDashToolbar">
     <div class="nu-dash-toolbar-title">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--color-primary,#01696f);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#01696f;">
             <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
             <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
         </svg>
@@ -408,51 +379,40 @@ $accentIdx = 0;
         <span class="nu-dash-mode-badge"><?= $hasPersonal ? 'personal' : 'all roles preview' ?></span>
     </div>
     <div class="nu-dash-btn-group">
-        <button class="nu-btn nu-btn-primary nu-btn-sm" onclick="nuDash.openBuilder()">
-            &#xff0b;&nbsp;Add Widget
-        </button>
-        <button class="nu-btn nu-btn-ghost nu-btn-sm" id="nuDashEditBtn" onclick="nuDash.toggleEditMode()">
-            &#9999;&#65039;&nbsp;Edit Layout
-        </button>
+        <button class="nu-btn nu-btn-primary nu-btn-sm" onclick="nuDash.openBuilder()">&#xff0b;&nbsp;Add Widget</button>
+        <button class="nu-btn nu-btn-ghost nu-btn-sm" id="nuDashEditBtn" onclick="nuDash.toggleEditMode()">&#9999;&#65039;&nbsp;Edit Layout</button>
         <?php if ($hasPersonal): ?>
-        <button class="nu-btn nu-btn-ghost nu-btn-sm" style="color:var(--color-error,#a12c7b);" onclick="nuDash.resetLayout()">
-            &#8635;&nbsp;Reset to Default
-        </button>
+        <button class="nu-btn nu-btn-ghost nu-btn-sm" style="color:#a12c7b;" onclick="nuDash.resetLayout()">&#8635;&nbsp;Reset to Default</button>
         <?php endif; ?>
-        <button class="nu-btn nu-btn-ghost nu-btn-sm" style="color:var(--color-warning,#964219);" onclick="nuDash.openRoleDesigner()">
-            &#127775;&nbsp;Design Role Layout
-        </button>
+        <button class="nu-btn nu-btn-ghost nu-btn-sm" style="color:#964219;" onclick="nuDash.openRoleDesigner()">&#127775;&nbsp;Design Role Layout</button>
     </div>
 </div>
 <?php else: ?>
-<!-- ── Read-only header ───────────────────────────────────────────────────── -->
 <div style="display:flex;align-items:center;margin-bottom:20px;gap:8px;">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--color-text-muted,#888);">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:#888;">
         <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
         <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
     </svg>
-    <span style="font-size:var(--text-sm,.875rem);font-weight:700;color:var(--color-text,#111);">My Dashboard</span>
-    <span style="font-size:var(--text-xs,.75rem);background:var(--color-surface-offset);border:1px solid var(--color-border,#e5e7eb);border-radius:var(--radius-full);padding:2px 10px;color:var(--color-text-muted,#888);">role default</span>
+    <span style="font-size:.875rem;font-weight:700;color:var(--color-text,#111);">My Dashboard</span>
+    <span style="font-size:.75rem;background:var(--color-surface-offset);border:1px solid var(--color-border,#e5e7eb);border-radius:9999px;padding:2px 10px;color:#888;">role default</span>
 </div>
 <?php endif; ?>
 
-<!-- ── Widget Grid ────────────────────────────────────────────────────────── -->
 <div id="nuWidgetGrid"<?= $showRoleGroups ? ' style="display:block;"' : '' ?>>
 
 <?php if (empty($widgets)): ?>
     <div class="nu-widget-empty-state">
-        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"
-             style="color:var(--color-text-faint,#ccc);">
+        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" style="color:#ccc;">
             <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
             <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
         </svg>
         <?php if ($canManage): ?>
-            <p style="margin:0;font-size:var(--text-base,1rem);font-weight:600;color:var(--color-text,#111);">No widgets yet</p>
-            <p style="margin:0;font-size:var(--text-sm,.875rem);color:var(--color-text-muted,#888);">Add your first widget to start building the dashboard.</p>
+            <p style="margin:0;font-size:1rem;font-weight:600;">No widgets yet</p>
+            <p style="margin:0;font-size:.875rem;color:#888;">Add your first widget to start building the dashboard.</p>
             <button class="nu-btn nu-btn-primary" onclick="nuDash.openBuilder()">&#xff0b;&nbsp;Add Widget</button>
         <?php else: ?>
-            <p style="margin:0;font-size:var(--text-base,1rem);font-weight:600;color:var(--color-text,#111);">No widgets configured</p>
-            <p style="margin:0;font-size:var(--text-sm,.875rem);color:var(--color-text-muted,#888);">No widgets have been set up for your role yet. Contact your administrator.</p>
+            <p style="margin:0;font-size:1rem;font-weight:600;">No widgets configured</p>
+            <p style="margin:0;font-size:.875rem;color:#888;">No widgets have been set up for your role yet.</p>
         <?php endif; ?>
     </div>
 
@@ -460,7 +420,7 @@ $accentIdx = 0;
 
 <?php foreach ($roleGroups as $groupKey => $groupWidgets):
     $isNamedGroup = ($showRoleGroups && $groupKey !== '__personal__');
-    $accentColor  = $groupAccents[$accentIdx % count($groupAccents)];
+    $accentHex    = $groupAccents[$accentIdx % count($groupAccents)];
     $accentIdx++;
     $displayRole  = htmlspecialchars($roleNames[$groupKey] ?? ucfirst($groupKey));
     $roleCode     = htmlspecialchars($groupKey);
@@ -470,61 +430,52 @@ $accentIdx = 0;
 
 <?php if ($isNamedGroup): ?>
 <div class="nu-role-group" style="margin-bottom:28px;">
-    <!-- Clickable group header -->
     <div
         class="nu-role-group-header"
         onclick="nuDash.toggleGroup('<?= $groupBodyId ?>', '<?= $roleCode ?>')"
-        style="background:linear-gradient(135deg,<?= $accentColor ?> 0%,<?= $accentColor ?>cc 100%);border-left:none;"
+        style="background:linear-gradient(135deg,<?= $accentHex ?> 0%,<?= $accentHex ?>cc 100%);"
     >
         <svg id="<?= $groupBodyId ?>_chevron" class="nu-group-chevron" width="16" height="16"
              viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5">
             <polyline points="6 9 12 15 18 9"/>
         </svg>
         <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
-            <span style="font-size:var(--text-sm,.875rem);font-weight:700;color:#fff;"><?= $displayRole ?></span>
-            <span class="nu-role-code-badge" style="background:rgba(255,255,255,.22);"><?= $roleCode ?></span>
+            <span style="font-size:.875rem;font-weight:700;color:#fff;"><?= $displayRole ?></span>
+            <span class="nu-role-code-badge"><?= $roleCode ?></span>
             <span class="nu-role-count-badge"><?= $widgetCount ?> widget<?= $widgetCount !== 1 ? 's' : '' ?></span>
         </div>
         <button
             class="nu-btn nu-btn-sm"
             style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.35);white-space:nowrap;"
             onclick="event.stopPropagation();nuDash.openBuilderForRole('<?= $roleCode ?>')"
-            title="Add widget for this role"
         >&#xff0b;&nbsp;Add</button>
     </div>
-
-    <!-- Collapsible body -->
     <div id="<?= $groupBodyId ?>" class="nu-role-group-body" style="margin-top:0;">
 <?php else: ?>
 <?php endif; ?>
 
 <?php foreach ($groupWidgets as $w):
-    // 12-col span mapping: widget_width 1→3, 2→6, 3→9, 4→12
-    $ww      = max(1, min(4, (int)($w['widget_width']  ?? 2)));
-    $colSpan = $ww * 3;
-    $rowSpan = max(1, min(3, (int)($w['widget_height'] ?? 1)));
-    [$typeIcon, $typeLabel, $typeAccent] = wu_type_meta($w['widget_type'] ?? 'custom');
+    $ww          = max(1, min(4, (int)($w['widget_width']  ?? 2)));
+    $colSpan     = $ww * 3;
+    $rowSpan     = max(1, min(3, (int)($w['widget_height'] ?? 1)));
+    $typeAccent  = wu_type_accent($w['widget_type'] ?? 'custom');
+    $icon        = trim($w['widget_icon'] ?? '');
 ?>
     <div class="nu-widget-card nu-card" data-widget-id="<?= (int)$w['widget_id'] ?>"
          style="grid-column:span <?= $colSpan ?>;grid-row:span <?= $rowSpan ?>;border-top:3px solid <?= $typeAccent ?>;">
 
-        <!-- Card header -->
-        <div class="nu-card-header" style="margin-bottom:12px;align-items:flex-start;">
-            <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
-                <h3 class="nu-card-title" style="font-size:var(--text-sm,.875rem);margin:0;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
-                    <?php if (!empty($w['widget_icon'])): ?>
-                        <span><?= htmlspecialchars($w['widget_icon']) ?></span>
-                    <?php endif; ?>
-                    <?= htmlspecialchars($w['widget_title']) ?>
-                    <span class="nu-widget-type-badge" style="background:<?= $typeAccent ?>;">
-                        <?= $typeIcon ?>&nbsp;<?= $typeLabel ?>
-                    </span>
-                </h3>
-            </div>
+        <div class="nu-card-header" style="margin-bottom:12px;align-items:center;">
+            <!-- Title as badge with optional custom icon -->
+            <span class="nu-widget-title-badge" style="background:<?= $typeAccent ?>;" title="<?= htmlspecialchars($w['widget_title']) ?>">
+                <?php if ($icon !== ''): ?>
+                    <span class="nu-widget-title-icon"><?= htmlspecialchars($icon) ?></span>
+                <?php endif; ?>
+                <?= htmlspecialchars($w['widget_title']) ?>
+            </span>
             <?php if ($canManage): ?>
-            <div class="nu-widget-controls" style="display:flex;gap:4px;flex-shrink:0;">
+            <div class="nu-widget-controls" style="display:flex;gap:4px;flex-shrink:0;margin-left:auto;">
                 <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuDash.editWidget(<?= (int)$w['widget_id'] ?>)" title="Configure">&#9881;</button>
-                <button class="nu-btn nu-btn-ghost nu-btn-sm" style="color:var(--color-error);" onclick="nuDash.removeWidget(<?= (int)$w['widget_id'] ?>)" title="Remove">&times;</button>
+                <button class="nu-btn nu-btn-ghost nu-btn-sm" style="color:#a12c7b;" onclick="nuDash.removeWidget(<?= (int)$w['widget_id'] ?>)" title="Remove">&times;</button>
             </div>
             <?php endif; ?>
         </div>
@@ -543,11 +494,10 @@ $accentIdx = 0;
 </div><!-- /#nuWidgetGrid -->
 
 <?php if ($canManage): ?>
-<!-- ── Widget Builder Modal (globeadmin only) ─────────────────────────────── -->
 <div id="nuBuilderModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);overflow-y:auto;">
-  <div style="background:var(--color-surface,#fff);border-radius:var(--radius-lg,.75rem);max-width:600px;margin:40px auto;padding:28px;box-shadow:var(--shadow-lg);">
+  <div style="background:var(--color-surface,#fff);border-radius:.75rem;max-width:600px;margin:40px auto;padding:28px;box-shadow:var(--shadow-lg);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-        <h3 style="margin:0;font-size:var(--text-lg,1.125rem);">&#129529;&nbsp;Widget Builder</h3>
+        <h3 style="margin:0;font-size:1.125rem;">&#129529;&nbsp;Widget Builder</h3>
         <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuDash.closeBuilder()">&times;</button>
     </div>
     <input type="hidden" id="nuWid" value="">
@@ -564,10 +514,19 @@ $accentIdx = 0;
             <option value="custom">✏️ Custom HTML</option>
         </select>
     </div>
-    <div class="nu-field" style="margin-bottom:14px;">
-        <label class="nu-label">Title</label>
-        <input class="nu-input" id="nuWTitle" placeholder="e.g. Pending Tasks">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div class="nu-field">
+            <label class="nu-label">Title</label>
+            <input class="nu-input" id="nuWTitle" placeholder="e.g. Pending Tasks">
+        </div>
+        <div class="nu-field">
+            <label class="nu-label">Icon <small style="color:#888;font-weight:400;">(emoji or text)</small></label>
+            <input class="nu-input" id="nuWIcon" placeholder="e.g. 📅 or ⚠️" maxlength="8"
+                   style="font-size:1.2rem;" oninput="nuDash.previewIcon(this.value)">
+        </div>
     </div>
+    <!-- Icon preview strip -->
+    <div id="nuWIconPreview" style="display:none;margin:-6px 0 12px;padding:8px 12px;background:var(--color-surface-offset,#f8f9fa);border-radius:.5rem;font-size:.8rem;color:#888;">Preview: <span id="nuWIconPreviewBadge" style="display:inline-flex;align-items:center;gap:6px;background:#01696f;color:#fff;padding:3px 10px 3px 8px;border-radius:9999px;font-weight:700;font-size:.8rem;"></span></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
         <div class="nu-field">
             <label class="nu-label">Width</label>
@@ -579,7 +538,7 @@ $accentIdx = 0;
             </select>
         </div>
         <div class="nu-field">
-            <label class="nu-label">Height (row spans)</label>
+            <label class="nu-label">Height</label>
             <select class="nu-input" id="nuWHeight">
                 <option value="1" selected>1 row</option>
                 <option value="2">2 rows</option>
@@ -588,12 +547,12 @@ $accentIdx = 0;
         </div>
     </div>
     <div id="nuWConfigArea"></div>
-    <div class="nu-field" style="margin:14px 0;padding:12px;background:var(--color-surface-offset);border-radius:var(--radius-md);border-left:3px solid var(--color-warning,#964219);">
-        <label class="nu-label" style="color:var(--color-warning,#964219);">&#127775;&nbsp;Assign to Role</label>
+    <div class="nu-field" style="margin:14px 0;padding:12px;background:var(--color-surface-offset);border-radius:.5rem;border-left:3px solid #964219;">
+        <label class="nu-label" style="color:#964219;">&#127775;&nbsp;Assign to Role</label>
         <select class="nu-input" id="nuWTargetRole">
             <option value="">-- My personal dashboard only --</option>
         </select>
-        <small style="color:var(--color-text-muted);font-size:11px;">Saving to a role sets the default for all users with that role.</small>
+        <small style="color:#888;font-size:11px;">Saving to a role sets the default for all users with that role.</small>
     </div>
     <div id="nuWPreviewWrap" style="display:none;margin:14px 0;">
         <label class="nu-label">Live Preview</label>
