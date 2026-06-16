@@ -8,10 +8,10 @@
   'use strict';
 
   var API       = 'modules/dashboard/widget_api.php';
-  var ROLES_API = 'api/roles.php';          // authoritative roles endpoint
+  var ROLES_API = 'api/roles.php';
   var chartInstances = {};
+  var LS_KEY = 'nuDash_groupCollapsed'; // localStorage key for collapse state
 
-  /* WIDGET_DATA is written by widgets.php as a global before this file loads */
   var WIDGET_DATA = window.NUDASH_WIDGET_DATA || {};
 
   /* ── chart init ─────────────────────────────────────────────────────────── */
@@ -27,11 +27,47 @@
     });
   }
 
+  /* ── localStorage helpers for group collapse state ──────────────────────── */
+  function getCollapsedSet() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveCollapsedSet(arr) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(arr)); } catch (e) {}
+  }
+  function isGroupCollapsed(roleCode) {
+    return getCollapsedSet().indexOf(roleCode) !== -1;
+  }
+  function setGroupCollapsed(roleCode, collapsed) {
+    var arr = getCollapsedSet();
+    var idx = arr.indexOf(roleCode);
+    if (collapsed && idx === -1) arr.push(roleCode);
+    if (!collapsed && idx !== -1) arr.splice(idx, 1);
+    saveCollapsedSet(arr);
+  }
+
+  /* ── restore saved collapse states on page load ────────────────────────── */
+  function restoreGroupStates() {
+    var collapsed = getCollapsedSet();
+    collapsed.forEach(function (roleCode) {
+      var bodyId  = 'nuRoleGroup_' + roleCode.replace(/[^a-z0-9_]/gi, '_');
+      var body    = document.getElementById(bodyId);
+      var chevron = document.getElementById(bodyId + '_chevron');
+      if (body) {
+        body.style.maxHeight = '0px';
+        body.classList.add('nu-group-collapsed');
+      }
+      if (chevron) chevron.classList.add('nu-group-collapsed');
+    });
+    // For all open groups set maxHeight so CSS transition works on collapse
+    document.querySelectorAll('.nu-role-group-body:not(.nu-group-collapsed)').forEach(function (body) {
+      body.style.maxHeight = body.scrollHeight + 'px';
+    });
+  }
+
   /* ── dynamic role dropdown ──────────────────────────────────────────────── */
   function loadRolesIntoDropdown(selectedValue) {
     var sel = document.getElementById('nuWTargetRole');
     if (!sel) return;
-
     fetch(ROLES_API + '?action=list')
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -39,7 +75,6 @@
           console.warn('[nuDash] roles fetch failed', d);
           return;
         }
-        // Rebuild options, keeping the blank "personal only" first entry
         while (sel.options.length > 1) sel.remove(1);
         d.roles.forEach(function (r) {
           var opt = document.createElement('option');
@@ -47,12 +82,9 @@
           opt.textContent = r.role_name + ' (' + r.role_code + ')';
           sel.appendChild(opt);
         });
-        // Restore selected value after options are populated
         if (selectedValue) sel.value = selectedValue;
       })
-      .catch(function (e) {
-        console.warn('[nuDash] roles fetch error', e);
-      });
+      .catch(function (e) { console.warn('[nuDash] roles fetch error', e); });
   }
 
   /* ── config field HTML per widget type ─────────────────────────────────── */
@@ -69,7 +101,6 @@
       '<option value="warning">Orange</option><option value="error">Red</option>',
       '</select></div>'
     ].join(''),
-
     chart_bar:  '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT status AS label, COUNT(*) AS value FROM my_table GROUP BY status"></textarea></div>',
     chart_line: '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT DATE(created_at) AS label, COUNT(*) AS value FROM my_table GROUP BY DATE(created_at) ORDER BY label"></textarea></div>',
     chart_pie:  '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT category AS label, COUNT(*) AS value FROM my_table GROUP BY category"></textarea></div>',
@@ -79,11 +110,42 @@
     custom:     '<div class="nu-field"><label class="nu-label">HTML Content</label><textarea class="nu-input" id="nuWHtml" rows="6" placeholder="<p>Any HTML here...</p>"></textarea></div>'
   };
 
-  /* ── main nuDash object ─────────────────────────────────────────────────── */
+  /* ── nuDash public API ───────────────────────────────────────────────────── */
   window.nuDash = {
     editMode:  false,
     editingId: null,
 
+    /* ── group toggle ─────────────────────────────────────────────── */
+    toggleGroup: function (bodyId, roleCode) {
+      var body    = document.getElementById(bodyId);
+      var chevron = document.getElementById(bodyId + '_chevron');
+      if (!body) return;
+
+      var isCollapsed = body.classList.contains('nu-group-collapsed');
+
+      if (isCollapsed) {
+        // Expand: set maxHeight to scrollHeight so CSS transition runs
+        body.style.maxHeight = body.scrollHeight + 'px';
+        body.classList.remove('nu-group-collapsed');
+        if (chevron) chevron.classList.remove('nu-group-collapsed');
+        setGroupCollapsed(roleCode, false);
+        // After transition ends, set maxHeight to 'none' so dynamic content can resize
+        body.addEventListener('transitionend', function handler() {
+          if (!body.classList.contains('nu-group-collapsed')) body.style.maxHeight = 'none';
+          body.removeEventListener('transitionend', handler);
+        });
+      } else {
+        // Collapse: pin current height then animate to 0
+        body.style.maxHeight = body.scrollHeight + 'px';
+        // Force reflow so the browser registers the starting value
+        body.offsetHeight; // eslint-disable-line no-unused-expressions
+        body.classList.add('nu-group-collapsed');
+        if (chevron) chevron.classList.add('nu-group-collapsed');
+        setGroupCollapsed(roleCode, true);
+      }
+    },
+
+    /* ── builder ────────────────────────────────────────────────────── */
     openBuilder: function (id) {
       this.editingId = id || null;
       var sid = id ? String(id) : null;
@@ -115,10 +177,8 @@
             return i.label + '|' + (i.module || i.url || '');
           }).join('\n');
         }
-
         var rEl = document.getElementById('nuWTargetRole');
         if (rEl) loadRolesIntoDropdown(w.widget_role || '');
-
       } else {
         document.getElementById('nuWType').value   = 'stat';
         document.getElementById('nuWTitle').value  = '';
@@ -131,13 +191,8 @@
       document.getElementById('nuBuilderModal').style.display = 'block';
     },
 
-    /* Opens the builder as a new widget pre-assigned to a specific role.
-     * Called by the "+ Add" button in each role group header. */
     openBuilderForRole: function (roleCode) {
-      this.openBuilder();          // open fresh (no id)
-      // loadRolesIntoDropdown is already called above with '' selected;
-      // we override the selection once the fetch resolves by calling it again
-      // with the desired roleCode.
+      this.openBuilder();
       loadRolesIntoDropdown(roleCode);
     },
 
@@ -324,7 +379,13 @@
     }
   };
 
-  document.addEventListener('DOMContentLoaded', initCharts);
-  if (document.readyState !== 'loading') initCharts();
+  /* Restore saved collapse states then init charts */
+  function onReady() {
+    restoreGroupStates();
+    initCharts();
+  }
+
+  document.addEventListener('DOMContentLoaded', onReady);
+  if (document.readyState !== 'loading') onReady();
 
 }());
