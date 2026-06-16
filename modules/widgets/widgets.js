@@ -129,6 +129,20 @@
     return '<span style="font-size:1rem;line-height:1;">' + icon + '</span>';
   }
 
+  // ── Derive the NuBuilder base URL (origin + directory path + index.php)
+  // e.g. https://example.com/nubuilder/ → https://example.com/nubuilder/index.php
+  function _nuBaseUrl() {
+    // If NuApp exposes its own base URL, trust that first
+    if (window.NuApp && NuApp.baseUrl) return NuApp.baseUrl.replace(/\/?$/, '/');
+    // Otherwise derive from current location: strip query string, then ensure we
+    // end up at the directory root (not inside a sub-path like /modules/...).
+    // window.location.pathname for NuBuilder is always the root index.php path.
+    var path = window.location.pathname; // e.g. /nubuilder5/ or /nubuilder5/index.php
+    // Strip any filename (anything after the last /)
+    var dir = path.replace(/\/[^\/]*$/, '/'); // e.g. /nubuilder5/
+    return window.location.origin + dir;
+  }
+
   // ── Stat config HTML — includes SQL, subtitle, colour AND drill-down link
   function _statConfigHtml() {
     return [
@@ -554,6 +568,12 @@
         if (e.target === overlay) overlay.remove();
       });
 
+      // Close on Escape key
+      var escHandler = function (e) {
+        if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
+      };
+      document.addEventListener('keydown', escHandler);
+
       var box = document.createElement('div');
       box.style.cssText = [
         'background:#fff;border-radius:.75rem;',
@@ -576,12 +596,12 @@
                        + 'style="background:none;border:none;cursor:pointer;font-size:1.25rem;color:#888;line-height:1;padding:2px 6px;" '
                        + 'title="Close">&times;</button>';
 
-      // Iframe
+      // ── Iframe src: use the NuBuilder root URL + index.php?form=<code>
+      // _nuBaseUrl() returns e.g. https://example.com/nubuilder5/
+      // We then load index.php?form=<formCode> relative to that root.
       var iframe = document.createElement('iframe');
-      // Build the same URL pattern NuBuilder uses for forms
-      var src = (window.location.pathname.replace(/\/[^\/]*$/, '/') || '/') + '?form=' + encodeURIComponent(formCode);
-      // If NuApp exposes its base path, use that
-      if (window.NuApp && NuApp.baseUrl) src = NuApp.baseUrl + '?form=' + encodeURIComponent(formCode);
+      var base = _nuBaseUrl(); // e.g. https://example.com/nubuilder5/
+      var src  = base + 'index.php?form=' + encodeURIComponent(formCode);
       iframe.src = src;
       iframe.style.cssText = 'flex:1;border:none;width:100%;';
       iframe.setAttribute('allowfullscreen', '');
