@@ -116,9 +116,7 @@
   // Build FA icon class string for display
   function faClass(icon) {
     if (!icon) return '';
-    // Already has prefix (fas fa-x, far fa-x, fab fa-x)
     if (/^(fas|far|fab|fa)\s/.test(icon)) return icon;
-    // Just fa-name — default to solid
     return 'fas ' + icon;
   }
 
@@ -131,19 +129,49 @@
     return '<span style="font-size:1rem;line-height:1;">' + icon + '</span>';
   }
 
-  var TYPE_CONFIGS = {
-    stat: [
+  // ── Stat config HTML — includes SQL, subtitle, colour AND drill-down link
+  function _statConfigHtml() {
+    return [
       '<div class="nu-field" style="margin-bottom:12px;">',
       '<label class="nu-label">SQL <small style="color:#888">must return a <code>value</code> column</small></label>',
       '<textarea class="nu-input" id="nuWSql" rows="3" placeholder="SELECT COUNT(*) as value FROM my_table"></textarea></div>',
+
       '<div class="nu-field" style="margin-bottom:12px;"><label class="nu-label">Subtitle (optional)</label>',
       '<input class="nu-input" id="nuWSubtitle" placeholder="Pending tasks"></div>',
-      '<div class="nu-field"><label class="nu-label">Accent colour</label>',
+
+      '<div class="nu-field" style="margin-bottom:12px;"><label class="nu-label">Accent colour</label>',
       '<select class="nu-input" id="nuWColor">',
       '<option value="primary">Teal</option><option value="success">Green</option>',
       '<option value="warning">Orange</option><option value="error">Red</option>',
-      '</select></div>'
-    ].join(''),
+      '</select></div>',
+
+      // ── Drill-down link row ──────────────────────────────────────────────
+      '<div style="padding:10px 12px;background:var(--color-surface-offset,#f8f9fa);',
+      'border-radius:.5rem;border-left:3px solid #006494;margin-bottom:0;">',
+      '<label class="nu-label" style="color:#006494;margin-bottom:8px;">',
+      '&#10148;&nbsp;Drill-down arrow link <small style="color:#888;font-weight:400;">(optional)</small>',
+      '</label>',
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">',
+      '<div class="nu-field" style="margin:0;">',
+      '<label class="nu-label" style="font-size:.75rem;">Module name</label>',
+      '<input class="nu-input" id="nuWLinkModule" placeholder="forms, reports, users…"',
+      '       title="Internal module to navigate to (e.g. forms)">',
+      '</div>',
+      '<div class="nu-field" style="margin:0;">',
+      '<label class="nu-label" style="font-size:.75rem;">— or — External URL</label>',
+      '<input class="nu-input" id="nuWLinkUrl" placeholder="https://…"',
+      '       title="External URL (used only if Module name is blank)">',
+      '</div>',
+      '</div>',
+      '<small style="color:#888;font-size:11px;display:block;margin-top:6px;">',
+      'When set, a › arrow button appears on the stat card. Module name takes priority over URL.',
+      '</small>',
+      '</div>'
+    ].join('');
+  }
+
+  var TYPE_CONFIGS = {
+    stat: '', // populated dynamically below to keep one source of truth
     chart_bar:  '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT status AS label, COUNT(*) AS value FROM my_table GROUP BY status"></textarea></div>',
     chart_line: '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT DATE(created_at) AS label, COUNT(*) AS value FROM my_table GROUP BY DATE(created_at) ORDER BY label"></textarea></div>',
     chart_pie:  '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT category AS label, COUNT(*) AS value FROM my_table GROUP BY category"></textarea></div>',
@@ -152,6 +180,8 @@
     progress:   '<div class="nu-field" style="margin-bottom:12px;"><label class="nu-label">SQL (columns: <code>done</code>, <code>total</code>)</label><textarea class="nu-input" id="nuWSql" rows="3"></textarea></div><div class="nu-field"><label class="nu-label">Label</label><input class="nu-input" id="nuWSubtitle" placeholder="Tasks completed"></div>',
     custom:     '<div class="nu-field"><label class="nu-label">HTML Content</label><textarea class="nu-input" id="nuWHtml" rows="6" placeholder="<p>Any HTML here...</p>"></textarea></div>'
   };
+  // Set stat config from function (avoids duplicating the long string)
+  TYPE_CONFIGS.stat = _statConfigHtml();
 
   var TYPE_ACCENTS = {
     stat:'#01696f', chart_bar:'#006494', chart_line:'#7a39bb',
@@ -179,7 +209,7 @@
         });
       } else {
         body.style.maxHeight = body.scrollHeight + 'px';
-        body.offsetHeight; // force reflow
+        body.offsetHeight;
         body.classList.add('nu-group-collapsed');
         if (chevron) chevron.classList.add('nu-group-collapsed');
         setGroupCollapsed(roleCode, true);
@@ -288,6 +318,12 @@
             return i.label + '|' + (i.module || i.url || '');
           }).join('\n');
         }
+        // Restore drill-down link fields (stat only)
+        var lmEl = document.getElementById('nuWLinkModule');
+        var luEl = document.getElementById('nuWLinkUrl');
+        if (lmEl) lmEl.value = cfg.link_module || '';
+        if (luEl) luEl.value = cfg.link_url    || '';
+
         loadRolesIntoDropdown(w.widget_role || '');
       } else {
         document.getElementById('nuWType').value   = 'stat';
@@ -323,8 +359,18 @@
       var sqlEl = document.getElementById('nuWSql');
       var sql   = sqlEl ? sqlEl.value.trim() : '';
       switch (type) {
-        case 'stat':
-          return { sql: sql, subtitle: (document.getElementById('nuWSubtitle')||{}).value||'', color: (document.getElementById('nuWColor')||{}).value||'primary' };
+        case 'stat': {
+          var lm  = ((document.getElementById('nuWLinkModule') || {}).value || '').trim();
+          var lu  = ((document.getElementById('nuWLinkUrl')    || {}).value || '').trim();
+          var cfg = {
+            sql:      sql,
+            subtitle: (document.getElementById('nuWSubtitle') || {}).value || '',
+            color:    (document.getElementById('nuWColor')    || {}).value || 'primary'
+          };
+          if (lm) cfg.link_module = lm;
+          if (lu && !lm) cfg.link_url = lu; // url only when no module set
+          return cfg;
+        }
         case 'chart_bar': case 'chart_line': case 'chart_pie': case 'table':
           return { sql: sql };
         case 'progress':
