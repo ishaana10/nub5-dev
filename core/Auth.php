@@ -33,7 +33,6 @@ class NuAuth {
 
         if (!$user) return ['success' => false, 'message' => 'Invalid credentials'];
 
-        // Check lockout
         if ($user['usr_failed_attempts'] >= $this->config['maxLoginAttempts']) {
             $lastAttempt = strtotime($user['usr_last_attempt']);
             if (time() - $lastAttempt < $this->config['lockoutDuration']) {
@@ -42,20 +41,17 @@ class NuAuth {
             $this->resetAttempts($user['usr_id']);
         }
 
-        // Verify password
         if (!password_verify($password, $user['usr_password'])) {
             $this->incrementAttempts($user['usr_id']);
             return ['success' => false, 'message' => 'Invalid credentials'];
         }
 
-        // 2FA check
         if ($this->config['enable2FA'] && $user['usr_2fa_secret']) {
             if (!$otp || !$this->verifyTOTP($user['usr_2fa_secret'], $otp)) {
                 return ['success' => false, 'message' => 'Invalid or missing 2FA code', 'requires2FA' => true];
             }
         }
 
-        // Success
         $this->resetAttempts($user['usr_id']);
         $this->createSession($user);
         $this->logAudit('login', 'nu_users', $user['usr_id']);
@@ -96,6 +92,10 @@ class NuAuth {
         );
     }
 
+    public function getCurrentRole(): string {
+        return $_SESSION['nu_role'] ?? '';
+    }
+
     // --- CSRF ---
     public function getCsrfToken() {
         if (empty($_SESSION['nu_csrf'])) {
@@ -108,7 +108,7 @@ class NuAuth {
         return isset($_SESSION['nu_csrf']) && hash_equals($_SESSION['nu_csrf'], $token);
     }
 
-    // --- Permissions ---
+    // --- Legacy permission check (module-level) ---
     public function hasPermission($permission) {
         $user = $this->getCurrentUser();
         if (!$user) return false;
@@ -124,6 +124,66 @@ class NuAuth {
 
         $permCodes = array_column($perms, 'perm_code');
         return in_array($permission, $permCodes);
+    }
+
+    // --- Form-level permission check ---
+    // action: 'view' | 'add' | 'edit' | 'delete' | 'export'
+    public function canForm(string $formCode, string $action): bool {
+        $user = $this->getCurrentUser();
+        if (!$user) return false;
+        if ($user['usr_role'] === 'globeadmin') return true;
+
+        $role = $user['usr_role'];
+        $col  = 'rfp_can_' . $action;
+
+        // Exact form match first, then wildcard fallback
+        $row = $this->db->fetchOne(
+            "SELECT {$col} FROM nu_role_form_permissions
+             WHERE rfp_role_code = :role AND rfp_form_code = :form",
+            [':role' => $role, ':form' => $formCode]
+        );
+
+        if ($row !== null) return (bool)$row[$col];
+
+        $wild = $this->db->fetchOne(
+            "SELECT {$col} FROM nu_role_form_permissions
+             WHERE rfp_role_code = :role AND rfp_form_code = '*'",
+            [':role' => $role]
+        );
+
+        return $wild ? (bool)$wild[$col] : false;
+    }
+
+    // Returns all 5 flags for a form — used by FormRenderer to inject data attrs
+    public function formPerms(string $formCode): array {
+        $user = $this->getCurrentUser();
+        if (!$user) return ['view'=>false,'add'=>false,'edit'=>false,'delete'=>false,'export'=>false];
+        if ($user['usr_role'] === 'globeadmin') {
+            return ['view'=>true,'add'=>true,'edit'=>true,'delete'=>true,'export'=>true];
+        }
+
+        $role = $user['usr_role'];
+        $row  = $this->db->fetchOne(
+            "SELECT * FROM nu_role_form_permissions
+             WHERE rfp_role_code = :role AND rfp_form_code = :form",
+            [':role' => $role, ':form' => $formCode]
+        );
+        if (!$row) {
+            $row = $this->db->fetchOne(
+                "SELECT * FROM nu_role_form_permissions
+                 WHERE rfp_role_code = :role AND rfp_form_code = '*'",
+                [':role' => $role]
+            );
+        }
+        if (!$row) return ['view'=>false,'add'=>false,'edit'=>false,'delete'=>false,'export'=>false];
+
+        return [
+            'view'   => (bool)$row['rfp_can_view'],
+            'add'    => (bool)$row['rfp_can_add'],
+            'edit'   => (bool)$row['rfp_can_edit'],
+            'delete' => (bool)$row['rfp_can_delete'],
+            'export' => (bool)$row['rfp_can_export'],
+        ];
     }
 
     public function requireAuth() {
@@ -150,6 +210,16 @@ class NuAuth {
             }
             http_response_code(403);
             exit('Access denied.');
+        }
+    }
+
+    public function requireFormPerm(string $formCode, string $action) {
+        $this->requireAuth();
+        if (!$this->canForm($formCode, $action)) {
+            http_response_code(403);
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'error' => 'You do not have ' . $action . ' permission on this form.']);
+            exit;
         }
     }
 
@@ -195,10 +265,6 @@ class NuAuth {
             !empty($_SERVER['HTTP_X_REQUESTED_WITH']) ||
             strpos($uri, '/api/') !== false
         );
-    }
-
-    private function fail($message) {
-        return ['success' => false, 'message' => $message];
     }
 
     // --- TOTP 2FA ---

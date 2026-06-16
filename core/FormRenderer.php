@@ -1,6 +1,5 @@
 <?php
 // nuBuilder Next - Runtime Form Renderer
-// Turns saved form metadata into real data-entry forms
 
 class NuFormRenderer {
     private $db;
@@ -8,8 +7,8 @@ class NuFormRenderer {
     private $audit;
 
     public function __construct() {
-        $this->db = NuDatabase::getInstance();
-        $this->auth = new NuAuth();
+        $this->db    = NuDatabase::getInstance();
+        $this->auth  = new NuAuth();
         $this->audit = new NuAudit();
     }
 
@@ -20,6 +19,12 @@ class NuFormRenderer {
         );
         if (!$form) return '<div class="nu-toast error">Form not found</div>';
 
+        // Permission check — view is the minimum needed to render
+        if (!$this->auth->canForm($formCode, 'view')) {
+            return '<div class="nu-alert nu-alert-danger">You do not have permission to view this form.</div>';
+        }
+
+        $perms  = $this->auth->formPerms($formCode);
         $layout = json_decode($form['form_layout'], true);
         if (!is_array($layout)) $layout = [];
 
@@ -31,21 +36,31 @@ class NuFormRenderer {
             );
         }
 
-        $html = '<form class="nu-runtime-form" id="runtimeForm_' . $formCode . '" ';
-        $html .= 'data-form-code="' . htmlspecialchars($formCode) . '" ';
-        $html .= 'data-table="' . htmlspecialchars($form['form_table'] ?? '') . '" ';
-        $html .= 'data-record-id="' . ($recordId ?? '') . '">';
+        $isReadonly = $recordId ? !$perms['edit'] : !$perms['add'];
+
+        $html  = '<form class="nu-generated-form nu-runtime-form" id="runtimeForm_' . $formCode . '" ';
+        $html .= 'data-form-code="'   . htmlspecialchars($formCode) . '" ';
+        $html .= 'data-table="'       . htmlspecialchars($form['form_table'] ?? '') . '" ';
+        $html .= 'data-record-id="'   . ($recordId ?? '') . '" ';
+        $html .= 'data-can-view="'    . ($perms['view']   ? '1' : '0') . '" ';
+        $html .= 'data-can-add="'     . ($perms['add']    ? '1' : '0') . '" ';
+        $html .= 'data-can-edit="'    . ($perms['edit']   ? '1' : '0') . '" ';
+        $html .= 'data-can-delete="'  . ($perms['delete'] ? '1' : '0') . '" ';
+        $html .= 'data-can-export="'  . ($perms['export'] ? '1' : '0') . '"';
+        $html .= ($isReadonly ? ' data-readonly="1"' : '') . '>';
+
         $html .= '<div class="nu-form-grid">';
-
         foreach ($layout as $field) {
-            $html .= $this->renderField($field, $record);
+            $html .= $this->renderField($field, $record, $isReadonly);
         }
-
         $html .= '</div>';
+
         $html .= '<div class="nu-form-actions">';
-        $html .= '<button type="submit" class="nu-btn nu-btn-primary">Save</button>';
+        if (!$isReadonly) {
+            $html .= '<button type="submit" class="nu-btn nu-btn-primary">Save</button>';
+        }
         $html .= '<button type="button" class="nu-btn nu-btn-ghost" onclick="history.back()">Cancel</button>';
-        if ($recordId) {
+        if ($recordId && $perms['delete']) {
             $html .= '<button type="button" class="nu-btn nu-btn-danger" onclick="deleteRecord(this)">Delete</button>';
         }
         $html .= '</div>';
@@ -54,28 +69,28 @@ class NuFormRenderer {
         return $html;
     }
 
-    private function renderField($field, $record = null) {
-        $type = $field['type'] ?? 'text';
-        $name = $field['name'] ?? '';
-        $label = $field['label'] ?? $name;
-        $value = $record[$name] ?? '';
-        $required = !empty($field['required']) ? 'required' : '';
+    private function renderField($field, $record = null, $readonly = false) {
+        $type        = $field['type']        ?? 'text';
+        $name        = $field['name']        ?? '';
+        $label       = $field['label']       ?? $name;
+        $value       = $record[$name]        ?? '';
+        $required    = !empty($field['required']) ? 'required' : '';
         $placeholder = $field['placeholder'] ?? '';
-        $options = $field['options'] ?? [];
-        $lookup = $field['lookup'] ?? null;
+        $options     = $field['options']     ?? [];
+        $disabledAttr = $readonly ? 'disabled' : '';
 
-        $html = '<div class="nu-field nu-field-' . $type . '">';
+        $html  = '<div class="nu-field nu-field-' . $type . '">';
         $html .= '<label>' . htmlspecialchars($label);
-        if ($required) $html .= ' <span style="color:var(--danger)">*</span>';
+        if ($required && !$readonly) $html .= ' <span style="color:var(--danger)">*</span>';
         $html .= '</label>';
 
         switch ($type) {
             case 'textarea':
-                $html .= '<textarea name="' . $name . '" class="nu-input" ' . $required . ' placeholder="' . htmlspecialchars($placeholder) . '" rows="4">' . htmlspecialchars($value) . '</textarea>';
+                $html .= '<textarea name="' . $name . '" class="nu-input" ' . $required . ' ' . $disabledAttr . ' placeholder="' . htmlspecialchars($placeholder) . '" rows="4">' . htmlspecialchars($value) . '</textarea>';
                 break;
 
             case 'select':
-                $html .= '<select name="' . $name . '" class="nu-input" ' . $required . '>';
+                $html .= '<select name="' . $name . '" class="nu-input" ' . $required . ' ' . $disabledAttr . '>';
                 $html .= '<option value="">-- Select --</option>';
                 foreach ($options as $opt) {
                     $selected = $value == $opt['value'] ? 'selected' : '';
@@ -85,35 +100,35 @@ class NuFormRenderer {
                 break;
 
             case 'lookup':
-                $html .= $this->renderLookup($field, $value);
+                $html .= $this->renderLookup($field, $value, $readonly);
                 break;
 
             case 'file':
-                $html .= '<input type="file" name="' . $name . '" class="nu-input" ' . $required . '>';
+                if (!$readonly) $html .= '<input type="file" name="' . $name . '" class="nu-input" ' . $required . '>';
                 if ($value) {
                     $html .= '<div style="margin-top:6px;font-size:12px;"><a href="uploads/' . htmlspecialchars($value) . '" target="_blank">View current file</a></div>';
                 }
                 break;
 
             case 'date':
-                $html .= '<input type="date" name="' . $name . '" class="nu-input" value="' . htmlspecialchars($value) . '" ' . $required . '>';
+                $html .= '<input type="date" name="' . $name . '" class="nu-input" value="' . htmlspecialchars($value) . '" ' . $required . ' ' . $disabledAttr . '>';
                 break;
 
             case 'datetime':
-                $html .= '<input type="datetime-local" name="' . $name . '" class="nu-input" value="' . htmlspecialchars($value) . '" ' . $required . '>';
+                $html .= '<input type="datetime-local" name="' . $name . '" class="nu-input" value="' . htmlspecialchars($value) . '" ' . $required . ' ' . $disabledAttr . '>';
                 break;
 
             case 'number':
-                $min = isset($field['min']) ? 'min="' . $field['min'] . '"' : '';
-                $max = isset($field['max']) ? 'max="' . $field['max'] . '"' : '';
+                $min  = isset($field['min'])  ? 'min="'  . $field['min']  . '"' : '';
+                $max  = isset($field['max'])  ? 'max="'  . $field['max']  . '"' : '';
                 $step = isset($field['step']) ? 'step="' . $field['step'] . '"' : '';
-                $html .= '<input type="number" name="' . $name . '" class="nu-input" value="' . htmlspecialchars($value) . '" ' . $required . ' ' . $min . ' ' . $max . ' ' . $step . ' placeholder="' . htmlspecialchars($placeholder) . '">';
+                $html .= '<input type="number" name="' . $name . '" class="nu-input" value="' . htmlspecialchars($value) . '" ' . $required . ' ' . $min . ' ' . $max . ' ' . $step . ' ' . $disabledAttr . ' placeholder="' . htmlspecialchars($placeholder) . '">';
                 break;
 
             case 'checkbox':
                 $checked = $value ? 'checked' : '';
                 $html .= '<label class="nu-checkbox-label">';
-                $html .= '<input type="checkbox" name="' . $name . '" value="1" ' . $checked . ' ' . $required . '>';
+                $html .= '<input type="checkbox" name="' . $name . '" value="1" ' . $checked . ' ' . $required . ' ' . $disabledAttr . '>';
                 $html .= '<span>' . htmlspecialchars($label) . '</span>';
                 $html .= '</label>';
                 break;
@@ -126,25 +141,25 @@ class NuFormRenderer {
                 $html .= $this->renderRepeater($field, $record);
                 break;
 
-            default: // text, email, password, etc.
-                $inputType = in_array($type, ['email', 'password', 'url', 'tel']) ? $type : 'text';
-                $html .= '<input type="' . $inputType . '" name="' . $name . '" class="nu-input" value="' . htmlspecialchars($value) . '" ' . $required . ' placeholder="' . htmlspecialchars($placeholder) . '">';
+            default:
+                $inputType = in_array($type, ['email','password','url','tel']) ? $type : 'text';
+                $html .= '<input type="' . $inputType . '" name="' . $name . '" class="nu-input" value="' . htmlspecialchars($value) . '" ' . $required . ' ' . $disabledAttr . ' placeholder="' . htmlspecialchars($placeholder) . '">';
         }
 
         if (!empty($field['help'])) {
             $html .= '<div class="nu-field-help">' . htmlspecialchars($field['help']) . '</div>';
         }
-
         $html .= '</div>';
         return $html;
     }
 
-    private function renderLookup($field, $value) {
-        $name = $field['name'];
-        $lookup = $field['lookup'];
-        $table = $lookup['table'] ?? '';
-        $idCol = $lookup['id_column'] ?? 'id';
+    private function renderLookup($field, $value, $readonly = false) {
+        $name       = $field['name'];
+        $lookup     = $field['lookup'];
+        $table      = $lookup['table']          ?? '';
+        $idCol      = $lookup['id_column']      ?? 'id';
         $displayCol = $lookup['display_column'] ?? 'name';
+        $disabledAttr = $readonly ? 'disabled' : '';
 
         $options = [];
         if ($table) {
@@ -153,7 +168,7 @@ class NuFormRenderer {
             );
         }
 
-        $html = '<select name="' . $name . '" class="nu-input nu-lookup">';
+        $html = '<select name="' . $name . '" class="nu-input nu-lookup" ' . $disabledAttr . '>';
         $html .= '<option value="">-- Select --</option>';
         foreach ($options as $opt) {
             $selected = $value == $opt['id'] ? 'selected' : '';
@@ -166,48 +181,44 @@ class NuFormRenderer {
     private function renderSubform($field, $record) {
         $subformCode = $field['subform_code'] ?? '';
         $parentField = $field['parent_field'] ?? 'parent_id';
-        $parentId = $record['id'] ?? 0;
-
-        $html = '<div class="nu-subform" data-subform="' . $subformCode . '" data-parent-field="' . $parentField . '" data-parent-id="' . $parentId . '">';
+        $parentId    = $record['id'] ?? 0;
+        $html  = '<div class="nu-subform" data-subform="' . $subformCode . '" data-parent-field="' . $parentField . '" data-parent-id="' . $parentId . '">';
         $html .= '<div class="nu-subform-header">';
         $html .= '<span>Subform: ' . htmlspecialchars($subformCode) . '</span>';
         $html .= '<button type="button" class="nu-btn nu-btn-ghost nu-btn-sm" onclick="loadSubform(this)">Load</button>';
-        $html .= '</div>';
-        $html .= '<div class="nu-subform-content"></div>';
-        $html .= '</div>';
+        $html .= '</div><div class="nu-subform-content"></div></div>';
         return $html;
     }
 
     private function renderRepeater($field, $record) {
         $name = $field['name'];
-        $subfields = $field['subfields'] ?? [];
-        $html = '<div class="nu-repeater" data-field="' . $name . '">';
-        $html .= '<div class="nu-repeater-rows">';
-        $html .= '</div>';
+        $html  = '<div class="nu-repeater" data-field="' . $name . '">';
+        $html .= '<div class="nu-repeater-rows"></div>';
         $html .= '<button type="button" class="nu-btn nu-btn-ghost nu-btn-sm" onclick="addRepeaterRow(this)">+ Add Row</button>';
         $html .= '</div>';
         return $html;
     }
 
     public function save($formCode, $data, $recordId = null) {
+        // API-level permission enforcement
+        $action = $recordId ? 'edit' : 'add';
+        if (!$this->auth->canForm($formCode, $action)) {
+            throw new Exception('Permission denied: cannot ' . $action . ' records on ' . $formCode);
+        }
+
         $form = $this->db->fetchOne(
             "SELECT * FROM nu_forms WHERE form_code = :code",
             [':code' => $formCode]
         );
-        if (!$form || !$form['form_table']) {
-            throw new Exception('Form has no target table');
-        }
+        if (!$form || !$form['form_table']) throw new Exception('Form has no target table');
 
-        $table = $form['form_table'];
+        $table  = $form['form_table'];
         $layout = json_decode($form['form_layout'], true);
 
-        // Filter only fields defined in layout
         $safeData = [];
         foreach ($layout as $field) {
             $name = $field['name'] ?? '';
-            if (isset($data[$name])) {
-                $safeData[$name] = $data[$name];
-            }
+            if (isset($data[$name])) $safeData[$name] = $data[$name];
         }
 
         if ($recordId) {
@@ -223,13 +234,15 @@ class NuFormRenderer {
     }
 
     public function delete($formCode, $recordId) {
+        if (!$this->auth->canForm($formCode, 'delete')) {
+            throw new Exception('Permission denied: cannot delete records on ' . $formCode);
+        }
+
         $form = $this->db->fetchOne(
             "SELECT * FROM nu_forms WHERE form_code = :code",
             [':code' => $formCode]
         );
-        if (!$form || !$form['form_table']) {
-            throw new Exception('Form has no target table');
-        }
+        if (!$form || !$form['form_table']) throw new Exception('Form has no target table');
 
         $old = $this->db->fetchOne(
             "SELECT * FROM {$form['form_table']} WHERE id = :id",
@@ -241,29 +254,31 @@ class NuFormRenderer {
     }
 
     public function browse($formCode, $page = 1, $perPage = 20, $filters = []) {
+        if (!$this->auth->canForm($formCode, 'view')) {
+            throw new Exception('Permission denied: cannot view ' . $formCode);
+        }
+
         $form = $this->db->fetchOne(
             "SELECT * FROM nu_forms WHERE form_code = :code",
             [':code' => $formCode]
         );
-        if (!$form || !$form['form_table']) {
-            throw new Exception('Form has no target table');
-        }
+        if (!$form || !$form['form_table']) throw new Exception('Form has no target table');
 
-        $table = $form['form_table'];
-        $layout = json_decode($form['form_layout'], true);
-        $offset = ($page - 1) * $perPage;
+        $table   = $form['form_table'];
+        $layout  = json_decode($form['form_layout'], true);
+        $offset  = ($page - 1) * $perPage;
 
-        $where = ['1=1'];
+        $where  = ['1=1'];
         $params = [];
         foreach ($filters as $key => $val) {
             if ($val !== '') {
-                $where[] = "{$key} LIKE :{$key}";
+                $where[]        = "{$key} LIKE :{$key}";
                 $params[":{$key}"] = '%' . $val . '%';
             }
         }
 
         $sql = "SELECT * FROM {$table} WHERE " . implode(' AND ', $where) . " ORDER BY id DESC LIMIT :limit OFFSET :offset";
-        $params[':limit'] = (int)$perPage;
+        $params[':limit']  = (int)$perPage;
         $params[':offset'] = (int)$offset;
         $records = $this->db->fetchAll($sql, $params);
 
@@ -273,11 +288,12 @@ class NuFormRenderer {
 
         return [
             'records' => $records,
-            'total' => $total,
-            'page' => $page,
-            'per_page' => $perPage,
-            'pages' => ceil($total / $perPage),
-            'layout' => $layout
+            'total'   => $total,
+            'page'    => $page,
+            'per_page'=> $perPage,
+            'pages'   => ceil($total / $perPage),
+            'layout'  => $layout,
+            'perms'   => $this->auth->formPerms($formCode),
         ];
     }
 }
