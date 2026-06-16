@@ -74,14 +74,13 @@ function wu_type_accent(string $type): string {
 }
 
 /**
- * Golden-angle HSL — unique, well-distributed hue for each index.
- * Works for any number of roles (2, 6, 20, 100…).
- * Returns both a base and a slightly-darker shade for a subtle gradient.
+ * Golden-angle HSL — unique, well-distributed hue for EACH index.
+ * Works for ANY number of roles (2, 6, 20, 100…) — no hardcoded limit.
  */
 function wu_role_color(int $index): array {
-    $hue     = fmod($index * 137.508, 360);
-    $base    = 'hsl(' . round($hue) . ',52%,34%)';
-    $darker  = 'hsl(' . round($hue) . ',52%,26%)';
+    $hue    = fmod($index * 137.508, 360);
+    $base   = 'hsl(' . round($hue) . ',52%,34%)';
+    $darker = 'hsl(' . round($hue) . ',52%,26%)';
     return ['base' => $base, 'darker' => $darker];
 }
 
@@ -247,13 +246,43 @@ $roleGroups     = [];
 $roleNames      = [];
 
 if ($showRoleGroups) {
-    // 1. Fetch ALL roles → seed every role as an empty bucket.
-    //    Try common column name variants so it works across different schema versions.
+    // ── FIX Bug 3: robust role fetch using INFORMATION_SCHEMA to detect column names ──
+    // This ensures ALL roles show as groups (even with 0 widgets), regardless of
+    // whether the schema uses role_code/role_name or code/name or other variants.
     try {
         $rRows = [];
-        foreach (['SELECT role_code, role_name FROM nu_roles ORDER BY role_name',
-                  'SELECT code AS role_code, name AS role_name FROM nu_roles ORDER BY name',
-                  'SELECT role_code, role_name FROM nu_roles ORDER BY role_code'] as $q) {
+
+        // Detect actual column names in nu_roles via INFORMATION_SCHEMA
+        $cols = [];
+        try {
+            $colRows = $db->fetchAll(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'nu_roles' AND TABLE_SCHEMA = DATABASE() ORDER BY ORDINAL_POSITION"
+            );
+            $cols = array_map(fn($r) => strtolower($r['COLUMN_NAME'] ?? $r['column_name'] ?? ''), $colRows);
+        } catch (Throwable $ce) {
+            $cols = [];
+        }
+
+        // Build SELECT using detected columns, with fallbacks
+        $codeCol = 'role_code';
+        $nameCol = 'role_name';
+        if (!empty($cols)) {
+            if (!in_array('role_code', $cols, true)) {
+                $codeCol = in_array('code', $cols, true) ? 'code' : ($cols[0] ?? 'role_code');
+            }
+            if (!in_array('role_name', $cols, true)) {
+                $nameCol = in_array('name', $cols, true) ? 'name' : ($cols[1] ?? 'role_name');
+            }
+        }
+
+        $queries = [
+            "SELECT {$codeCol} AS role_code, {$nameCol} AS role_name FROM nu_roles ORDER BY {$nameCol}",
+            'SELECT role_code, role_name FROM nu_roles ORDER BY role_name',
+            'SELECT code AS role_code, name AS role_name FROM nu_roles ORDER BY name',
+            'SELECT role_code, role_name FROM nu_roles ORDER BY role_code',
+        ];
+
+        foreach ($queries as $q) {
             try {
                 $rRows = $db->fetchAll($q);
                 if (!empty($rRows) && isset($rRows[0]['role_code'])) break;
@@ -261,18 +290,19 @@ if ($showRoleGroups) {
                 $rRows = [];
             }
         }
+
         foreach ($rRows as $r) {
-            $code = $r['role_code'] ?? '';
-            $name = $r['role_name'] ?? ucfirst($code);
+            $code = trim((string)($r['role_code'] ?? ''));
+            $name = trim((string)($r['role_name'] ?? ucfirst($code)));
             if ($code === '' || strtolower($code) === 'globeadmin') continue;
             $roleNames[$code]  = $name;
-            $roleGroups[$code] = [];
+            $roleGroups[$code] = [];  // seed EVERY role as empty bucket
         }
     } catch (Throwable $e) {
         error_log('[widgets] roles fetch: ' . $e->getMessage());
     }
 
-    // 2. Fill buckets with actual widgets
+    // Fill buckets with actual widgets
     foreach ($widgets as $w) {
         $isRoleWgt = ($w['widget_user_id'] === null || $w['widget_user_id'] === '');
         $key = $isRoleWgt ? ($w['widget_role'] ?? 'unassigned') : '__personal__';
@@ -283,7 +313,7 @@ if ($showRoleGroups) {
         $roleGroups[$key][] = $w;
     }
 
-    // 3. Sort by display name
+    // Sort by display name
     uksort($roleGroups, function ($a, $b) use ($roleNames) {
         $na = $roleNames[$a] ?? ucfirst($a);
         $nb = $roleNames[$b] ?? ucfirst($b);
@@ -293,10 +323,21 @@ if ($showRoleGroups) {
     $roleGroups['__flat__'] = $widgets;
 }
 
+// Build widget data for JS — include ALL fields especially widget_icon
 $widgetsForJs = [];
 if ($canManage) {
     foreach ($widgets as $w) {
-        $widgetsForJs[(string)$w['widget_id']] = $w;
+        $wid = (string)$w['widget_id'];
+        $widgetsForJs[$wid] = [
+            'widget_id'     => $w['widget_id'],
+            'widget_type'   => $w['widget_type']   ?? '',
+            'widget_title'  => $w['widget_title']  ?? '',
+            'widget_icon'   => $w['widget_icon']   ?? '',  // always include — key fix for icon save
+            'widget_config' => $w['widget_config'] ?? '{}',
+            'widget_width'  => $w['widget_width']  ?? 2,
+            'widget_height' => $w['widget_height'] ?? 1,
+            'widget_role'   => $w['widget_role']   ?? '',
+        ];
     }
 }
 $widgetsJson = json_encode($widgetsForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
@@ -305,6 +346,46 @@ $groupIdx = 0;
 
 <!-- Font Awesome 6 Free -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous">
+
+<!--
+  FIX Bug 1: nuDash stub — defined BEFORE any onclick="nuDash.xxx()" HTML is rendered.
+  All calls made before widgets.js loads are queued and replayed once the real
+  implementation is in place. This prevents "nuDash is not defined" errors when
+  the module is injected dynamically by NuApp.loadModule().
+-->
+<script>
+(function () {
+  if (window.nuDash && window.nuDash.__real) return; // already loaded
+  var _queue = [];
+  var _handler = function (method) {
+    return function () {
+      var args = Array.prototype.slice.call(arguments);
+      if (window.nuDash && window.nuDash.__real) {
+        window.nuDash[method].apply(window.nuDash, args);
+      } else {
+        _queue.push([method, args]);
+      }
+    };
+  };
+  // Expose every public method as a stub so onclick attributes never throw
+  var methods = [
+    'openBuilder','openBuilderForRole','closeBuilder','saveWidget','editWidget',
+    'removeWidget','toggleEditMode','toggleGroup','resetLayout','openRoleDesigner',
+    'runPreview','onTypeChange','updateIconPreview','openFaPicker','closeFaPicker',
+    'filterFaPicker','selectFaIcon','clearIcon','drillDown'
+  ];
+  var stub = { __real: false, __queue: _queue };
+  methods.forEach(function (m) { stub[m] = _handler(m); });
+  window.nuDash = stub;
+  // Drain queue once real nuDash is set (called from widgets.js after init)
+  window.__nuDashDrainQueue = function () {
+    _queue.forEach(function (item) {
+      try { window.nuDash[item[0]].apply(window.nuDash, item[1]); } catch(e) {}
+    });
+    _queue.length = 0;
+  };
+}());
+</script>
 
 <style>
 #nuWidgetGrid {
@@ -699,14 +780,14 @@ $groupIdx = 0;
     <div class="nu-field" style="margin-bottom:14px;">
         <label class="nu-label">Widget Type</label>
         <select class="nu-input" id="nuWType" onchange="nuDash.onTypeChange()">
-            <option value="stat">🔢 Stat / KPI</option>
-            <option value="chart_bar">📊 Bar Chart</option>
-            <option value="chart_line">📈 Line Chart</option>
-            <option value="chart_pie">🥧 Pie Chart</option>
-            <option value="table">📋 Data Table</option>
-            <option value="list">🔗 Quick Links</option>
-            <option value="progress">⏳ Progress Bar</option>
-            <option value="custom">✏️ Custom HTML</option>
+            <option value="stat">&#128178;&nbsp;Stat / KPI</option>
+            <option value="chart_bar">&#128202;&nbsp;Bar Chart</option>
+            <option value="chart_line">&#128200;&nbsp;Line Chart</option>
+            <option value="chart_pie">&#129379;&nbsp;Pie Chart</option>
+            <option value="table">&#128203;&nbsp;Data Table</option>
+            <option value="list">&#128279;&nbsp;Quick Links</option>
+            <option value="progress">&#9203;&nbsp;Progress Bar</option>
+            <option value="custom">&#9999;&#65039;&nbsp;Custom HTML</option>
         </select>
     </div>
 
@@ -719,7 +800,7 @@ $groupIdx = 0;
         <div class="nu-field" style="min-width:0;">
             <label class="nu-label">Icon <small style="color:#888;font-weight:400;">(FA or emoji)</small></label>
             <div style="display:flex;gap:6px;align-items:center;">
-                <input class="nu-input" id="nuWIcon" placeholder="fa-clock or 📋"
+                <input class="nu-input" id="nuWIcon" placeholder="fa-clock or &#128203;"
                        style="width:140px;font-size:.875rem;"
                        oninput="nuDash.updateIconPreview()"
                        title="Type an emoji, or use Pick to choose a Font Awesome icon">

@@ -164,7 +164,9 @@
     progress:'#964219', custom:'#a12c7b'
   };
 
-  window.nuDash = {
+  // ── Real nuDash implementation ─────────────────────────────────────────────
+  var realDash = {
+    __real:    true,
     editMode:  false,
     editingId: null,
 
@@ -209,8 +211,6 @@
       grid.innerHTML = html;
     },
 
-    // Picking an FA icon writes the class into the field and closes the picker.
-    // The field itself is now editable so users can also type an emoji directly.
     selectFaIcon: function (cls) {
       var iconEl = document.getElementById('nuWIcon');
       if (iconEl) iconEl.value = cls;
@@ -286,7 +286,7 @@
         document.getElementById('nuWWidth').value  = String(w.widget_width  || 2);
         document.getElementById('nuWHeight').value = String(w.widget_height || 1);
         var iconEl = document.getElementById('nuWIcon');
-        // widget_icon may be stored under different key names depending on API version
+        // widget_icon is always serialised in widgetsForJs; fall back to legacy 'icon' key
         if (iconEl) iconEl.value = w.widget_icon || w.icon || '';
         this.onTypeChange();
         var sqlEl = document.getElementById('nuWSql');
@@ -420,7 +420,18 @@
         method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
       })
         .then(function (r) { return r.json(); })
-        .then(function (d) { if (d.ok) { self.closeBuilder(); location.reload(); } else alert('Error: ' + (d.error||'Unknown')); })
+        .then(function (d) {
+          if (d.ok) {
+            // Update local WIDGET_DATA so re-opening builder before reload shows correct icon
+            if (id && WIDGET_DATA[String(id)]) {
+              WIDGET_DATA[String(id)].widget_icon = icon;
+            }
+            self.closeBuilder();
+            location.reload();
+          } else {
+            alert('Error: ' + (d.error||'Unknown'));
+          }
+        })
         .catch(function (e) { alert('Request failed: ' + e.message); });
     },
 
@@ -492,6 +503,12 @@
       if (rEl) setTimeout(function () { rEl.focus(); }, 150);
     }
   };
+
+  // ── Replace stub with real implementation & drain queued calls ─────────────
+  window.nuDash = realDash;
+  if (typeof window.__nuDashDrainQueue === 'function') {
+    window.__nuDashDrainQueue();
+  }
 
   function onReady() { restoreGroupStates(); initCharts(); }
   document.addEventListener('DOMContentLoaded', onReady);
