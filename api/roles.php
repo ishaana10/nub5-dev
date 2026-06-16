@@ -3,7 +3,7 @@ declare(strict_types=1);
 /**
  * api/roles.php  —  Dynamic Role & Form-Permission Management API
  *
- * Actions (all require globeadmin):
+ * Actions (all require globeadmin / roles.view permission):
  *   GET  ?action=list                       List all roles
  *   GET  ?action=get&role_code=x            Get one role + its form permissions
  *   GET  ?action=forms                      List all available forms (for the matrix UI)
@@ -13,11 +13,19 @@ declare(strict_types=1);
  *   POST ?action=save_perms&role_code=x     Upsert form permissions for a role
  */
 
-require_once dirname(__DIR__) . '/core/module_bootstrap.php';
-
 header('Content-Type: application/json');
+require_once '../config.php';
+require_once '../core/Database.php';
+require_once '../core/Auth.php';
 
-// Only globeadmin may manage roles
+$auth = new NuAuth();
+if (!$auth->checkAuth()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+    exit;
+}
+
+// Only globeadmin / roles.view may manage roles
 if (!$auth->hasPermission('roles.view')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Access denied']);
@@ -62,7 +70,6 @@ try {
             $code = trim($body['role_code'] ?? '');
             $desc = trim($body['role_description'] ?? '');
             if (!$name || !$code) throw new Exception('role_name and role_code are required');
-            // Sanitise code
             $code = preg_replace('/[^a-z0-9_]/', '_', strtolower($code));
             if ($code === 'globeadmin') throw new Exception('Cannot create a role named globeadmin');
             $exists = $db->fetchOne("SELECT role_id FROM nu_roles WHERE role_code = :c", [':c' => $code]);
@@ -100,9 +107,8 @@ try {
             $role = $db->fetchOne("SELECT * FROM nu_roles WHERE role_code = :c", [':c' => $code]);
             if (!$role) throw new Exception('Role not found');
             if (!empty($role['role_is_system'])) throw new Exception('System roles cannot be deleted');
-            // Check if any users are assigned this role
             $inUse = $db->fetchOne("SELECT COUNT(*) as cnt FROM nu_users WHERE usr_role = :c", [':c' => $code]);
-            if ($inUse['cnt'] > 0) throw new Exception('Cannot delete — ' . $inUse['cnt'] . ' user(s) are assigned this role');
+            if ($inUse['cnt'] > 0) throw new Exception('Cannot delete - ' . $inUse['cnt'] . ' user(s) are assigned this role');
             $db->delete('nu_role_form_permissions', 'rfp_role_code = :c', [':c' => $code]);
             $db->delete('nu_roles', 'role_code = :c', [':c' => $code]);
             echo json_encode(['success' => true]);
@@ -117,12 +123,11 @@ try {
             if (!$role) throw new Exception('Role not found');
             if (!empty($role['role_is_system'])) throw new Exception('Cannot edit permissions for system roles');
 
-            $body = json_decode(file_get_contents('php://input'), true) ?? [];
-            // $body['permissions'] = [ { form_code, can_view, can_add, can_edit, can_delete, can_export }, ... ]
+            $body  = json_decode(file_get_contents('php://input'), true) ?? [];
             $perms = $body['permissions'] ?? [];
             if (!is_array($perms)) throw new Exception('permissions must be an array');
 
-            $pdo = $db->getPdo();
+            $pdo  = $db->getPdo();
             $stmt = $pdo->prepare("
                 INSERT INTO nu_role_form_permissions
                     (rfp_role_code, rfp_form_code, rfp_can_view, rfp_can_add, rfp_can_edit, rfp_can_delete, rfp_can_export)
