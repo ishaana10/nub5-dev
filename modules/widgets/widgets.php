@@ -6,7 +6,6 @@ declare(strict_types=1);
  *
  * FRAGMENT — always included by dashboard.php or dashboard_user.php.
  * Bootstrap has already run. Do NOT add require_once bootstrap here.
- * $db, $_SESSION, $auth are all already available.
  */
 if (!defined('NU_BOOTSTRAP_DONE')) {
     require_once dirname(__DIR__, 2) . '/core/module_bootstrap.php';
@@ -64,7 +63,6 @@ function wu_chart_type(string $widgetType): string {
     }
 }
 
-// FIX 3: empty body hint — shown when a widget has no usable config yet
 function wu_empty_hint(int $widgetId): string {
     return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;'
          . 'padding:24px 12px;color:var(--color-text-muted,#888);text-align:center;gap:8px;">'
@@ -106,7 +104,7 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
             case 'chart_pie':
                 $sql = trim($cfg['sql'] ?? '');
                 if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
-                $rows   = wu_run_sql($db, $sql, $userId);
+                $rows = wu_run_sql($db, $sql, $userId);
                 if (isset($rows[0]['_error'])) {
                     return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error: '
                          . htmlspecialchars($rows[0]['_error']) . '</p>';
@@ -177,7 +175,7 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
             case 'progress':
                 $sql = trim($cfg['sql'] ?? '');
                 if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
-                $rows  = wu_run_sql($db, $sql, $userId);
+                $rows = wu_run_sql($db, $sql, $userId);
                 if (isset($rows[0]['_error'])) {
                     return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error</p>';
                 }
@@ -218,10 +216,12 @@ try {
     $hasPersonal = false;
 }
 
-// Pass all widget data to JS for FIX 2 (populate edit form)
-$widgetsJson = htmlspecialchars(json_encode(
-    array_column($widgets, null, 'widget_id')
-), ENT_QUOTES);
+// FIX: key WIDGET_DATA by string(widget_id) so JS lookup works regardless of int/string
+$widgetsForJs = [];
+foreach ($widgets as $w) {
+    $widgetsForJs[(string)$w['widget_id']] = $w;
+}
+$widgetsJson = htmlspecialchars(json_encode($widgetsForJs), ENT_QUOTES);
 ?>
 
 <!-- Toolbar -->
@@ -271,7 +271,6 @@ $widgetsJson = htmlspecialchars(json_encode(
                 <?php endif; ?>
                 <?= htmlspecialchars($w['widget_title']) ?>
             </h3>
-            <!-- Controls always visible so user can always reach ⚙ to fix empty widgets -->
             <div class="nu-widget-controls" style="display:flex;gap:4px;">
                 <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuDash.editWidget(<?= (int)$w['widget_id'] ?>)" title="Configure">&#x2699;&#xFE0F;</button>
                 <button class="nu-btn nu-btn-ghost nu-btn-sm" style="color:var(--color-error);" onclick="nuDash.removeWidget(<?= (int)$w['widget_id'] ?>)" title="Remove">&times;</button>
@@ -350,7 +349,7 @@ $widgetsJson = htmlspecialchars(json_encode(
 const API = 'modules/dashboard/widget_api.php';
 const chartInstances = {};
 
-// FIX 2: all saved widget data indexed by id for repopulating edit form
+// FIX: keys are strings so WIDGET_DATA[String(id)] always matches
 const WIDGET_DATA = <?= $widgetsJson ?>;
 
 function initCharts() {
@@ -381,44 +380,41 @@ window.nuDash = {
 
     openBuilder: function(id) {
         this.editingId = id || null;
+        // FIX: always coerce to string for WIDGET_DATA lookup
+        var sid = id ? String(id) : null;
         document.getElementById('nuWid').value = id || '';
         document.getElementById('nuWPreviewWrap').style.display = 'none';
 
-        if (id && WIDGET_DATA[id]) {
-            // FIX 2: Populate form with existing widget data
-            var w   = WIDGET_DATA[id];
+        if (sid && WIDGET_DATA[sid]) {
+            var w   = WIDGET_DATA[sid];
             var cfg = {};
             try { cfg = JSON.parse(w.widget_config || '{}'); } catch(e) {}
 
-            document.getElementById('nuWType').value   = w.widget_type  || 'stat';
-            document.getElementById('nuWTitle').value  = w.widget_title || '';
+            document.getElementById('nuWType').value   = w.widget_type   || 'stat';
+            document.getElementById('nuWTitle').value  = w.widget_title  || '';
             document.getElementById('nuWWidth').value  = String(w.widget_width  || 2);
             document.getElementById('nuWHeight').value = String(w.widget_height || 1);
 
-            // Render the config fields first, then fill them in
             this.onTypeChange();
 
-            var type   = w.widget_type || 'stat';
-            var sqlEl  = document.getElementById('nuWSql');
-            var subEl  = document.getElementById('nuWSubtitle');
-            var colEl  = document.getElementById('nuWColor');
-            var lnkEl  = document.getElementById('nuWLinks');
-            var htmEl  = document.getElementById('nuWHtml');
+            var sqlEl = document.getElementById('nuWSql');
+            var subEl = document.getElementById('nuWSubtitle');
+            var colEl = document.getElementById('nuWColor');
+            var lnkEl = document.getElementById('nuWLinks');
+            var htmEl = document.getElementById('nuWHtml');
 
-            if (sqlEl)  sqlEl.value  = cfg.sql      || '';
-            if (subEl)  subEl.value  = cfg.subtitle || cfg.label || '';
-            if (colEl)  colEl.value  = cfg.color    || 'primary';
-            if (htmEl)  htmEl.value  = cfg.html     || '';
+            if (sqlEl) sqlEl.value = cfg.sql      || '';
+            if (subEl) subEl.value = cfg.subtitle || cfg.label || '';
+            if (colEl) colEl.value = cfg.color    || 'primary';
+            if (htmEl) htmEl.value = cfg.html     || '';
             if (lnkEl && cfg.items) {
                 lnkEl.value = cfg.items.map(function(item) {
                     return item.label + '|' + (item.module || item.url || '');
                 }).join('\n');
             }
-
             var rEl = document.getElementById('nuWTargetRole');
             if (rEl) rEl.value = w.widget_role || '';
         } else {
-            // New widget — blank form
             document.getElementById('nuWType').value   = 'stat';
             document.getElementById('nuWTitle').value  = '';
             document.getElementById('nuWWidth').value  = '2';
@@ -476,7 +472,6 @@ window.nuDash = {
         }
     },
 
-    // FIX 1: validate before save
     validateConfig: function(type, config) {
         var sqlTypes = ['stat','chart_bar','chart_line','chart_pie','table','progress'];
         if (sqlTypes.indexOf(type) !== -1 && !config.sql) {
@@ -488,11 +483,10 @@ window.nuDash = {
         if (type === 'custom' && !config.html) {
             return 'Please enter some HTML content for this widget.';
         }
-        return null; // valid
+        return null;
     },
 
     runPreview: function() {
-        var self   = this;
         var config = this.buildConfig();
         var wrap   = document.getElementById('nuWPreviewWrap');
         var prev   = document.getElementById('nuWPreview');
@@ -503,13 +497,12 @@ window.nuDash = {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sql: config.sql })
-            }).then(function(r) {
-                return r.json();
-            }).then(function(d) {
+            }).then(function(r) { return r.json(); })
+            .then(function(d) {
                 if (d.error) {
                     prev.innerHTML = '<span style="color:var(--color-error)">' + d.error + '</span>';
                 } else {
-                    prev.innerHTML = '<pre style="font-size:12px;white-space:pre-wrap;">' + JSON.stringify((d.rows || []).slice(0, 3), null, 2) + '</pre>';
+                    prev.innerHTML = '<pre style="font-size:12px;white-space:pre-wrap;">' + JSON.stringify((d.rows || []).slice(0,3), null, 2) + '</pre>';
                 }
             }).catch(function() {
                 prev.innerHTML = '<span style="color:var(--color-error)">Request failed</span>';
@@ -531,29 +524,25 @@ window.nuDash = {
         var roleEl     = document.getElementById('nuWTargetRole');
         var targetRole = roleEl ? roleEl.value : null;
 
-        // FIX 1: validate
         if (!title) {
             alert('Please enter a title for this widget.');
             document.getElementById('nuWTitle').focus();
             return;
         }
-        var validationError = this.validateConfig(type, config);
-        if (validationError) {
-            alert(validationError);
-            return;
-        }
+        var err = this.validateConfig(type, config);
+        if (err) { alert(err); return; }
 
-        var payload  = { type: type, title: title, width: width, height: height, config: config };
+        var payload = { type: type, title: title, width: width, height: height, config: config };
         if (targetRole) payload.target_role = targetRole;
         if (id) payload.id = id;
         var action = id ? 'update' : 'add';
+
         fetch(API + '?action=' + action, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
-        }).then(function(r) {
-            return r.json();
-        }).then(function(d) {
+        }).then(function(r) { return r.json(); })
+        .then(function(d) {
             if (d.ok) { self.closeBuilder(); location.reload(); }
             else alert('Error: ' + (d.error || 'Unknown'));
         }).catch(function(e) { alert('Request failed: ' + e.message); });
@@ -565,9 +554,8 @@ window.nuDash = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id: id })
-        }).then(function(r) {
-            return r.json();
-        }).then(function(d) {
+        }).then(function(r) { return r.json(); })
+        .then(function(d) {
             if (d.ok) location.reload();
             else alert('Error: ' + (d.error || ''));
         }).catch(function() { alert('Request failed'); });
@@ -578,7 +566,6 @@ window.nuDash = {
     toggleEditMode: function() {
         this.editMode = !this.editMode;
         var btn = document.getElementById('nuDashEditBtn');
-        // In edit mode, hide the always-visible controls and show drag outlines only
         document.querySelectorAll('.nu-widget-card').forEach(function(el) {
             el.style.outline = this.editMode ? '2px dashed var(--color-primary,#01696f)' : '';
             el.draggable = this.editMode;
@@ -588,8 +575,8 @@ window.nuDash = {
     },
 
     initDrag: function() {
-        var self = this;
-        var grid = document.getElementById('nuWidgetGrid');
+        var self    = this;
+        var grid    = document.getElementById('nuWidgetGrid');
         var dragSrc = null;
         grid.querySelectorAll('.nu-widget-card').forEach(function(card) {
             card.addEventListener('dragstart', function() { dragSrc = card; card.style.opacity = '.4'; });

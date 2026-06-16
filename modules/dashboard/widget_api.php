@@ -16,10 +16,10 @@ require_once dirname(__DIR__, 2) . '/core/module_bootstrap.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-$db     = NuDatabase::getInstance();
-$action = $_GET['action'] ?? ($_POST['action'] ?? '');
-$userId = (int)($_SESSION['nu_user_id'] ?? 0);
-$role   = strtolower((string)($_SESSION['nu_role'] ?? ''));
+$db      = NuDatabase::getInstance();
+$action  = $_GET['action'] ?? ($_POST['action'] ?? '');
+$userId  = (int)($_SESSION['nu_user_id'] ?? 0);
+$role    = strtolower((string)($_SESSION['nu_role'] ?? ''));
 $isAdmin = in_array($role, ['globeadmin', 'admin'], true);
 
 // ── helpers ────────────────────────────────────────────────────
@@ -29,14 +29,11 @@ function wu_json(array $data): never {
 }
 
 function wu_safe_sql(string $sql, int $userId): string {
-    // Replace {{user_id}} placeholder with real user id
     return str_replace('{{user_id}}', (string)$userId, $sql);
 }
 
 // ── GET: list ─────────────────────────────────────────────────
 if ($action === 'list') {
-    // Personal widgets override role widgets.
-    // If user has no personal widgets, fall back to role defaults.
     $personal = $db->fetchAll(
         "SELECT * FROM nu_dashboard_widgets
          WHERE widget_user_id = ? AND widget_active = 1
@@ -59,7 +56,7 @@ if ($action === 'list') {
 if ($action === 'list_tables') {
     if (!$isAdmin) wu_json(['error' => 'Forbidden']);
     try {
-        $rows = $db->fetchAll("SHOW TABLES");
+        $rows   = $db->fetchAll("SHOW TABLES");
         $tables = array_map(fn($r) => array_values($r)[0], $rows);
         wu_json(['tables' => $tables]);
     } catch (Throwable $e) {
@@ -70,7 +67,7 @@ if ($action === 'list_tables') {
 // ── POST actions ──────────────────────────────────────────────
 $body = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $raw = file_get_contents('php://input');
+    $raw  = file_get_contents('php://input');
     $body = json_decode($raw, true) ?? $_POST;
 }
 
@@ -78,9 +75,10 @@ if ($action === 'add') {
     $type   = preg_replace('/[^a-z_]/', '', (string)($body['type'] ?? ''));
     $title  = substr((string)($body['title'] ?? 'Widget'), 0, 120);
     $config = $body['config'] ?? [];
-    $width  = max(1, min(4, (int)($body['width'] ?? 1)));
+    $width  = max(1, min(4, (int)($body['width']  ?? 2)));
     $height = max(1, min(3, (int)($body['height'] ?? 1)));
     $icon   = substr((string)($body['icon'] ?? ''), 0, 60);
+
     // Role-level widget: globeadmin only, pass target_role
     $targetRole = null;
     $targetUser = $userId;
@@ -88,12 +86,24 @@ if ($action === 'add') {
         $targetRole = substr((string)$body['target_role'], 0, 60);
         $targetUser = null;
     }
-    // Get next position
-    $maxPos = (int)($db->fetchOne(
-        "SELECT COALESCE(MAX(widget_position),0) as m FROM nu_dashboard_widgets
-         WHERE widget_user_id IS NULL AND widget_role = ?",
-        [$targetRole ?? $role]
-    )['m'] ?? 0);
+
+    // FIX: position query matches the actual scope being inserted into
+    if ($targetRole !== null) {
+        // role-level widget
+        $maxPos = (int)($db->fetchOne(
+            "SELECT COALESCE(MAX(widget_position),0) as m FROM nu_dashboard_widgets
+             WHERE widget_user_id IS NULL AND widget_role = ?",
+            [$targetRole]
+        )['m'] ?? 0);
+    } else {
+        // personal widget
+        $maxPos = (int)($db->fetchOne(
+            "SELECT COALESCE(MAX(widget_position),0) as m FROM nu_dashboard_widgets
+             WHERE widget_user_id = ?",
+            [$targetUser]
+        )['m'] ?? 0);
+    }
+
     $db->query(
         "INSERT INTO nu_dashboard_widgets
          (widget_user_id, widget_role, widget_type, widget_title, widget_icon, widget_config, widget_width, widget_height, widget_position)
@@ -115,10 +125,9 @@ if ($action === 'remove') {
 }
 
 if ($action === 'reorder') {
-    // body: {order: [{id:1, position:10}, {id:2, position:20}, ...]}
     $order = (array)($body['order'] ?? []);
     foreach ($order as $item) {
-        $id  = (int)($item['id'] ?? 0);
+        $id  = (int)($item['id']       ?? 0);
         $pos = (int)($item['position'] ?? 0);
         if (!$id) continue;
         $db->query(
@@ -134,8 +143,13 @@ if ($action === 'update') {
     $id     = (int)($body['id'] ?? 0);
     $title  = substr((string)($body['title'] ?? ''), 0, 120);
     $config = json_encode($body['config'] ?? []);
-    $width  = max(1, min(4, (int)($body['width'] ?? 1)));
-    $height = max(1, min(3, (int)($body['height'] ?? 1)));
+    // FIX: default width/height to existing values — fetch first
+    $existing = $db->fetchOne(
+        "SELECT widget_width, widget_height FROM nu_dashboard_widgets WHERE widget_id = ?",
+        [$id]
+    );
+    $width  = max(1, min(4, (int)($body['width']  ?? $existing['widget_width']  ?? 2)));
+    $height = max(1, min(3, (int)($body['height'] ?? $existing['widget_height'] ?? 1)));
     $db->query(
         "UPDATE nu_dashboard_widgets
          SET widget_title=?, widget_config=?, widget_width=?, widget_height=?
@@ -146,7 +160,6 @@ if ($action === 'update') {
 }
 
 if ($action === 'reset') {
-    // Delete all personal widgets — user reverts to role defaults
     $db->query(
         "UPDATE nu_dashboard_widgets SET widget_active=0
          WHERE widget_user_id=?",
@@ -156,9 +169,7 @@ if ($action === 'reset') {
 }
 
 if ($action === 'run_sql') {
-    // Run a widget's SQL and return data (for live preview in builder)
     $sql = wu_safe_sql((string)($body['sql'] ?? ''), $userId);
-    // Basic safety: only SELECT
     if (!preg_match('/^\s*SELECT\b/i', $sql)) {
         wu_json(['error' => 'Only SELECT statements allowed']);
     }
