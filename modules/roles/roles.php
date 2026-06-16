@@ -9,7 +9,7 @@ if (!$auth->hasPermission('roles.view')) {
 ?>
 <div class="nu-roles" id="rolesRoot">
 
-<!-- ═══ ROLE LIST PANEL ═══════════════════════════════════════════════════ -->
+<!-- ═══ ROLE LIST PANEL ══════════════════════════════════════════════════ -->
 <div id="roleListPanel">
   <div class="nu-card">
     <div class="nu-card-header" style="display:flex;justify-content:space-between;align-items:center;">
@@ -20,7 +20,7 @@ if (!$auth->hasPermission('roles.view')) {
   </div>
 </div>
 
-<!-- ═══ PERMISSIONS MATRIX PANEL ══════════════════════════════════════════ -->
+<!-- ═══ PERMISSIONS MATRIX PANEL ═════════════════════════════════════════════ -->
 <div id="rolePermPanel" style="display:none;margin-top:24px;">
   <div class="nu-card">
     <div class="nu-card-header" style="display:flex;justify-content:space-between;align-items:center;">
@@ -37,7 +37,7 @@ if (!$auth->hasPermission('roles.view')) {
   </div>
 </div>
 
-<!-- ═══ CREATE / EDIT MODAL ════════════════════════════════════════════════ -->
+<!-- ═══ CREATE / EDIT MODAL ════════════════════════════════════════════════════ -->
 <div id="roleModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;align-items:center;justify-content:center;">
   <div style="background:var(--card-bg,#fff);border-radius:12px;padding:28px;width:92%;max-width:480px;">
     <h4 id="roleModalTitle" style="margin:0 0 18px;">New Role</h4>
@@ -64,11 +64,11 @@ if (!$auth->hasPermission('roles.view')) {
 const Roles = (() => {
   let _roles     = [];
   let _forms     = [];
-  let _editCode  = null; // null = creating, string = editing
+  let _editCode  = null;
   let _permCode  = null;
   let _permData  = {}; // { form_code: { can_view, can_add, can_edit, can_delete, can_export } }
 
-  // ── helpers ────────────────────────────────────────────────────────────────
+  // ── helpers ──────────────────────────────────────────────────────────────────
   const $  = id => document.getElementById(id);
   const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
@@ -105,15 +105,15 @@ const Roles = (() => {
       html += `<tr>
         <td><strong>${esc(r.role_name)}</strong></td>
         <td><code>${esc(r.role_code)}</code></td>
-        <td>${esc(r.role_description || '—')}</td>
+        <td>${esc(r.role_description || '\u2014')}</td>
         <td>${isSystem
           ? '<span class="nu-status" style="background:#e8f4fd;color:#1a6fad;">System</span>'
           : '<span class="nu-status nu-status-active">Custom</span>'
         }</td>
         <td style="display:flex;gap:6px;">
-          ${!isSystem ? `<button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="Roles.openPermPanel('${esc(r.role_code)}', '${esc(r.role_name)}')">⚙ Permissions</button>` : ''}
-          ${!isSystem ? `<button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="Roles.openEditModal('${esc(r.role_code)}')">✎ Edit</button>` : ''}
-          ${!isSystem ? `<button class="nu-btn nu-btn-danger nu-btn-sm" onclick="Roles.deleteRole('${esc(r.role_code)}', '${esc(r.role_name)}')">✕</button>` : ''}
+          ${!isSystem ? `<button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="Roles.openPermPanel('${esc(r.role_code)}', '${esc(r.role_name)}')">\u2699 Permissions</button>` : ''}
+          ${!isSystem ? `<button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="Roles.openEditModal('${esc(r.role_code)}')">\u270e Edit</button>` : ''}
+          ${!isSystem ? `<button class="nu-btn nu-btn-danger nu-btn-sm" onclick="Roles.deleteRole('${esc(r.role_code)}', '${esc(r.role_name)}')">\u2715</button>` : ''}
           ${isSystem ? '<span style="color:#999;font-size:12px;">Protected</span>' : ''}
         </td>
       </tr>`;
@@ -125,7 +125,7 @@ const Roles = (() => {
   // ── Permissions panel ─────────────────────────────────────────────────────
   async function openPermPanel(roleCode, roleName) {
     _permCode = roleCode;
-    $('permPanelTitle').textContent = 'Permissions — ' + roleName;
+    $('permPanelTitle').textContent = 'Permissions \u2014 ' + roleName;
     $('permMatrixWrap').innerHTML = 'Loading…';
     $('rolePermPanel').style.display = 'block';
     $('roleListPanel').style.display = 'none';
@@ -137,13 +137,17 @@ const Roles = (() => {
       ]);
       _forms = jForms.forms;
       _permData = {};
+
+      // FIX: PDO returns integers as strings ("0"/"1").
+      // Using !! would make !!("0") === true, which is wrong.
+      // Use == 1 (loose equality) so both the integer 1 and string "1" match.
       jRole.permissions.forEach(p => {
         _permData[p.rfp_form_code] = {
-          can_view:   !!p.rfp_can_view,
-          can_add:    !!p.rfp_can_add,
-          can_edit:   !!p.rfp_can_edit,
-          can_delete: !!p.rfp_can_delete,
-          can_export: !!p.rfp_can_export,
+          can_view:   p.rfp_can_view   == 1,
+          can_add:    p.rfp_can_add    == 1,
+          can_edit:   p.rfp_can_edit   == 1,
+          can_delete: p.rfp_can_delete == 1,
+          can_export: p.rfp_can_export == 1,
         };
       });
       renderMatrix();
@@ -153,11 +157,9 @@ const Roles = (() => {
   }
 
   function renderMatrix() {
-    const cols = ['can_view','can_add','can_edit','can_delete','can_export'];
+    const cols   = ['can_view','can_add','can_edit','can_delete','can_export'];
     const labels = ['View','Add','Edit','Delete','Export'];
-
-    // Build rows: wildcard first, then all forms
-    const rows = [{ form_code: '*', form_name: '* All Forms (default)' }, ..._forms];
+    const rows   = [{ form_code: '*', form_name: '* All Forms (default)' }, ..._forms];
 
     let html = '<table class="nu-table" style="width:100%;min-width:560px;">';
     html += '<thead><tr><th style="min-width:180px;">Form</th>';
@@ -165,7 +167,7 @@ const Roles = (() => {
     html += '</tr></thead><tbody>';
 
     rows.forEach(row => {
-      const fc   = row.form_code;
+      const fc    = row.form_code;
       const perms = _permData[fc] || {};
       html += `<tr data-fc="${esc(fc)}"><td>${esc(row.form_name || fc)}<br><small style="color:#999;">${esc(fc)}</small></td>`;
       cols.forEach(col => {
@@ -187,7 +189,6 @@ const Roles = (() => {
 
   async function savePerms() {
     const permissions = [];
-    // Collect from _permData
     const allCodes = ['*', ..._forms.map(f => f.form_code)];
     allCodes.forEach(fc => {
       const p = _permData[fc] || {};
@@ -234,7 +235,7 @@ const Roles = (() => {
     $('rmSaveBtn').textContent = 'Save Changes';
     $('rmName').value = role.role_name;
     $('rmCode').value = role.role_code;
-    $('rmCode').disabled = true; // code is immutable after creation
+    $('rmCode').disabled = true;
     $('rmDesc').value = role.role_description || '';
     $('roleModal').style.display = 'flex';
   }
@@ -280,7 +281,7 @@ const Roles = (() => {
     } catch(e) { toast(e.message, 'error'); }
   }
 
-  // ── Auto-slug the role name into code ─────────────────────────────────────
+  // ── Auto-slug role name into code ───────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     const nameInput = $('rmName');
     const codeInput = $('rmCode');
@@ -293,7 +294,6 @@ const Roles = (() => {
     }
   });
 
-  // Public
   return { loadRoles, openCreateModal, openEditModal, closeModal, saveRole, deleteRole, openPermPanel, closePermPanel, savePerms, _onCheck };
 })();
 
