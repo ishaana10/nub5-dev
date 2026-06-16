@@ -59,6 +59,7 @@ function wu_chart_type(string $t): string {
     return 'bar';
 }
 
+/** Returns hex accent color for a widget type */
 function wu_type_accent(string $type): string {
     switch ($type) {
         case 'stat':       return '#01696f';
@@ -74,8 +75,8 @@ function wu_type_accent(string $type): string {
 }
 
 /**
- * Golden-angle HSL — unique, well-distributed hue for EACH index.
- * Works for ANY number of roles (2, 6, 20, 100…) — no hardcoded limit.
+ * Golden-angle HSL — unique, well-distributed hue for each index.
+ * Works for ANY number of roles (2, 6, 20, 100+) — no hardcoded limit.
  */
 function wu_role_color(int $index): array {
     $hue    = fmod($index * 137.508, 360);
@@ -115,7 +116,7 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                 if ($hasLink) {
                     if ($linkModule !== '') {
                         $safeM = htmlspecialchars($linkModule, ENT_QUOTES);
-                        $arrowHtml = '<button class="nu-stat-arrow" onclick="nuDash.drillDown(\'' . $safeM . '\',\'\')" title="View records" aria-label="View records">'
+                        $arrowHtml = '<button class="nu-stat-arrow" onclick="NuApp.loadModule(\'' . $safeM . '\')" title="View records" aria-label="View records">'
                                    . '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>'
                                    . '</button>';
                     } else {
@@ -193,7 +194,7 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                     $lbl   = htmlspecialchars($item['label'] ?? '');
                     $mod   = htmlspecialchars($item['module'] ?? '');
                     $url   = htmlspecialchars($item['url']    ?? '');
-                    $click = $mod ? "nuDash.drillDown('$mod','')" : "window.open('$url','_blank')";
+                    $click = $mod ? "NuApp.loadModule('$mod')" : "window.open('$url','_blank')";
                     $html .= "<button class=\"nu-btn nu-btn-ghost\" style=\"justify-content:flex-start;\" onclick=\"$click\">$lbl</button>";
                 }
                 return $html . '</div>';
@@ -229,7 +230,7 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
     }
 }
 
-// ── Resolve & prepare ────────────────────────────────────────────────────────
+// ── Resolve & prepare
 $widgets = wu_resolve_widgets($db, $userId, $role, $isGlobeAdmin);
 
 try {
@@ -243,87 +244,27 @@ try {
 
 $showRoleGroups = ($isGlobeAdmin && !$hasPersonal);
 $roleGroups     = [];
-$roleNames      = [];
 
 if ($showRoleGroups) {
-    // ── FIX Bug 3: robust role fetch using INFORMATION_SCHEMA to detect column names ──
-    // This ensures ALL roles show as groups (even with 0 widgets), regardless of
-    // whether the schema uses role_code/role_name or code/name or other variants.
-    try {
-        $rRows = [];
-
-        // Detect actual column names in nu_roles via INFORMATION_SCHEMA
-        $cols = [];
-        try {
-            $colRows = $db->fetchAll(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'nu_roles' AND TABLE_SCHEMA = DATABASE() ORDER BY ORDINAL_POSITION"
-            );
-            $cols = array_map(fn($r) => strtolower($r['COLUMN_NAME'] ?? $r['column_name'] ?? ''), $colRows);
-        } catch (Throwable $ce) {
-            $cols = [];
-        }
-
-        // Build SELECT using detected columns, with fallbacks
-        $codeCol = 'role_code';
-        $nameCol = 'role_name';
-        if (!empty($cols)) {
-            if (!in_array('role_code', $cols, true)) {
-                $codeCol = in_array('code', $cols, true) ? 'code' : ($cols[0] ?? 'role_code');
-            }
-            if (!in_array('role_name', $cols, true)) {
-                $nameCol = in_array('name', $cols, true) ? 'name' : ($cols[1] ?? 'role_name');
-            }
-        }
-
-        $queries = [
-            "SELECT {$codeCol} AS role_code, {$nameCol} AS role_name FROM nu_roles ORDER BY {$nameCol}",
-            'SELECT role_code, role_name FROM nu_roles ORDER BY role_name',
-            'SELECT code AS role_code, name AS role_name FROM nu_roles ORDER BY name',
-            'SELECT role_code, role_name FROM nu_roles ORDER BY role_code',
-        ];
-
-        foreach ($queries as $q) {
-            try {
-                $rRows = $db->fetchAll($q);
-                if (!empty($rRows) && isset($rRows[0]['role_code'])) break;
-            } catch (Throwable $inner) {
-                $rRows = [];
-            }
-        }
-
-        foreach ($rRows as $r) {
-            $code = trim((string)($r['role_code'] ?? ''));
-            $name = trim((string)($r['role_name'] ?? ucfirst($code)));
-            if ($code === '' || strtolower($code) === 'globeadmin') continue;
-            $roleNames[$code]  = $name;
-            $roleGroups[$code] = [];  // seed EVERY role as empty bucket
-        }
-    } catch (Throwable $e) {
-        error_log('[widgets] roles fetch: ' . $e->getMessage());
-    }
-
-    // Fill buckets with actual widgets
     foreach ($widgets as $w) {
         $isRoleWgt = ($w['widget_user_id'] === null || $w['widget_user_id'] === '');
         $key = $isRoleWgt ? ($w['widget_role'] ?? 'unassigned') : '__personal__';
-        if (!isset($roleGroups[$key])) {
-            $roleGroups[$key] = [];
-            if (!isset($roleNames[$key])) $roleNames[$key] = ucfirst($key);
-        }
         $roleGroups[$key][] = $w;
     }
-
-    // Sort by display name
-    uksort($roleGroups, function ($a, $b) use ($roleNames) {
-        $na = $roleNames[$a] ?? ucfirst($a);
-        $nb = $roleNames[$b] ?? ucfirst($b);
-        return strcmp($na, $nb);
-    });
 } else {
     $roleGroups['__flat__'] = $widgets;
 }
 
-// Build widget data for JS — include ALL fields especially widget_icon
+$roleNames = [];
+if ($showRoleGroups) {
+    try {
+        $rRows = $db->fetchAll('SELECT role_code, role_name FROM nu_roles ORDER BY role_name');
+        foreach ($rRows as $r) {
+            $roleNames[$r['role_code']] = $r['role_name'];
+        }
+    } catch (Throwable $e) {}
+}
+
 $widgetsForJs = [];
 if ($canManage) {
     foreach ($widgets as $w) {
@@ -332,7 +273,7 @@ if ($canManage) {
             'widget_id'     => $w['widget_id'],
             'widget_type'   => $w['widget_type']   ?? '',
             'widget_title'  => $w['widget_title']  ?? '',
-            'widget_icon'   => $w['widget_icon']   ?? '',  // always include — key fix for icon save
+            'widget_icon'   => $w['widget_icon']   ?? '',
             'widget_config' => $w['widget_config'] ?? '{}',
             'widget_width'  => $w['widget_width']  ?? 2,
             'widget_height' => $w['widget_height'] ?? 1,
@@ -341,51 +282,12 @@ if ($canManage) {
     }
 }
 $widgetsJson = json_encode($widgetsForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
+
 $groupIdx = 0;
 ?>
 
 <!-- Font Awesome 6 Free -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous">
-
-<!--
-  FIX Bug 1: nuDash stub — defined BEFORE any onclick="nuDash.xxx()" HTML is rendered.
-  All calls made before widgets.js loads are queued and replayed once the real
-  implementation is in place. This prevents "nuDash is not defined" errors when
-  the module is injected dynamically by NuApp.loadModule().
--->
-<script>
-(function () {
-  if (window.nuDash && window.nuDash.__real) return; // already loaded
-  var _queue = [];
-  var _handler = function (method) {
-    return function () {
-      var args = Array.prototype.slice.call(arguments);
-      if (window.nuDash && window.nuDash.__real) {
-        window.nuDash[method].apply(window.nuDash, args);
-      } else {
-        _queue.push([method, args]);
-      }
-    };
-  };
-  // Expose every public method as a stub so onclick attributes never throw
-  var methods = [
-    'openBuilder','openBuilderForRole','closeBuilder','saveWidget','editWidget',
-    'removeWidget','toggleEditMode','toggleGroup','resetLayout','openRoleDesigner',
-    'runPreview','onTypeChange','updateIconPreview','openFaPicker','closeFaPicker',
-    'filterFaPicker','selectFaIcon','clearIcon','drillDown'
-  ];
-  var stub = { __real: false, __queue: _queue };
-  methods.forEach(function (m) { stub[m] = _handler(m); });
-  window.nuDash = stub;
-  // Drain queue once real nuDash is set (called from widgets.js after init)
-  window.__nuDashDrainQueue = function () {
-    _queue.forEach(function (item) {
-      try { window.nuDash[item[0]].apply(window.nuDash, item[1]); } catch(e) {}
-    });
-    _queue.length = 0;
-  };
-}());
-</script>
 
 <style>
 #nuWidgetGrid {
@@ -433,7 +335,7 @@ $groupIdx = 0;
     text-overflow: ellipsis;
 }
 .nu-widget-title-icon {
-    font-size: .9rem;
+    font-size: 1rem;
     line-height: 1;
     flex-shrink: 0;
 }
@@ -494,7 +396,7 @@ $groupIdx = 0;
     margin-bottom: 12px;
     transition: filter .15s ease;
 }
-.nu-role-group-header:hover { filter: brightness(.9); }
+.nu-role-group-header:hover { filter: brightness(.94); }
 .nu-group-chevron { transition: transform .3s ease; flex-shrink: 0; }
 .nu-group-chevron.nu-group-collapsed { transform: rotate(-90deg); }
 .nu-role-code-badge {
@@ -512,19 +414,6 @@ $groupIdx = 0;
     background: var(--color-surface, #fff);
     border: 1px solid var(--color-border, #e5e7eb);
     color: var(--color-text-muted, #888);
-}
-.nu-role-group-empty {
-    grid-column: 1 / -1;
-    padding: 20px 16px;
-    border: 2px dashed var(--color-border, #e5e7eb);
-    border-radius: var(--radius-md, .5rem);
-    text-align: center;
-    color: var(--color-text-muted, #888);
-    font-size: .8rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
 }
 .nu-widget-empty-state {
     grid-column: 1 / -1;
@@ -613,7 +502,7 @@ $groupIdx = 0;
 
 <div id="nuWidgetGrid"<?= $showRoleGroups ? ' style="display:block;"' : '' ?>>
 
-<?php if (!$showRoleGroups && empty($widgets)): ?>
+<?php if (empty($widgets)): ?>
     <div class="nu-widget-empty-state">
         <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" style="color:#ccc;">
             <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
@@ -647,7 +536,8 @@ $groupIdx = 0;
     <div
         class="nu-role-group-header"
         onclick="nuDash.toggleGroup('<?= $groupBodyId ?>', '<?= $roleCode ?>')"
-        style="background:linear-gradient(135deg,<?= $accentBase ?> 0%,<?= $accentDarker ?> 100%);">
+        style="background:linear-gradient(135deg,<?= $accentBase ?> 0%,<?= $accentDarker ?> 100%);"
+    >
         <svg id="<?= $groupBodyId ?>_chevron" class="nu-group-chevron" width="16" height="16"
              viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5">
             <polyline points="6 9 12 15 18 9"/>
@@ -664,66 +554,18 @@ $groupIdx = 0;
         >&#xff0b;&nbsp;Add</button>
     </div>
     <div id="<?= $groupBodyId ?>" class="nu-role-group-body" style="margin-top:0;">
+<?php else: ?>
+<?php endif; ?>
 
-    <?php if (empty($groupWidgets)): ?>
-        <div class="nu-role-group-empty">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-                <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-            </svg>
-            No widgets for this role yet &mdash;
-            <button class="nu-btn nu-btn-ghost nu-btn-sm" style="padding:2px 10px;"
-                    onclick="nuDash.openBuilderForRole('<?= $roleCode ?>')">+ Add one</button>
-        </div>
-    <?php else: ?>
-        <?php foreach ($groupWidgets as $w):
-            $ww         = max(1, min(4, (int)($w['widget_width']  ?? 2)));
-            $colSpan    = $ww * 3;
-            $rowSpan    = max(1, min(3, (int)($w['widget_height'] ?? 1)));
-            $typeAccent = wu_type_accent($w['widget_type'] ?? 'custom');
-            $icon       = trim($w['widget_icon'] ?? '');
-            $isFaIcon   = ($icon !== '' && (str_starts_with($icon, 'fa-') || str_starts_with($icon, 'fas ') || str_starts_with($icon, 'far ') || str_starts_with($icon, 'fab ')));
-        ?>
-        <div class="nu-widget-card nu-card" data-widget-id="<?= (int)$w['widget_id'] ?>"
-             style="grid-column:span <?= $colSpan ?>;grid-row:span <?= $rowSpan ?>;border-top:3px solid <?= $typeAccent ?>;">
-            <div class="nu-card-header" style="margin-bottom:12px;align-items:center;">
-                <span class="nu-widget-title-badge" style="background:<?= $typeAccent ?>;" title="<?= htmlspecialchars($w['widget_title']) ?>">
-                    <?php if ($icon !== ''): ?>
-                        <span class="nu-widget-title-icon"><?php
-                            if ($isFaIcon) {
-                                $faClass = (strpos($icon, ' ') === false) ? 'fas ' . $icon : $icon;
-                                echo '<i class="' . htmlspecialchars($faClass) . '"></i>';
-                            } else {
-                                echo htmlspecialchars($icon);
-                            }
-                        ?></span>
-                    <?php endif; ?>
-                    <?= htmlspecialchars($w['widget_title']) ?>
-                </span>
-                <?php if ($canManage): ?>
-                <div class="nu-widget-controls" style="display:flex;gap:4px;flex-shrink:0;margin-left:auto;">
-                    <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuDash.editWidget(<?= (int)$w['widget_id'] ?>)" title="Configure">&#9881;</button>
-                    <button class="nu-btn nu-btn-ghost nu-btn-sm" style="color:#a12c7b;" onclick="nuDash.removeWidget(<?= (int)$w['widget_id'] ?>)" title="Remove">&times;</button>
-                </div>
-                <?php endif; ?>
-            </div>
-            <div class="nu-widget-body"><?= wu_render($w, $db, $userId) ?></div>
-        </div>
-        <?php endforeach; ?>
-    <?php endif; ?>
-
-    </div><!-- /.nu-role-group-body -->
-</div><!-- /.nu-role-group -->
-
-<?php else: /* __flat__ widgets, no role group wrapper */ ?>
-    <?php foreach ($groupWidgets as $w):
-        $ww         = max(1, min(4, (int)($w['widget_width']  ?? 2)));
-        $colSpan    = $ww * 3;
-        $rowSpan    = max(1, min(3, (int)($w['widget_height'] ?? 1)));
-        $typeAccent = wu_type_accent($w['widget_type'] ?? 'custom');
-        $icon       = trim($w['widget_icon'] ?? '');
-        $isFaIcon   = ($icon !== '' && (str_starts_with($icon, 'fa-') || str_starts_with($icon, 'fas ') || str_starts_with($icon, 'far ') || str_starts_with($icon, 'fab ')));
-    ?>
+<?php foreach ($groupWidgets as $w):
+    $ww      = max(1, min(4, (int)($w['widget_width']  ?? 2)));
+    $colSpan = $ww * 3;
+    $rowSpan = max(1, min(3, (int)($w['widget_height'] ?? 1)));
+    $typeAccent = wu_type_accent($w['widget_type'] ?? 'custom');
+    $icon    = trim($w['widget_icon'] ?? '');
+    // Detect FA class string vs emoji/text
+    $isFaIcon = ($icon !== '' && preg_match('/^(fas?|far|fab|fa)\s+fa-|^fa-/', $icon));
+?>
     <div class="nu-widget-card nu-card" data-widget-id="<?= (int)$w['widget_id'] ?>"
          style="grid-column:span <?= $colSpan ?>;grid-row:span <?= $rowSpan ?>;border-top:3px solid <?= $typeAccent ?>;">
         <div class="nu-card-header" style="margin-bottom:12px;align-items:center;">
@@ -731,7 +573,7 @@ $groupIdx = 0;
                 <?php if ($icon !== ''): ?>
                     <span class="nu-widget-title-icon"><?php
                         if ($isFaIcon) {
-                            $faClass = (strpos($icon, ' ') === false) ? 'fas ' . $icon : $icon;
+                            $faClass = preg_match('/\s/', $icon) ? $icon : 'fas ' . $icon;
                             echo '<i class="' . htmlspecialchars($faClass) . '"></i>';
                         } else {
                             echo htmlspecialchars($icon);
@@ -749,7 +591,11 @@ $groupIdx = 0;
         </div>
         <div class="nu-widget-body"><?= wu_render($w, $db, $userId) ?></div>
     </div>
-    <?php endforeach; ?>
+<?php endforeach; ?>
+
+<?php if ($isNamedGroup): ?>
+    </div><!-- /.nu-role-group-body -->
+</div><!-- /.nu-role-group -->
 <?php endif; ?>
 
 <?php endforeach; ?>

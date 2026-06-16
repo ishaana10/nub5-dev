@@ -8,65 +8,55 @@
   var LS_KEY = 'nuDash_groupCollapsed';
   var WIDGET_DATA = window.NUDASH_WIDGET_DATA || {};
 
-  // ── Font Awesome icon list (solid set — common icons) ─────────────────────
+  // ── FA icon list (common solid icons) ────────────────────────────────────
   var FA_ICONS = [
-    ['fa-house','home'],['fa-user','user'],['fa-users','users'],['fa-gear','settings'],
-    ['fa-bell','bell'],['fa-bookmark','bookmark'],['fa-calendar','calendar'],
-    ['fa-calendar-days','calendar-days'],['fa-chart-bar','chart-bar'],
-    ['fa-chart-line','chart-line'],['fa-chart-pie','chart-pie'],
-    ['fa-check','check'],['fa-check-circle','check-circle'],['fa-circle-xmark','x-circle'],
-    ['fa-clock','clock'],['fa-code','code'],['fa-comment','comment'],
-    ['fa-comments','comments'],['fa-credit-card','card'],['fa-database','database'],
-    ['fa-envelope','email'],['fa-file','file'],['fa-file-lines','file-lines'],
-    ['fa-flag','flag'],['fa-folder','folder'],['fa-folder-open','folder-open'],
-    ['fa-globe','globe'],['fa-graduation-cap','education'],['fa-heart','heart'],
-    ['fa-house-chimney','house'],['fa-id-card','id-card'],['fa-image','image'],
-    ['fa-inbox','inbox'],['fa-key','key'],['fa-layer-group','layers'],
-    ['fa-link','link'],['fa-list','list'],['fa-list-check','checklist'],
-    ['fa-lock','lock'],['fa-magnifying-glass','search'],['fa-map','map'],
-    ['fa-map-pin','pin'],['fa-message','message'],['fa-money-bill','money'],
-    ['fa-paper-plane','send'],['fa-paperclip','attach'],['fa-pen','edit'],
-    ['fa-people-group','team'],['fa-phone','phone'],['fa-plus','plus'],
-    ['fa-print','print'],['fa-receipt','receipt'],['fa-rotate','refresh'],
-    ['fa-shield','shield'],['fa-sliders','sliders'],['fa-star','star'],
-    ['fa-table','table'],['fa-tag','tag'],['fa-tags','tags'],
-    ['fa-thumbs-up','thumbs-up'],['fa-ticket','ticket'],['fa-toolbox','toolbox'],
-    ['fa-trash','trash'],['fa-triangle-exclamation','warning'],['fa-truck','truck'],
-    ['fa-upload','upload'],['fa-user-check','user-check'],['fa-user-gear','user-gear'],
-    ['fa-user-group','group'],['fa-user-tie','manager'],['fa-vault','vault'],
-    ['fa-wallet','wallet'],['fa-warehouse','warehouse'],['fa-wifi','wifi'],
-    ['fa-wrench','wrench'],['fa-xmark','close'],['fa-border-all','grid'],
-    ['fa-building','building'],['fa-bullhorn','announce'],['fa-bus','bus'],
-    ['fa-car','car'],['fa-cart-shopping','cart'],['fa-circle-info','info'],
-    ['fa-clipboard','clipboard'],['fa-clipboard-list','clipboard-list'],
-    ['fa-coins','coins'],['fa-compass','compass'],['fa-copy','copy'],
-    ['fa-crown','crown'],['fa-desktop','desktop'],['fa-diagram-project','diagram'],
-    ['fa-dice','dice'],['fa-download','download'],['fa-droplet','water'],
-    ['fa-earth-americas','earth'],['fa-ellipsis','more'],['fa-exclamation','exclamation'],
-    ['fa-eye','view'],['fa-filter','filter'],['fa-fire','fire'],
-    ['fa-floppy-disk','save'],['fa-forward','forward'],['fa-gauge','gauge'],
-    ['fa-hand','hand'],['fa-hashtag','hash'],['fa-headset','support'],
-    ['fa-hourglass','hourglass'],['fa-house-medical','medical'],['fa-laptop','laptop'],
-    ['fa-leaf','leaf'],['fa-lightbulb','idea'],['fa-location-dot','location'],
-    ['fa-mobile','mobile'],['fa-moon','night'],['fa-network-wired','network'],
-    ['fa-newspaper','news'],['fa-palette','palette'],['fa-passport','passport'],
-    ['fa-pencil','pencil'],['fa-percent','percent'],['fa-person','person'],
-    ['fa-phone-flip','phone-flip'],['fa-plug','plug'],['fa-puzzle-piece','puzzle'],
-    ['fa-qrcode','qr'],['fa-quote-left','quote'],['fa-rocket','rocket'],
-    ['fa-route','route'],['fa-rss','rss'],['fa-school','school'],
-    ['fa-screwdriver-wrench','tools'],['fa-share','share'],['fa-signal','signal'],
-    ['fa-sitemap','sitemap'],['fa-skull','skull'],['fa-snowflake','snow'],
-    ['fa-sort','sort'],['fa-spa','spa'],['fa-spinner','loading'],
-    ['fa-square-check','square-check'],['fa-store','store'],['fa-suitcase','suitcase'],
-    ['fa-sun','sun'],['fa-syringe','medical2'],['fa-temperature-half','temp'],
-    ['fa-thumbtack','pin2'],['fa-timeline','timeline'],['fa-tint','tint'],
-    ['fa-toggle-on','toggle'],['fa-trophy','trophy'],['fa-truck-fast','delivery'],
-    ['fa-umbrella','umbrella'],['fa-unlock','unlock'],['fa-video','video'],
-    ['fa-virus','virus'],['fa-volume-high','volume'],['fa-wind','wind'],
-    ['fa-graduation-cap','graduate']
+    'fa-address-book','fa-address-card','fa-align-center','fa-align-left','fa-align-right',
+    'fa-anchor','fa-angle-down','fa-angle-left','fa-angle-right','fa-angle-up',
+    'fa-archive','fa-arrow-down','fa-arrow-left','fa-arrow-right','fa-arrow-up',
+    'fa-asterisk','fa-at','fa-award','fa-ban','fa-bar-chart',
+    'fa-bars','fa-bell','fa-bolt','fa-book','fa-bookmark',
+    'fa-box','fa-briefcase','fa-bug','fa-building','fa-bullhorn',
+    'fa-bullseye','fa-calendar','fa-calendar-alt','fa-calendar-check','fa-camera',
+    'fa-car','fa-chart-bar','fa-chart-line','fa-chart-pie','fa-check',
+    'fa-check-circle','fa-check-square','fa-chess','fa-chevron-down','fa-chevron-left',
+    'fa-chevron-right','fa-chevron-up','fa-circle','fa-clipboard','fa-clipboard-check',
+    'fa-clipboard-list','fa-clock','fa-cloud','fa-code','fa-cog',
+    'fa-cogs','fa-columns','fa-comment','fa-comments','fa-compass',
+    'fa-copy','fa-credit-card','fa-crop','fa-crown','fa-cube',
+    'fa-cubes','fa-cut','fa-database','fa-desktop','fa-dollar-sign',
+    'fa-download','fa-edit','fa-ellipsis-h','fa-ellipsis-v','fa-envelope',
+    'fa-envelope-open','fa-eraser','fa-euro-sign','fa-exchange-alt','fa-exclamation',
+    'fa-exclamation-circle','fa-exclamation-triangle','fa-expand','fa-eye','fa-eye-slash',
+    'fa-file','fa-file-alt','fa-file-code','fa-file-csv','fa-file-excel',
+    'fa-file-image','fa-file-pdf','fa-file-upload','fa-filter','fa-flag',
+    'fa-flask','fa-folder','fa-folder-open','fa-font','fa-forward',
+    'fa-funnel-dollar','fa-gift','fa-globe','fa-graduation-cap','fa-grip-horizontal',
+    'fa-grip-vertical','fa-hand-holding','fa-hashtag','fa-heart','fa-history',
+    'fa-home','fa-hourglass','fa-id-badge','fa-id-card','fa-image',
+    'fa-inbox','fa-info','fa-info-circle','fa-key','fa-laptop',
+    'fa-layer-group','fa-leaf','fa-link','fa-list','fa-list-alt',
+    'fa-list-ol','fa-list-ul','fa-location-arrow','fa-lock','fa-lock-open',
+    'fa-map','fa-map-marker','fa-map-marker-alt','fa-medal','fa-minus',
+    'fa-minus-circle','fa-mobile','fa-money-bill','fa-moon','fa-newspaper',
+    'fa-paperclip','fa-pause','fa-pen','fa-pencil-alt','fa-percentage',
+    'fa-phone','fa-play','fa-plug','fa-plus','fa-plus-circle',
+    'fa-poll','fa-print','fa-project-diagram','fa-puzzle-piece','fa-question',
+    'fa-question-circle','fa-random','fa-redo','fa-refresh','fa-reply',
+    'fa-rocket','fa-rss','fa-save','fa-search','fa-server',
+    'fa-share','fa-shield-alt','fa-sign-in-alt','fa-sign-out-alt','fa-signal',
+    'fa-sitemap','fa-sliders-h','fa-sort','fa-sort-alpha-down','fa-sort-amount-down',
+    'fa-spinner','fa-star','fa-star-half','fa-sticky-note','fa-stop',
+    'fa-stopwatch','fa-store','fa-stream','fa-sun','fa-sync',
+    'fa-table','fa-tablet','fa-tag','fa-tags','fa-tasks',
+    'fa-terminal','fa-th','fa-th-large','fa-th-list','fa-thumbs-down',
+    'fa-thumbs-up','fa-ticket-alt','fa-times','fa-times-circle','fa-toggle-off',
+    'fa-toggle-on','fa-tools','fa-trash','fa-trash-alt','fa-trophy',
+    'fa-truck','fa-undo','fa-upload','fa-user','fa-user-check',
+    'fa-user-cog','fa-user-friends','fa-user-lock','fa-user-plus','fa-user-shield',
+    'fa-user-times','fa-users','fa-video','fa-wallet','fa-wifi',
+    'fa-wrench'
   ];
-
-  var _faFilterVal = '';
+  var _faFiltered = FA_ICONS.slice();
 
   function initCharts() {
     document.querySelectorAll('[data-chartjs]').forEach(function (canvas) {
@@ -123,31 +113,36 @@
       .catch(function (e) { console.warn('[nuDash] roles fetch error', e); });
   }
 
+  // Build FA icon class string for display
+  function faClass(icon) {
+    if (!icon) return '';
+    // Already has prefix (fas fa-x, far fa-x, fab fa-x)
+    if (/^(fas|far|fab|fa)\s/.test(icon)) return icon;
+    // Just fa-name — default to solid
+    return 'fas ' + icon;
+  }
+
+  // Render icon HTML (FA or emoji/text)
+  function iconHtml(icon) {
+    if (!icon) return '';
+    if (/^(fas?|far|fab|fa)\s+fa-|^fa-/.test(icon)) {
+      return '<i class="' + faClass(icon) + '" aria-hidden="true"></i>';
+    }
+    return '<span style="font-size:1rem;line-height:1;">' + icon + '</span>';
+  }
+
   var TYPE_CONFIGS = {
     stat: [
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">',
-      '<div class="nu-field"><label class="nu-label">SQL <small style="color:#888">&rarr; <code>value</code> column</small></label>',
+      '<div class="nu-field" style="margin-bottom:12px;">',
+      '<label class="nu-label">SQL <small style="color:#888">must return a <code>value</code> column</small></label>',
       '<textarea class="nu-input" id="nuWSql" rows="3" placeholder="SELECT COUNT(*) as value FROM my_table"></textarea></div>',
-      '<div class="nu-field"><label class="nu-label">Subtitle (optional)</label>',
-      '<input class="nu-input" id="nuWSubtitle" placeholder="e.g. Pending tasks"></div></div>',
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">',
+      '<div class="nu-field" style="margin-bottom:12px;"><label class="nu-label">Subtitle (optional)</label>',
+      '<input class="nu-input" id="nuWSubtitle" placeholder="Pending tasks"></div>',
       '<div class="nu-field"><label class="nu-label">Accent colour</label>',
       '<select class="nu-input" id="nuWColor">',
       '<option value="primary">Teal</option><option value="success">Green</option>',
       '<option value="warning">Orange</option><option value="error">Red</option>',
-      '</select></div>',
-      '<div class="nu-field"><label class="nu-label">Accent colour</label><div style="display:flex;gap:6px;">',
-      '</div></div></div>',
-      '<div style="padding:10px;background:var(--color-surface-offset,#f5f5f5);border-radius:.5rem;border-left:3px solid #01696f;margin-bottom:4px;">',
-      '<div class="nu-label" style="margin-bottom:8px;color:#01696f;">&#10148; Drill-down (optional)</div>',
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">',
-      '<div class="nu-field"><label class="nu-label">Module name</label>',
-      '<input class="nu-input" id="nuWLinkModule" placeholder="e.g. pending_tasks"></div>',
-      '<div class="nu-field"><label class="nu-label">— or — External URL</label>',
-      '<input class="nu-input" id="nuWLinkUrl" placeholder="https://..."></div>',
-      '</div>',
-      '<small style="color:#888;font-size:11px;">When filled, a › arrow button appears on the stat card. Module name takes priority over URL.</small>',
-      '</div>'
+      '</select></div>'
     ].join(''),
     chart_bar:  '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT status AS label, COUNT(*) AS value FROM my_table GROUP BY status"></textarea></div>',
     chart_line: '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT DATE(created_at) AS label, COUNT(*) AS value FROM my_table GROUP BY DATE(created_at) ORDER BY label"></textarea></div>',
@@ -164,87 +159,10 @@
     progress:'#964219', custom:'#a12c7b'
   };
 
-  // ── Real nuDash implementation ─────────────────────────────────────────────
-  var realDash = {
-    __real:    true,
+  window.nuDash = {
     editMode:  false,
     editingId: null,
 
-    // ── FA Picker ──────────────────────────────────────────────────────────
-    openFaPicker: function () {
-      var modal = document.getElementById('nuFaPickerModal');
-      if (!modal) return;
-      _faFilterVal = '';
-      var search = document.getElementById('nuFaPickerSearch');
-      if (search) search.value = '';
-      this._renderFaGrid('');
-      modal.style.display = 'flex';
-      if (search) setTimeout(function () { search.focus(); }, 80);
-    },
-
-    closeFaPicker: function () {
-      var modal = document.getElementById('nuFaPickerModal');
-      if (modal) modal.style.display = 'none';
-    },
-
-    filterFaPicker: function (val) {
-      _faFilterVal = val.toLowerCase();
-      this._renderFaGrid(_faFilterVal);
-    },
-
-    _renderFaGrid: function (filter) {
-      var grid = document.getElementById('nuFaPickerGrid');
-      if (!grid) return;
-      var current = (document.getElementById('nuWIcon') || {}).value || '';
-      var html = '';
-      FA_ICONS.forEach(function (item) {
-        var cls   = item[0];
-        var label = item[1];
-        if (filter && cls.indexOf(filter) === -1 && label.indexOf(filter) === -1) return;
-        var isSelected = (current === cls) ? ' nu-selected' : '';
-        html += '<button class="nu-fa-picker-btn' + isSelected + '" data-fa="' + cls + '" title="' + cls + '" onclick="nuDash.selectFaIcon(\'' + cls + '\')">' +
-                '<i class="fas ' + cls + '"></i>' +
-                '<span>' + label + '</span>' +
-                '</button>';
-      });
-      if (!html) html = '<div style="grid-column:1/-1;text-align:center;color:#888;padding:24px;">No icons match.</div>';
-      grid.innerHTML = html;
-    },
-
-    selectFaIcon: function (cls) {
-      var iconEl = document.getElementById('nuWIcon');
-      if (iconEl) iconEl.value = cls;
-      this.closeFaPicker();
-      this.updateIconPreview();
-    },
-
-    clearIcon: function () {
-      var iconEl = document.getElementById('nuWIcon');
-      if (iconEl) iconEl.value = '';
-      this.updateIconPreview();
-    },
-
-    updateIconPreview: function () {
-      var wrap  = document.getElementById('nuWIconPreview');
-      var badge = document.getElementById('nuWIconPreviewBadge');
-      if (!wrap || !badge) return;
-      var iconVal = (document.getElementById('nuWIcon') || {}).value || '';
-      var title   = (document.getElementById('nuWTitle') || {}).value || 'Widget Title';
-      var type    = (document.getElementById('nuWType') || {}).value || 'stat';
-      var accent  = TYPE_ACCENTS[type] || '#01696f';
-      badge.style.background = accent;
-      var iconHtml = '';
-      if (iconVal) {
-        var isFa = iconVal.indexOf('fa-') !== -1;
-        iconHtml = isFa
-          ? '<i class="fas ' + iconVal + '" style="font-size:.9rem;"></i>'
-          : '<span style="font-size:1rem;">' + iconVal + '</span>';
-      }
-      badge.innerHTML = (iconHtml ? iconHtml + ' ' : '') + title;
-      wrap.style.display = (iconVal || title) ? 'block' : 'none';
-    },
-
-    // ── Group toggle ───────────────────────────────────────────────────────
     toggleGroup: function (bodyId, roleCode) {
       var body    = document.getElementById(bodyId);
       var chevron = document.getElementById(bodyId + '_chevron');
@@ -261,14 +179,82 @@
         });
       } else {
         body.style.maxHeight = body.scrollHeight + 'px';
-        body.offsetHeight;
+        body.offsetHeight; // force reflow
         body.classList.add('nu-group-collapsed');
         if (chevron) chevron.classList.add('nu-group-collapsed');
         setGroupCollapsed(roleCode, true);
       }
     },
 
-    // ── Builder open/close ─────────────────────────────────────────────────
+    // ── FA Picker ───────────────────────────────────────────────────────────
+    openFaPicker: function () {
+      var modal = document.getElementById('nuFaPickerModal');
+      if (!modal) return;
+      _faFiltered = FA_ICONS.slice();
+      var searchEl = document.getElementById('nuFaPickerSearch');
+      if (searchEl) searchEl.value = '';
+      this._renderFaGrid(_faFiltered);
+      modal.style.display = 'flex';
+      if (searchEl) setTimeout(function () { searchEl.focus(); }, 80);
+    },
+
+    closeFaPicker: function () {
+      var modal = document.getElementById('nuFaPickerModal');
+      if (modal) modal.style.display = 'none';
+    },
+
+    filterFaPicker: function (q) {
+      q = (q || '').toLowerCase().trim();
+      _faFiltered = q ? FA_ICONS.filter(function (ic) { return ic.indexOf(q) !== -1; }) : FA_ICONS.slice();
+      this._renderFaGrid(_faFiltered);
+    },
+
+    _renderFaGrid: function (icons) {
+      var grid = document.getElementById('nuFaPickerGrid');
+      if (!grid) return;
+      var currentIcon = (document.getElementById('nuWIcon') || {}).value || '';
+      var html = '';
+      icons.forEach(function (ic) {
+        var cls = 'fas ' + ic;
+        var selected = (currentIcon === ic || currentIcon === cls) ? ' nu-selected' : '';
+        var label = ic.replace('fa-', '');
+        html += '<button class="nu-fa-picker-btn' + selected + '" type="button" onclick="nuDash.selectFaIcon(\'' + ic + '\')" title="' + ic + '">'
+              + '<i class="' + cls + '"></i>' + label + '</button>';
+      });
+      grid.innerHTML = html || '<p style="padding:16px;color:#888;font-size:.8rem;">No icons found.</p>';
+    },
+
+    selectFaIcon: function (ic) {
+      var iconEl = document.getElementById('nuWIcon');
+      if (iconEl) { iconEl.value = ic; this.updateIconPreview(); }
+      this.closeFaPicker();
+    },
+
+    clearIcon: function () {
+      var iconEl = document.getElementById('nuWIcon');
+      if (iconEl) iconEl.value = '';
+      var wrap = document.getElementById('nuWIconPreview');
+      if (wrap) wrap.style.display = 'none';
+    },
+
+    // ── Icon Preview ────────────────────────────────────────────────────────
+    updateIconPreview: function () {
+      var wrap   = document.getElementById('nuWIconPreview');
+      var badge  = document.getElementById('nuWIconPreviewBadge');
+      var icon   = ((document.getElementById('nuWIcon') || {}).value || '').trim();
+      var title  = ((document.getElementById('nuWTitle') || {}).value || 'Widget Title').trim();
+      var type   = ((document.getElementById('nuWType') || {}).value || 'stat');
+      var accent = TYPE_ACCENTS[type] || '#01696f';
+      if (!wrap || !badge) return;
+      if (icon) {
+        wrap.style.display = 'block';
+        badge.style.background = accent;
+        badge.innerHTML = iconHtml(icon) + '<span>' + title + '</span>';
+      } else {
+        wrap.style.display = 'none';
+      }
+    },
+
     openBuilder: function (id) {
       this.editingId = id || null;
       var sid = id ? String(id) : null;
@@ -286,22 +272,17 @@
         document.getElementById('nuWWidth').value  = String(w.widget_width  || 2);
         document.getElementById('nuWHeight').value = String(w.widget_height || 1);
         var iconEl = document.getElementById('nuWIcon');
-        // widget_icon is always serialised in widgetsForJs; fall back to legacy 'icon' key
-        if (iconEl) iconEl.value = w.widget_icon || w.icon || '';
+        if (iconEl) { iconEl.value = w.widget_icon || ''; this.updateIconPreview(); }
         this.onTypeChange();
         var sqlEl = document.getElementById('nuWSql');
         var subEl = document.getElementById('nuWSubtitle');
         var colEl = document.getElementById('nuWColor');
         var lnkEl = document.getElementById('nuWLinks');
         var htmEl = document.getElementById('nuWHtml');
-        var lmEl  = document.getElementById('nuWLinkModule');
-        var luEl  = document.getElementById('nuWLinkUrl');
-        if (sqlEl) sqlEl.value = cfg.sql          || '';
-        if (subEl) subEl.value = cfg.subtitle     || cfg.label || '';
-        if (colEl) colEl.value = cfg.color        || 'primary';
-        if (htmEl) htmEl.value = cfg.html         || '';
-        if (lmEl)  lmEl.value  = cfg.link_module  || '';
-        if (luEl)  luEl.value  = cfg.link_url     || '';
+        if (sqlEl) sqlEl.value = cfg.sql      || '';
+        if (subEl) subEl.value = cfg.subtitle || cfg.label || '';
+        if (colEl) colEl.value = cfg.color    || 'primary';
+        if (htmEl) htmEl.value = cfg.html     || '';
         if (lnkEl && cfg.items) {
           lnkEl.value = cfg.items.map(function (i) {
             return i.label + '|' + (i.module || i.url || '');
@@ -318,7 +299,6 @@
         this.onTypeChange();
         loadRolesIntoDropdown('');
       }
-      this.updateIconPreview();
       document.getElementById('nuBuilderModal').style.display = 'block';
     },
 
@@ -338,24 +318,13 @@
       this.updateIconPreview();
     },
 
-    // ── Config building ────────────────────────────────────────────────────
     buildConfig: function () {
       var type  = document.getElementById('nuWType').value;
       var sqlEl = document.getElementById('nuWSql');
       var sql   = sqlEl ? sqlEl.value.trim() : '';
       switch (type) {
-        case 'stat': {
-          var cfg = {
-            sql:      sql,
-            subtitle: (document.getElementById('nuWSubtitle')||{}).value||'',
-            color:    (document.getElementById('nuWColor')   ||{}).value||'primary'
-          };
-          var lm = ((document.getElementById('nuWLinkModule')||{}).value||'').trim();
-          var lu = ((document.getElementById('nuWLinkUrl')   ||{}).value||'').trim();
-          if (lm) cfg.link_module = lm;
-          if (lu) cfg.link_url    = lu;
-          return cfg;
-        }
+        case 'stat':
+          return { sql: sql, subtitle: (document.getElementById('nuWSubtitle')||{}).value||'', color: (document.getElementById('nuWColor')||{}).value||'primary' };
         case 'chart_bar': case 'chart_line': case 'chart_pie': case 'table':
           return { sql: sql };
         case 'progress':
@@ -403,8 +372,7 @@
       var id         = document.getElementById('nuWid').value;
       var type       = document.getElementById('nuWType').value;
       var title      = (document.getElementById('nuWTitle').value||'').trim();
-      var iconEl     = document.getElementById('nuWIcon');
-      var icon       = iconEl ? iconEl.value.trim() : '';
+      var icon       = ((document.getElementById('nuWIcon')||{}).value || '').trim();
       var width      = parseInt(document.getElementById('nuWWidth').value,  10) || 2;
       var height     = parseInt(document.getElementById('nuWHeight').value, 10) || 1;
       var cfg        = this.buildConfig();
@@ -420,18 +388,7 @@
         method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
       })
         .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d.ok) {
-            // Update local WIDGET_DATA so re-opening builder before reload shows correct icon
-            if (id && WIDGET_DATA[String(id)]) {
-              WIDGET_DATA[String(id)].widget_icon = icon;
-            }
-            self.closeBuilder();
-            location.reload();
-          } else {
-            alert('Error: ' + (d.error||'Unknown'));
-          }
-        })
+        .then(function (d) { if (d.ok) { self.closeBuilder(); location.reload(); } else alert('Error: ' + (d.error||'Unknown')); })
         .catch(function (e) { alert('Request failed: ' + e.message); });
     },
 
@@ -444,11 +401,6 @@
     },
 
     editWidget: function (id) { this.openBuilder(id); },
-
-    drillDown: function (moduleName) {
-      if (window.NuApp && NuApp.loadModule) { NuApp.loadModule(moduleName); }
-      else if (window.loadModule) { loadModule(moduleName); }
-    },
 
     toggleEditMode: function () {
       this.editMode = !this.editMode;
@@ -501,14 +453,12 @@
       this.openBuilder();
       var rEl = document.getElementById('nuWTargetRole');
       if (rEl) setTimeout(function () { rEl.focus(); }, 150);
+    },
+
+    drillDown: function (module, extra) {
+      if (window.NuApp && NuApp.loadModule) NuApp.loadModule(module);
     }
   };
-
-  // ── Replace stub with real implementation & drain queued calls ─────────────
-  window.nuDash = realDash;
-  if (typeof window.__nuDashDrainQueue === 'function') {
-    window.__nuDashDrainQueue();
-  }
 
   function onReady() { restoreGroupStates(); initCharts(); }
   document.addEventListener('DOMContentLoaded', onReady);
