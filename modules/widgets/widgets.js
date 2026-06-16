@@ -117,10 +117,8 @@
         }
 
         var rEl = document.getElementById('nuWTargetRole');
-        if (rEl) {
-          // Pass the current role value so it gets re-selected after options load
-          loadRolesIntoDropdown(w.widget_role || '');
-        }
+        if (rEl) loadRolesIntoDropdown(w.widget_role || '');
+
       } else {
         document.getElementById('nuWType').value   = 'stat';
         document.getElementById('nuWTitle').value  = '';
@@ -131,6 +129,16 @@
         if (rEl2) loadRolesIntoDropdown('');
       }
       document.getElementById('nuBuilderModal').style.display = 'block';
+    },
+
+    /* Opens the builder as a new widget pre-assigned to a specific role.
+     * Called by the "+ Add" button in each role group header. */
+    openBuilderForRole: function (roleCode) {
+      this.openBuilder();          // open fresh (no id)
+      // loadRolesIntoDropdown is already called above with '' selected;
+      // we override the selection once the fetch resolves by calling it again
+      // with the desired roleCode.
+      loadRolesIntoDropdown(roleCode);
     },
 
     closeBuilder: function () {
