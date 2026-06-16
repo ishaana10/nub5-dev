@@ -8,6 +8,68 @@
   var LS_KEY = 'nuDash_groupCollapsed';
   var WIDGET_DATA = window.NUDASH_WIDGET_DATA || {};
 
+  // ── Font Awesome icon list (solid set — common icons) ─────────────────────
+  // Format: ['class-without-fa-prefix', 'label']
+  var FA_ICONS = [
+    ['fa-house','home'],['fa-user','user'],['fa-users','users'],['fa-gear','settings'],
+    ['fa-bell','bell'],['fa-bookmark','bookmark'],['fa-calendar','calendar'],
+    ['fa-calendar-days','calendar-days'],['fa-chart-bar','chart-bar'],
+    ['fa-chart-line','chart-line'],['fa-chart-pie','chart-pie'],
+    ['fa-check','check'],['fa-check-circle','check-circle'],['fa-circle-xmark','x-circle'],
+    ['fa-clock','clock'],['fa-code','code'],['fa-comment','comment'],
+    ['fa-comments','comments'],['fa-credit-card','card'],['fa-database','database'],
+    ['fa-envelope','email'],['fa-file','file'],['fa-file-lines','file-lines'],
+    ['fa-flag','flag'],['fa-folder','folder'],['fa-folder-open','folder-open'],
+    ['fa-globe','globe'],['fa-graduation-cap','education'],['fa-heart','heart'],
+    ['fa-house-chimney','house'],['fa-id-card','id-card'],['fa-image','image'],
+    ['fa-inbox','inbox'],['fa-key','key'],['fa-layer-group','layers'],
+    ['fa-link','link'],['fa-list','list'],['fa-list-check','checklist'],
+    ['fa-lock','lock'],['fa-magnifying-glass','search'],['fa-map','map'],
+    ['fa-map-pin','pin'],['fa-message','message'],['fa-money-bill','money'],
+    ['fa-paper-plane','send'],['fa-paperclip','attach'],['fa-pen','edit'],
+    ['fa-people-group','team'],['fa-phone','phone'],['fa-plus','plus'],
+    ['fa-print','print'],['fa-receipt','receipt'],['fa-rotate','refresh'],
+    ['fa-shield','shield'],['fa-sliders','sliders'],['fa-star','star'],
+    ['fa-table','table'],['fa-tag','tag'],['fa-tags','tags'],
+    ['fa-thumbs-up','thumbs-up'],['fa-ticket','ticket'],['fa-toolbox','toolbox'],
+    ['fa-trash','trash'],['fa-triangle-exclamation','warning'],['fa-truck','truck'],
+    ['fa-upload','upload'],['fa-user-check','user-check'],['fa-user-gear','user-gear'],
+    ['fa-user-group','group'],['fa-user-tie','manager'],['fa-vault','vault'],
+    ['fa-wallet','wallet'],['fa-warehouse','warehouse'],['fa-wifi','wifi'],
+    ['fa-wrench','wrench'],['fa-xmark','close'],['fa-border-all','grid'],
+    ['fa-building','building'],['fa-bullhorn','announce'],['fa-bus','bus'],
+    ['fa-car','car'],['fa-cart-shopping','cart'],['fa-circle-info','info'],
+    ['fa-clipboard','clipboard'],['fa-clipboard-list','clipboard-list'],
+    ['fa-coins','coins'],['fa-compass','compass'],['fa-copy','copy'],
+    ['fa-crown','crown'],['fa-desktop','desktop'],['fa-diagram-project','diagram'],
+    ['fa-dice','dice'],['fa-download','download'],['fa-droplet','water'],
+    ['fa-earth-americas','earth'],['fa-ellipsis','more'],['fa-exclamation','exclamation'],
+    ['fa-eye','view'],['fa-filter','filter'],['fa-fire','fire'],
+    ['fa-floppy-disk','save'],['fa-forward','forward'],['fa-gauge','gauge'],
+    ['fa-hand','hand'],['fa-hashtag','hash'],['fa-headset','support'],
+    ['fa-hourglass','hourglass'],['fa-house-medical','medical'],['fa-laptop','laptop'],
+    ['fa-leaf','leaf'],['fa-lightbulb','idea'],['fa-location-dot','location'],
+    ['fa-mobile','mobile'],['fa-moon','night'],['fa-network-wired','network'],
+    ['fa-newspaper','news'],['fa-palette','palette'],['fa-passport','passport'],
+    ['fa-pencil','pencil'],['fa-percent','percent'],['fa-person','person'],
+    ['fa-phone-flip','phone-flip'],['fa-plug','plug'],['fa-puzzle-piece','puzzle'],
+    ['fa-qrcode','qr'],['fa-quote-left','quote'],['fa-rocket','rocket'],
+    ['fa-route','route'],['fa-rss','rss'],['fa-school','school'],
+    ['fa-screwdriver-wrench','tools'],['fa-share','share'],['fa-signal','signal'],
+    ['fa-sitemap','sitemap'],['fa-skull','skull'],['fa-snowflake','snow'],
+    ['fa-sort','sort'],['fa-spa','spa'],['fa-spinner','loading'],
+    ['fa-square-check','square-check'],['fa-store','store'],['fa-suitcase','suitcase'],
+    ['fa-sun','sun'],['fa-syringe','medical2'],['fa-temperature-half','temp'],
+    ['fa-thumbtack','pin2'],['fa-timeline','timeline'],['fa-tint','tint'],
+    ['fa-toggle-on','toggle'],['fa-trophy','trophy'],['fa-truck-fast','delivery'],
+    ['fa-umbrella','umbrella'],['fa-unlock','unlock'],['fa-video','video'],
+    ['fa-virus','virus'],['fa-volume-high','volume'],['fa-wind','wind'],
+    ['fa-graduation-cap','graduate']
+  ];
+
+  var _faFilterVal = '';
+  var _faCallback  = null;
+
   function initCharts() {
     document.querySelectorAll('[data-chartjs]').forEach(function (canvas) {
       var id = canvas.id;
@@ -65,16 +127,29 @@
 
   var TYPE_CONFIGS = {
     stat: [
-      '<div class="nu-field" style="margin-bottom:12px;">',
-      '<label class="nu-label">SQL <small style="color:#888">must return a <code>value</code> column</small></label>',
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">',
+      '<div class="nu-field"><label class="nu-label">SQL <small style="color:#888">→ <code>value</code> column</small></label>',
       '<textarea class="nu-input" id="nuWSql" rows="3" placeholder="SELECT COUNT(*) as value FROM my_table"></textarea></div>',
-      '<div class="nu-field" style="margin-bottom:12px;"><label class="nu-label">Subtitle (optional)</label>',
-      '<input class="nu-input" id="nuWSubtitle" placeholder="Pending tasks"></div>',
+      '<div class="nu-field"><label class="nu-label">Subtitle (optional)</label>',
+      '<input class="nu-input" id="nuWSubtitle" placeholder="e.g. Pending tasks"></div></div>',
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">',
       '<div class="nu-field"><label class="nu-label">Accent colour</label>',
       '<select class="nu-input" id="nuWColor">',
       '<option value="primary">Teal</option><option value="success">Green</option>',
       '<option value="warning">Orange</option><option value="error">Red</option>',
-      '</select></div>'
+      '</select></div>',
+      '<div class="nu-field"><label class="nu-label">Accent colour</label><div style="display:flex;gap:6px;">',
+      '</div></div></div>',
+      '<div style="padding:10px;background:var(--color-surface-offset,#f5f5f5);border-radius:.5rem;border-left:3px solid #01696f;margin-bottom:4px;">',
+      '<div class="nu-label" style="margin-bottom:8px;color:#01696f;">&#10148; Drill-down (optional)</div>',
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">',
+      '<div class="nu-field"><label class="nu-label">Module name</label>',
+      '<input class="nu-input" id="nuWLinkModule" placeholder="e.g. pending_tasks"></div>',
+      '<div class="nu-field"><label class="nu-label">— or — External URL</label>',
+      '<input class="nu-input" id="nuWLinkUrl" placeholder="https://..."></div>',
+      '</div>',
+      '<small style="color:#888;font-size:11px;">When filled, a › arrow button appears on the stat card. Module name takes priority over URL.</small>',
+      '</div>'
     ].join(''),
     chart_bar:  '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT status AS label, COUNT(*) AS value FROM my_table GROUP BY status"></textarea></div>',
     chart_line: '<div class="nu-field"><label class="nu-label">SQL (columns: <code>label</code>, <code>value</code>)</label><textarea class="nu-input" id="nuWSql" rows="4" placeholder="SELECT DATE(created_at) AS label, COUNT(*) AS value FROM my_table GROUP BY DATE(created_at) ORDER BY label"></textarea></div>',
@@ -85,7 +160,6 @@
     custom:     '<div class="nu-field"><label class="nu-label">HTML Content</label><textarea class="nu-input" id="nuWHtml" rows="6" placeholder="<p>Any HTML here...</p>"></textarea></div>'
   };
 
-  // Accent hex per type (mirrors PHP wu_type_accent)
   var TYPE_ACCENTS = {
     stat:'#01696f', chart_bar:'#006494', chart_line:'#7a39bb',
     chart_pie:'#da7101', table:'#437a22', list:'#006494',
@@ -96,6 +170,85 @@
     editMode:  false,
     editingId: null,
 
+    // ── FA Picker ──────────────────────────────────────────────────────────
+    openFaPicker: function () {
+      var modal = document.getElementById('nuFaPickerModal');
+      if (!modal) return;
+      _faFilterVal = '';
+      var search = document.getElementById('nuFaPickerSearch');
+      if (search) search.value = '';
+      this._renderFaGrid('');
+      modal.style.display = 'flex';
+      if (search) setTimeout(function () { search.focus(); }, 80);
+    },
+
+    closeFaPicker: function () {
+      var modal = document.getElementById('nuFaPickerModal');
+      if (modal) modal.style.display = 'none';
+    },
+
+    filterFaPicker: function (val) {
+      _faFilterVal = val.toLowerCase();
+      this._renderFaGrid(_faFilterVal);
+    },
+
+    _renderFaGrid: function (filter) {
+      var grid = document.getElementById('nuFaPickerGrid');
+      if (!grid) return;
+      var current = (document.getElementById('nuWIcon') || {}).value || '';
+      var html = '';
+      FA_ICONS.forEach(function (item) {
+        var cls   = item[0]; // e.g. 'fa-clock'
+        var label = item[1];
+        if (filter && cls.indexOf(filter) === -1 && label.indexOf(filter) === -1) return;
+        var isSelected = (current === cls) ? ' nu-selected' : '';
+        html += '<button class="nu-fa-picker-btn' + isSelected + '" data-fa="' + cls + '" title="' + cls + '" onclick="nuDash.selectFaIcon(\'' + cls + '\')">' +
+                '<i class="fas ' + cls + '"></i>' +
+                '<span>' + label + '</span>' +
+                '</button>';
+      });
+      if (!html) html = '<div style="grid-column:1/-1;text-align:center;color:#888;padding:24px;">No icons match.</div>';
+      grid.innerHTML = html;
+    },
+
+    selectFaIcon: function (cls) {
+      var iconEl = document.getElementById('nuWIcon');
+      if (iconEl) {
+        iconEl.value = cls;
+        iconEl.readOnly = false; // allow clear
+      }
+      this.closeFaPicker();
+      this.updateIconPreview();
+    },
+
+    clearIcon: function () {
+      var iconEl = document.getElementById('nuWIcon');
+      if (iconEl) iconEl.value = '';
+      this.updateIconPreview();
+    },
+
+    updateIconPreview: function () {
+      var wrap  = document.getElementById('nuWIconPreview');
+      var badge = document.getElementById('nuWIconPreviewBadge');
+      if (!wrap || !badge) return;
+      var iconVal = (document.getElementById('nuWIcon') || {}).value || '';
+      var title   = (document.getElementById('nuWTitle') || {}).value || 'Widget Title';
+      var type    = (document.getElementById('nuWType') || {}).value || 'stat';
+      var accent  = TYPE_ACCENTS[type] || '#01696f';
+      badge.style.background = accent;
+      var iconHtml = '';
+      if (iconVal) {
+        // FA class (starts with fa-) or emoji
+        var isFa = iconVal.indexOf('fa-') !== -1;
+        iconHtml = isFa
+          ? '<i class="fas ' + iconVal + '" style="font-size:.9rem;"></i>'
+          : '<span style="font-size:1rem;">' + iconVal + '</span>';
+      }
+      badge.innerHTML = (iconHtml ? iconHtml + ' ' : '') + title;
+      wrap.style.display = iconVal || title ? 'block' : 'none';
+    },
+
+    // ── Group toggle ───────────────────────────────────────────────────────
     toggleGroup: function (bodyId, roleCode) {
       var body    = document.getElementById(bodyId);
       var chevron = document.getElementById(bodyId + '_chevron');
@@ -119,22 +272,7 @@
       }
     },
 
-    previewIcon: function (val) {
-      var wrap   = document.getElementById('nuWIconPreview');
-      var badge  = document.getElementById('nuWIconPreviewBadge');
-      var title  = (document.getElementById('nuWTitle') || {}).value || 'Widget Title';
-      var type   = (document.getElementById('nuWType') || {}).value || 'stat';
-      var accent = TYPE_ACCENTS[type] || '#01696f';
-      if (!wrap || !badge) return;
-      if (val.trim()) {
-        wrap.style.display = 'block';
-        badge.style.background = accent;
-        badge.innerHTML = '<span style="font-size:1rem;line-height:1;">' + val + '</span>' + title;
-      } else {
-        wrap.style.display = 'none';
-      }
-    },
-
+    // ── Builder open/close ─────────────────────────────────────────────────
     openBuilder: function (id) {
       this.editingId = id || null;
       var sid = id ? String(id) : null;
@@ -152,17 +290,21 @@
         document.getElementById('nuWWidth').value  = String(w.widget_width  || 2);
         document.getElementById('nuWHeight').value = String(w.widget_height || 1);
         var iconEl = document.getElementById('nuWIcon');
-        if (iconEl) { iconEl.value = w.widget_icon || ''; this.previewIcon(iconEl.value); }
+        if (iconEl) iconEl.value = w.widget_icon || '';
         this.onTypeChange();
         var sqlEl = document.getElementById('nuWSql');
         var subEl = document.getElementById('nuWSubtitle');
         var colEl = document.getElementById('nuWColor');
         var lnkEl = document.getElementById('nuWLinks');
         var htmEl = document.getElementById('nuWHtml');
-        if (sqlEl) sqlEl.value = cfg.sql      || '';
-        if (subEl) subEl.value = cfg.subtitle || cfg.label || '';
-        if (colEl) colEl.value = cfg.color    || 'primary';
-        if (htmEl) htmEl.value = cfg.html     || '';
+        var lmEl  = document.getElementById('nuWLinkModule');
+        var luEl  = document.getElementById('nuWLinkUrl');
+        if (sqlEl) sqlEl.value = cfg.sql          || '';
+        if (subEl) subEl.value = cfg.subtitle     || cfg.label || '';
+        if (colEl) colEl.value = cfg.color        || 'primary';
+        if (htmEl) htmEl.value = cfg.html         || '';
+        if (lmEl)  lmEl.value  = cfg.link_module  || '';
+        if (luEl)  luEl.value  = cfg.link_url     || '';
         if (lnkEl && cfg.items) {
           lnkEl.value = cfg.items.map(function (i) {
             return i.label + '|' + (i.module || i.url || '');
@@ -179,6 +321,7 @@
         this.onTypeChange();
         loadRolesIntoDropdown('');
       }
+      this.updateIconPreview();
       document.getElementById('nuBuilderModal').style.display = 'block';
     },
 
@@ -195,18 +338,27 @@
     onTypeChange: function () {
       var area = document.getElementById('nuWConfigArea');
       if (area) area.innerHTML = TYPE_CONFIGS[document.getElementById('nuWType').value] || '';
-      // Re-render icon preview with new accent color
-      var iconEl = document.getElementById('nuWIcon');
-      if (iconEl && iconEl.value) this.previewIcon(iconEl.value);
+      this.updateIconPreview();
     },
 
+    // ── Config building ────────────────────────────────────────────────────
     buildConfig: function () {
       var type  = document.getElementById('nuWType').value;
       var sqlEl = document.getElementById('nuWSql');
       var sql   = sqlEl ? sqlEl.value.trim() : '';
       switch (type) {
-        case 'stat':
-          return { sql: sql, subtitle: (document.getElementById('nuWSubtitle')||{}).value||'', color: (document.getElementById('nuWColor')||{}).value||'primary' };
+        case 'stat': {
+          var cfg = {
+            sql:      sql,
+            subtitle: (document.getElementById('nuWSubtitle')||{}).value||'',
+            color:    (document.getElementById('nuWColor')   ||{}).value||'primary'
+          };
+          var lm = ((document.getElementById('nuWLinkModule')||{}).value||'').trim();
+          var lu = ((document.getElementById('nuWLinkUrl')   ||{}).value||'').trim();
+          if (lm) cfg.link_module = lm;
+          if (lu) cfg.link_url    = lu;
+          return cfg;
+        }
         case 'chart_bar': case 'chart_line': case 'chart_pie': case 'table':
           return { sql: sql };
         case 'progress':
@@ -254,7 +406,7 @@
       var id         = document.getElementById('nuWid').value;
       var type       = document.getElementById('nuWType').value;
       var title      = (document.getElementById('nuWTitle').value||'').trim();
-      var icon       = (document.getElementById('nuWIcon')||{}).value || '';
+      var icon       = ((document.getElementById('nuWIcon')||{}).value||'').trim();
       var width      = parseInt(document.getElementById('nuWWidth').value,  10) || 2;
       var height     = parseInt(document.getElementById('nuWHeight').value, 10) || 1;
       var cfg        = this.buildConfig();

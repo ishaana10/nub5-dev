@@ -59,7 +59,6 @@ function wu_chart_type(string $t): string {
     return 'bar';
 }
 
-/** Returns hex accent color for a widget type */
 function wu_type_accent(string $type): string {
     switch ($type) {
         case 'stat':       return '#01696f';
@@ -72,6 +71,16 @@ function wu_type_accent(string $type): string {
         case 'custom':     return '#a12c7b';
         default:           return '#01696f';
     }
+}
+
+/**
+ * Generate an HSL color for a role group by index.
+ * Uses the golden-angle increment (137.5°) so colors stay
+ * evenly spread regardless of how many roles exist.
+ */
+function wu_role_color(int $index): string {
+    $hue = fmod($index * 137.508, 360);
+    return 'hsl(' . round($hue) . ',52%,34%)';
 }
 
 function wu_empty_hint(int $wid): string {
@@ -90,20 +99,46 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
         $accent = wu_accent($cfg['color'] ?? 'primary');
 
         switch ($type) {
-            case 'stat':
+            case 'stat': {
                 $sql = trim($cfg['sql'] ?? '');
                 if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
                 $rows = wu_run_sql($db, $sql, $userId);
                 if (isset($rows[0]['_error'])) return '<p style="color:#a12c7b;font-size:12px;">SQL error: ' . htmlspecialchars($rows[0]['_error']) . '</p>';
                 $val = $rows[0]['value'] ?? (isset($rows[0]) ? reset($rows[0]) : 0);
                 $sub = htmlspecialchars($cfg['subtitle'] ?? '');
-                return '<div style="display:flex;flex-direction:column;gap:4px;padding:4px 0;">'
+
+                // Drill-down link (module or URL)
+                $linkModule = trim($cfg['link_module'] ?? '');
+                $linkUrl    = trim($cfg['link_url']    ?? '');
+                $hasLink    = ($linkModule !== '' || $linkUrl !== '');
+
+                $arrowHtml = '';
+                if ($hasLink) {
+                    if ($linkModule !== '') {
+                        $safeM = htmlspecialchars($linkModule, ENT_QUOTES);
+                        $arrowHtml = '<button class="nu-stat-arrow" onclick="NuApp.loadModule(\''. $safeM . '\')" title="View records" aria-label="View records">'
+                                   . '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>'
+                                   . '</button>';
+                    } else {
+                        $safeU = htmlspecialchars($linkUrl, ENT_QUOTES);
+                        $arrowHtml = '<a class="nu-stat-arrow" href="' . $safeU . '" target="_blank" rel="noopener" title="View records" aria-label="View records">'
+                                   . '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>'
+                                   . '</a>';
+                    }
+                }
+
+                return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;">'
+                     . '<div style="display:flex;flex-direction:column;gap:4px;">'
                      . '<div style="font-size:2.5rem;font-weight:800;line-height:1;color:' . $accent . ';font-variant-numeric:tabular-nums;">' . number_format((float)$val) . '</div>'
-                     . ($sub ? '<div style="font-size:.75rem;color:#888;">' . $sub . '</div>' : '') . '</div>';
+                     . ($sub ? '<div style="font-size:.75rem;color:#888;">' . $sub . '</div>' : '')
+                     . '</div>'
+                     . $arrowHtml
+                     . '</div>';
+            }
 
             case 'chart_bar':
             case 'chart_line':
-            case 'chart_pie':
+            case 'chart_pie': {
                 $sql = trim($cfg['sql'] ?? '');
                 if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
                 $rows = wu_run_sql($db, $sql, $userId);
@@ -133,8 +168,9 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                     ],
                 ]);
                 return '<div style="height:220px;"><canvas id="' . $id . '" data-chartjs=\'' . htmlspecialchars($chartJson, ENT_QUOTES) . '\'></canvas></div>';
+            }
 
-            case 'table':
+            case 'table': {
                 $sql = trim($cfg['sql'] ?? '');
                 if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
                 $rows = wu_run_sql($db, $sql, $userId);
@@ -150,8 +186,9 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                     $html .= '</tr>';
                 }
                 return $html . '</tbody></table></div>';
+            }
 
-            case 'list':
+            case 'list': {
                 $items = $cfg['items'] ?? [];
                 if (empty($items)) return wu_empty_hint((int)$w['widget_id']);
                 $html = '<div style="display:flex;flex-direction:column;gap:6px;">';
@@ -163,8 +200,9 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                     $html .= "<button class=\"nu-btn nu-btn-ghost\" style=\"justify-content:flex-start;\" onclick=\"$click\">$lbl</button>";
                 }
                 return $html . '</div>';
+            }
 
-            case 'progress':
+            case 'progress': {
                 $sql = trim($cfg['sql'] ?? '');
                 if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
                 $rows  = wu_run_sql($db, $sql, $userId);
@@ -178,10 +216,12 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                      . '<div style="height:8px;border-radius:9999px;background:#eee;overflow:hidden;">'
                      . '<div style="width:' . $pct . '%;height:100%;background:' . $accent . ';border-radius:inherit;transition:width .6s ease;"></div>'
                      . '</div></div>';
+            }
 
-            case 'custom':
+            case 'custom': {
                 $html = $cfg['html'] ?? '';
                 return $html !== '' ? $html : wu_empty_hint((int)$w['widget_id']);
+            }
 
             default:
                 return '<p style="color:#888;">Unknown widget type: ' . htmlspecialchars($type) . '</p>';
@@ -192,7 +232,7 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
     }
 }
 
-// ── Resolve & prepare
+// ── Resolve & prepare ────────────────────────────────────────────────────────
 $widgets = wu_resolve_widgets($db, $userId, $role, $isGlobeAdmin);
 
 try {
@@ -209,8 +249,7 @@ $roleGroups     = [];
 
 if ($showRoleGroups) {
     foreach ($widgets as $w) {
-        $isRoleWgt = ($w['widget_user_id'] === null || $w['widget_user_id'] === '');
-        $key = $isRoleWgt ? ($w['widget_role'] ?? 'unassigned') : '__personal__';
+        $key = ($w['widget_user_id'] === null || $w['widget_user_id'] === '') ? ($w['widget_role'] ?? 'unassigned') : '__personal__';
         $roleGroups[$key][] = $w;
     }
 } else {
@@ -221,24 +260,20 @@ $roleNames = [];
 if ($showRoleGroups) {
     try {
         $rRows = $db->fetchAll('SELECT role_code, role_name FROM nu_roles ORDER BY role_name');
-        foreach ($rRows as $r) {
-            $roleNames[$r['role_code']] = $r['role_name'];
-        }
+        foreach ($rRows as $r) $roleNames[$r['role_code']] = $r['role_name'];
     } catch (Throwable $e) {}
 }
 
 $widgetsForJs = [];
 if ($canManage) {
-    foreach ($widgets as $w) {
-        $widgetsForJs[(string)$w['widget_id']] = $w;
-    }
+    foreach ($widgets as $w) $widgetsForJs[(string)$w['widget_id']] = $w;
 }
 $widgetsJson = json_encode($widgetsForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
-
-// All hex so alpha suffix (cc) works correctly in CSS gradients
-$groupAccents = ['#01696f','#437a22','#006494','#7a39bb','#964219','#a12c7b'];
-$accentIdx = 0;
+$groupIdx = 0;
 ?>
+
+<!-- Font Awesome 6 Free (icons for the picker) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous">
 
 <style>
 #nuWidgetGrid {
@@ -274,7 +309,7 @@ $accentIdx = 0;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: .8rem;
+    font-size: .78rem;
     font-weight: 700;
     padding: 4px 12px 4px 8px;
     border-radius: 9999px;
@@ -287,9 +322,29 @@ $accentIdx = 0;
     text-overflow: ellipsis;
 }
 .nu-widget-title-icon {
-    font-size: 1rem;
+    font-size: .9rem;
     line-height: 1;
     flex-shrink: 0;
+}
+/* Drill-down arrow */
+.nu-stat-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 9999px;
+    background: rgba(1,105,111,.08);
+    color: #01696f;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background .18s ease, color .18s ease;
+    text-decoration: none;
+}
+.nu-stat-arrow:hover {
+    background: rgba(1,105,111,.18);
+    color: #0c4e54;
 }
 /* Toolbar */
 .nu-dash-toolbar {
@@ -366,6 +421,69 @@ $accentIdx = 0;
     align-items: center;
     gap: 14px;
 }
+/* FA icon picker */
+#nuFaPickerModal {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    background: rgba(0,0,0,.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.nu-fa-picker-box {
+    background: var(--color-surface, #fff);
+    border-radius: .75rem;
+    width: min(520px, 96vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,.2);
+}
+.nu-fa-picker-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+.nu-fa-picker-head input {
+    flex: 1;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: .5rem;
+    padding: 6px 10px;
+    font-size: .875rem;
+    outline: none;
+}
+.nu-fa-picker-head input:focus { border-color: #01696f; }
+.nu-fa-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+    gap: 4px;
+    padding: 12px;
+    overflow-y: auto;
+    flex: 1;
+}
+.nu-fa-picker-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 8px 4px;
+    border-radius: .375rem;
+    border: 1px solid transparent;
+    background: none;
+    cursor: pointer;
+    font-size: .6rem;
+    color: var(--color-text-muted, #888);
+    transition: background .12s;
+    overflow: hidden;
+}
+.nu-fa-picker-btn i { font-size: 1.1rem; color: var(--color-text, #111); }
+.nu-fa-picker-btn:hover { background: var(--color-surface-offset, #f0f0f0); border-color: var(--color-border, #e5e7eb); }
+.nu-fa-picker-btn.nu-selected { background: #e6f4f4; border-color: #01696f; }
 </style>
 
 <?php if ($canManage): ?>
@@ -420,8 +538,7 @@ $accentIdx = 0;
 
 <?php foreach ($roleGroups as $groupKey => $groupWidgets):
     $isNamedGroup = ($showRoleGroups && $groupKey !== '__personal__');
-    $accentHex    = $groupAccents[$accentIdx % count($groupAccents)];
-    $accentIdx++;
+    $accentCss    = wu_role_color($groupIdx++);
     $displayRole  = htmlspecialchars($roleNames[$groupKey] ?? ucfirst($groupKey));
     $roleCode     = htmlspecialchars($groupKey);
     $widgetCount  = count($groupWidgets);
@@ -433,7 +550,7 @@ $accentIdx = 0;
     <div
         class="nu-role-group-header"
         onclick="nuDash.toggleGroup('<?= $groupBodyId ?>', '<?= $roleCode ?>')"
-        style="background:linear-gradient(135deg,<?= $accentHex ?> 0%,<?= $accentHex ?>cc 100%);"
+        style="background:linear-gradient(135deg,<?= $accentCss ?> 0%,<?= $accentCss ?> 100%);opacity:.92;"
     >
         <svg id="<?= $groupBodyId ?>_chevron" class="nu-group-chevron" width="16" height="16"
              viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5">
@@ -451,24 +568,31 @@ $accentIdx = 0;
         >&#xff0b;&nbsp;Add</button>
     </div>
     <div id="<?= $groupBodyId ?>" class="nu-role-group-body" style="margin-top:0;">
-<?php else: ?>
 <?php endif; ?>
 
 <?php foreach ($groupWidgets as $w):
-    $ww          = max(1, min(4, (int)($w['widget_width']  ?? 2)));
-    $colSpan     = $ww * 3;
-    $rowSpan     = max(1, min(3, (int)($w['widget_height'] ?? 1)));
-    $typeAccent  = wu_type_accent($w['widget_type'] ?? 'custom');
-    $icon        = trim($w['widget_icon'] ?? '');
+    $ww         = max(1, min(4, (int)($w['widget_width']  ?? 2)));
+    $colSpan    = $ww * 3;
+    $rowSpan    = max(1, min(3, (int)($w['widget_height'] ?? 1)));
+    $typeAccent = wu_type_accent($w['widget_type'] ?? 'custom');
+    $icon       = trim($w['widget_icon'] ?? '');
+    $isFaIcon   = str_starts_with($icon, 'fa-') || str_starts_with($icon, 'fas ') || str_starts_with($icon, 'far ') || str_starts_with($icon, 'fab ');
 ?>
     <div class="nu-widget-card nu-card" data-widget-id="<?= (int)$w['widget_id'] ?>"
          style="grid-column:span <?= $colSpan ?>;grid-row:span <?= $rowSpan ?>;border-top:3px solid <?= $typeAccent ?>;">
 
         <div class="nu-card-header" style="margin-bottom:12px;align-items:center;">
-            <!-- Title as badge with optional custom icon -->
             <span class="nu-widget-title-badge" style="background:<?= $typeAccent ?>;" title="<?= htmlspecialchars($w['widget_title']) ?>">
                 <?php if ($icon !== ''): ?>
-                    <span class="nu-widget-title-icon"><?= htmlspecialchars($icon) ?></span>
+                    <span class="nu-widget-title-icon"><?php
+                        if ($isFaIcon) {
+                            // Normalize: bare "fa-xxx" → "fas fa-xxx"
+                            $faClass = (strpos($icon, ' ') === false) ? 'fas ' . $icon : $icon;
+                            echo '<i class="' . htmlspecialchars($faClass) . '"></i>';
+                        } else {
+                            echo htmlspecialchars($icon);
+                        }
+                    ?></span>
                 <?php endif; ?>
                 <?= htmlspecialchars($w['widget_title']) ?>
             </span>
@@ -494,8 +618,21 @@ $accentIdx = 0;
 </div><!-- /#nuWidgetGrid -->
 
 <?php if ($canManage): ?>
+<!-- FA Icon Picker Modal -->
+<div id="nuFaPickerModal" style="display:none;">
+  <div class="nu-fa-picker-box">
+    <div class="nu-fa-picker-head">
+        <strong style="white-space:nowrap;">Pick Icon</strong>
+        <input type="search" id="nuFaPickerSearch" placeholder="Search icons..." autocomplete="off" oninput="nuDash.filterFaPicker(this.value)">
+        <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuDash.closeFaPicker()" style="font-size:1.1rem;">&times;</button>
+    </div>
+    <div class="nu-fa-picker-grid" id="nuFaPickerGrid"></div>
+  </div>
+</div>
+
+<!-- Builder Modal -->
 <div id="nuBuilderModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);overflow-y:auto;">
-  <div style="background:var(--color-surface,#fff);border-radius:.75rem;max-width:600px;margin:40px auto;padding:28px;box-shadow:var(--shadow-lg);">
+  <div style="background:var(--color-surface,#fff);border-radius:.75rem;max-width:620px;margin:40px auto;padding:28px;box-shadow:var(--shadow-lg);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
         <h3 style="margin:0;font-size:1.125rem;">&#129529;&nbsp;Widget Builder</h3>
         <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuDash.closeBuilder()">&times;</button>
@@ -514,19 +651,30 @@ $accentIdx = 0;
             <option value="custom">✏️ Custom HTML</option>
         </select>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+
+    <!-- Title + Icon row -->
+    <div style="display:grid;grid-template-columns:1fr auto;gap:12px;margin-bottom:6px;align-items:end;">
         <div class="nu-field">
             <label class="nu-label">Title</label>
-            <input class="nu-input" id="nuWTitle" placeholder="e.g. Pending Tasks">
+            <input class="nu-input" id="nuWTitle" placeholder="e.g. Pending Tasks" oninput="nuDash.updateIconPreview()">
         </div>
-        <div class="nu-field">
-            <label class="nu-label">Icon <small style="color:#888;font-weight:400;">(emoji or text)</small></label>
-            <input class="nu-input" id="nuWIcon" placeholder="e.g. 📅 or ⚠️" maxlength="8"
-                   style="font-size:1.2rem;" oninput="nuDash.previewIcon(this.value)">
+        <div class="nu-field" style="min-width:0;">
+            <label class="nu-label">Icon</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+                <input class="nu-input" id="nuWIcon" placeholder="fa-clock or \ud83d\udcc5"
+                       style="width:130px;font-size:.875rem;"
+                       oninput="nuDash.updateIconPreview()" readonly
+                       title="Click \"Pick\" to choose a Font Awesome icon, or type an emoji">
+                <button class="nu-btn nu-btn-ghost nu-btn-sm" type="button" onclick="nuDash.openFaPicker()" title="Browse Font Awesome icons">
+                    <i class="fas fa-icons"></i> Pick
+                </button>
+                <button class="nu-btn nu-btn-ghost nu-btn-sm" type="button" onclick="nuDash.clearIcon()" title="Clear icon">&times;</button>
+            </div>
         </div>
     </div>
-    <!-- Icon preview strip -->
-    <div id="nuWIconPreview" style="display:none;margin:-6px 0 12px;padding:8px 12px;background:var(--color-surface-offset,#f8f9fa);border-radius:.5rem;font-size:.8rem;color:#888;">Preview: <span id="nuWIconPreviewBadge" style="display:inline-flex;align-items:center;gap:6px;background:#01696f;color:#fff;padding:3px 10px 3px 8px;border-radius:9999px;font-weight:700;font-size:.8rem;"></span></div>
+    <!-- Badge preview -->
+    <div id="nuWIconPreview" style="margin-bottom:14px;padding:8px 12px;background:var(--color-surface-offset,#f8f9fa);border-radius:.5rem;font-size:.8rem;color:#888;display:none;">Preview: <span id="nuWIconPreviewBadge" style="display:inline-flex;align-items:center;gap:6px;background:#01696f;color:#fff;padding:3px 10px 3px 8px;border-radius:9999px;font-weight:700;font-size:.8rem;"></span></div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
         <div class="nu-field">
             <label class="nu-label">Width</label>
@@ -546,7 +694,9 @@ $accentIdx = 0;
             </select>
         </div>
     </div>
+
     <div id="nuWConfigArea"></div>
+
     <div class="nu-field" style="margin:14px 0;padding:12px;background:var(--color-surface-offset);border-radius:.5rem;border-left:3px solid #964219;">
         <label class="nu-label" style="color:#964219;">&#127775;&nbsp;Assign to Role</label>
         <select class="nu-input" id="nuWTargetRole">

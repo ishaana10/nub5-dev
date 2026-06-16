@@ -37,16 +37,14 @@ if ($action === 'list') {
     wu_json(['widgets' => $roleWidgets ?: [], 'source' => 'role']);
 }
 
-// ── GET: list_roles — dynamic roles from DB ───────────────────────────────────
+// ── GET: list_roles ───────────────────────────────────────────────────────────
 if ($action === 'list_roles') {
     if (!$isGlobeAdmin) wu_json(['error' => 'Forbidden']);
     try {
         $rows  = $db->fetchAll("SELECT role_code, role_name FROM nu_roles ORDER BY role_name");
-        // Exclude globeadmin from the assignable list
         $roles = array_filter($rows, fn($r) => strtolower($r['role_code']) !== 'globeadmin');
         wu_json(['roles' => array_values($roles)]);
     } catch (Throwable $e) {
-        // Fallback if table name differs
         wu_json(['roles' => [
             ['role_code' => 'user',       'role_name' => 'User'],
             ['role_code' => 'manager',    'role_name' => 'Manager'],
@@ -78,7 +76,7 @@ if ($action === 'add') {
     $config = $body['config'] ?? [];
     $width  = max(1, min(4, (int)($body['width']  ?? 2)));
     $height = max(1, min(3, (int)($body['height'] ?? 1)));
-    $icon   = substr((string)($body['icon'] ?? ''), 0, 60);
+    $icon   = substr((string)($body['icon'] ?? ''), 0, 120);
 
     $targetRole = null;
     $targetUser = $userId;
@@ -131,13 +129,14 @@ if ($action === 'reorder') {
 if ($action === 'update') {
     $id       = (int)($body['id'] ?? 0);
     $title    = substr((string)($body['title'] ?? ''), 0, 120);
+    $icon     = substr((string)($body['icon']  ?? ''), 0, 120);
     $config   = json_encode($body['config'] ?? []);
     $existing = $db->fetchOne("SELECT widget_width, widget_height FROM nu_dashboard_widgets WHERE widget_id=?", [$id]);
     $width    = max(1, min(4, (int)($body['width']  ?? $existing['widget_width']  ?? 2)));
     $height   = max(1, min(3, (int)($body['height'] ?? $existing['widget_height'] ?? 1)));
     $db->query(
-        "UPDATE nu_dashboard_widgets SET widget_title=?, widget_config=?, widget_width=?, widget_height=? WHERE widget_id=? AND (widget_user_id=? OR ?=1)",
-        [$title, $config, $width, $height, $id, $userId, (int)$isAdmin]
+        "UPDATE nu_dashboard_widgets SET widget_title=?, widget_icon=?, widget_config=?, widget_width=?, widget_height=? WHERE widget_id=? AND (widget_user_id=? OR ?=1)",
+        [$title, $icon ?: null, $config, $width, $height, $id, $userId, (int)$isAdmin]
     );
     wu_json(['ok' => true]);
 }
