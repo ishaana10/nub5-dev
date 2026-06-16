@@ -64,6 +64,20 @@ function wu_chart_type(string $widgetType): string {
     }
 }
 
+// FIX 3: empty body hint — shown when a widget has no usable config yet
+function wu_empty_hint(int $widgetId): string {
+    return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;'
+         . 'padding:24px 12px;color:var(--color-text-muted,#888);text-align:center;gap:8px;">'
+         . '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">'
+         . '<circle cx="12" cy="12" r="3"/>'
+         . '<path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2'
+         . 'M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>'
+         . '</svg>'
+         . '<span style="font-size:var(--text-xs,.75rem);">Not configured — click '
+         . '<strong>⚙</strong> to set up this widget.</span>'
+         . '</div>';
+}
+
 function wu_render(array $w, NuDatabase $db, int $userId): string {
     try {
         $cfg    = json_decode($w['widget_config'] ?? '{}', true) ?: [];
@@ -72,9 +86,12 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
 
         switch ($type) {
             case 'stat':
-                $rows = wu_run_sql($db, $cfg['sql'] ?? 'SELECT 0 as value', $userId);
+                $sql = trim($cfg['sql'] ?? '');
+                if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
+                $rows = wu_run_sql($db, $sql, $userId);
                 if (isset($rows[0]['_error'])) {
-                    return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error</p>';
+                    return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error: '
+                         . htmlspecialchars($rows[0]['_error']) . '</p>';
                 }
                 $val = isset($rows[0]['value']) ? $rows[0]['value'] : (isset($rows[0]) ? reset($rows[0]) : 0);
                 $sub = htmlspecialchars($cfg['subtitle'] ?? '');
@@ -87,9 +104,12 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
             case 'chart_bar':
             case 'chart_line':
             case 'chart_pie':
-                $rows   = wu_run_sql($db, $cfg['sql'] ?? '', $userId);
+                $sql = trim($cfg['sql'] ?? '');
+                if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
+                $rows   = wu_run_sql($db, $sql, $userId);
                 if (isset($rows[0]['_error'])) {
-                    return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error</p>';
+                    return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error: '
+                         . htmlspecialchars($rows[0]['_error']) . '</p>';
                 }
                 $labels    = array_column($rows, 'label');
                 $values    = array_column($rows, 'value');
@@ -119,7 +139,9 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                 return '<div style="height:220px;"><canvas id="' . $id . '" data-chartjs=\'' . htmlspecialchars($chartJson, ENT_QUOTES) . '\'></canvas></div>';
 
             case 'table':
-                $rows = wu_run_sql($db, $cfg['sql'] ?? '', $userId);
+                $sql = trim($cfg['sql'] ?? '');
+                if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
+                $rows = wu_run_sql($db, $sql, $userId);
                 if (isset($rows[0]['_error'])) {
                     return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error: ' . htmlspecialchars($rows[0]['_error']) . '</p>';
                 }
@@ -138,10 +160,8 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                 return $html . '</tbody></table></div>';
 
             case 'list':
-                $items = isset($cfg['items']) ? $cfg['items'] : [];
-                if (empty($items)) {
-                    return '<p style="color:var(--color-text-muted);padding:12px 0;">No links configured</p>';
-                }
+                $items = $cfg['items'] ?? [];
+                if (empty($items)) return wu_empty_hint((int)$w['widget_id']);
                 $html = '<div style="display:flex;flex-direction:column;gap:6px;">';
                 foreach ($items as $item) {
                     $label  = htmlspecialchars($item['label'] ?? '');
@@ -155,14 +175,16 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                 return $html . '</div>';
 
             case 'progress':
-                $rows  = wu_run_sql($db, $cfg['sql'] ?? '', $userId);
+                $sql = trim($cfg['sql'] ?? '');
+                if ($sql === '') return wu_empty_hint((int)$w['widget_id']);
+                $rows  = wu_run_sql($db, $sql, $userId);
                 if (isset($rows[0]['_error'])) {
                     return '<p style="color:var(--color-error,#a12c7b);font-size:12px;">SQL error</p>';
                 }
                 $total = (float)(isset($rows[0]['total']) ? $rows[0]['total'] : 1);
                 $done  = (float)(isset($rows[0]['done'])  ? $rows[0]['done']  : 0);
                 $pct   = $total > 0 ? min(100, (int)round($done / $total * 100)) : 0;
-                $label = htmlspecialchars(isset($cfg['label']) ? $cfg['label'] : "$done / $total");
+                $label = htmlspecialchars($cfg['label'] ?? "$done / $total");
                 return '<div style="margin-top:4px;">'
                      . '<div style="display:flex;justify-content:space-between;font-size:var(--text-xs,.75rem);color:var(--color-text-muted);margin-bottom:6px;">'
                      . '<span>' . $label . '</span><span>' . $pct . '%</span></div>'
@@ -171,7 +193,8 @@ function wu_render(array $w, NuDatabase $db, int $userId): string {
                      . '</div></div>';
 
             case 'custom':
-                return isset($cfg['html']) ? $cfg['html'] : '<p style="color:var(--color-text-muted);">No content set.</p>';
+                $html = $cfg['html'] ?? '';
+                return $html !== '' ? $html : wu_empty_hint((int)$w['widget_id']);
 
             default:
                 return '<p style="color:var(--color-text-muted);">Unknown widget type: ' . htmlspecialchars($type) . '</p>';
@@ -194,6 +217,11 @@ try {
     error_log('[widgets] hasPersonal error: ' . $e->getMessage());
     $hasPersonal = false;
 }
+
+// Pass all widget data to JS for FIX 2 (populate edit form)
+$widgetsJson = htmlspecialchars(json_encode(
+    array_column($widgets, null, 'widget_id')
+), ENT_QUOTES);
 ?>
 
 <!-- Toolbar -->
@@ -231,8 +259,8 @@ try {
     </div>
 <?php else: ?>
 <?php foreach ($widgets as $w):
-    $colSpan = max(1, min(4, (int)(isset($w['widget_width'])  ? $w['widget_width']  : 2)));
-    $rowSpan = max(1, min(3, (int)(isset($w['widget_height']) ? $w['widget_height'] : 1)));
+    $colSpan = max(1, min(4, (int)($w['widget_width']  ?? 2)));
+    $rowSpan = max(1, min(3, (int)($w['widget_height'] ?? 1)));
 ?>
     <div class="nu-widget-card nu-card" data-widget-id="<?= (int)$w['widget_id'] ?>"
          style="grid-column:span <?= $colSpan ?>;grid-row:span <?= $rowSpan ?>;position:relative;">
@@ -243,8 +271,9 @@ try {
                 <?php endif; ?>
                 <?= htmlspecialchars($w['widget_title']) ?>
             </h3>
-            <div class="nu-widget-controls" style="display:none;gap:4px;">
-                <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuDash.editWidget(<?= (int)$w['widget_id'] ?>)" title="Edit">&#x2699;&#xFE0F;</button>
+            <!-- Controls always visible so user can always reach ⚙ to fix empty widgets -->
+            <div class="nu-widget-controls" style="display:flex;gap:4px;">
+                <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nuDash.editWidget(<?= (int)$w['widget_id'] ?>)" title="Configure">&#x2699;&#xFE0F;</button>
                 <button class="nu-btn nu-btn-ghost nu-btn-sm" style="color:var(--color-error);" onclick="nuDash.removeWidget(<?= (int)$w['widget_id'] ?>)" title="Remove">&times;</button>
             </div>
         </div>
@@ -321,6 +350,9 @@ try {
 const API = 'modules/dashboard/widget_api.php';
 const chartInstances = {};
 
+// FIX 2: all saved widget data indexed by id for repopulating edit form
+const WIDGET_DATA = <?= $widgetsJson ?>;
+
 function initCharts() {
     document.querySelectorAll('[data-chartjs]').forEach(function(canvas) {
         var id = canvas.id;
@@ -350,15 +382,52 @@ window.nuDash = {
     openBuilder: function(id) {
         this.editingId = id || null;
         document.getElementById('nuWid').value = id || '';
-        if (!id) {
+        document.getElementById('nuWPreviewWrap').style.display = 'none';
+
+        if (id && WIDGET_DATA[id]) {
+            // FIX 2: Populate form with existing widget data
+            var w   = WIDGET_DATA[id];
+            var cfg = {};
+            try { cfg = JSON.parse(w.widget_config || '{}'); } catch(e) {}
+
+            document.getElementById('nuWType').value   = w.widget_type  || 'stat';
+            document.getElementById('nuWTitle').value  = w.widget_title || '';
+            document.getElementById('nuWWidth').value  = String(w.widget_width  || 2);
+            document.getElementById('nuWHeight').value = String(w.widget_height || 1);
+
+            // Render the config fields first, then fill them in
+            this.onTypeChange();
+
+            var type   = w.widget_type || 'stat';
+            var sqlEl  = document.getElementById('nuWSql');
+            var subEl  = document.getElementById('nuWSubtitle');
+            var colEl  = document.getElementById('nuWColor');
+            var lnkEl  = document.getElementById('nuWLinks');
+            var htmEl  = document.getElementById('nuWHtml');
+
+            if (sqlEl)  sqlEl.value  = cfg.sql      || '';
+            if (subEl)  subEl.value  = cfg.subtitle || cfg.label || '';
+            if (colEl)  colEl.value  = cfg.color    || 'primary';
+            if (htmEl)  htmEl.value  = cfg.html     || '';
+            if (lnkEl && cfg.items) {
+                lnkEl.value = cfg.items.map(function(item) {
+                    return item.label + '|' + (item.module || item.url || '');
+                }).join('\n');
+            }
+
+            var rEl = document.getElementById('nuWTargetRole');
+            if (rEl) rEl.value = w.widget_role || '';
+        } else {
+            // New widget — blank form
             document.getElementById('nuWType').value   = 'stat';
             document.getElementById('nuWTitle').value  = '';
             document.getElementById('nuWWidth').value  = '2';
             document.getElementById('nuWHeight').value = '1';
             var rEl = document.getElementById('nuWTargetRole');
             if (rEl) rEl.value = '';
+            this.onTypeChange();
         }
-        this.onTypeChange();
+
         document.getElementById('nuBuilderModal').style.display = 'block';
     },
 
@@ -373,15 +442,15 @@ window.nuDash = {
     },
 
     buildConfig: function() {
-        var type = document.getElementById('nuWType').value;
+        var type  = document.getElementById('nuWType').value;
         var sqlEl = document.getElementById('nuWSql');
-        var sql = sqlEl ? sqlEl.value.trim() : '';
+        var sql   = sqlEl ? sqlEl.value.trim() : '';
         switch(type) {
             case 'stat':
                 return {
-                    sql: sql,
-                    subtitle: (document.getElementById('nuWSubtitle') || {}).value,
-                    color: (document.getElementById('nuWColor') || {}).value
+                    sql:      sql,
+                    subtitle: (document.getElementById('nuWSubtitle') || {}).value || '',
+                    color:    (document.getElementById('nuWColor')    || {}).value || 'primary'
                 };
             case 'chart_bar':
             case 'chart_line':
@@ -389,7 +458,7 @@ window.nuDash = {
             case 'table':
                 return { sql: sql };
             case 'progress':
-                return { sql: sql, label: (document.getElementById('nuWSubtitle') || {}).value };
+                return { sql: sql, label: (document.getElementById('nuWSubtitle') || {}).value || '' };
             case 'list':
                 var lines = ((document.getElementById('nuWLinks') || {}).value || '').split('\n').filter(Boolean);
                 return { items: lines.map(function(l) {
@@ -401,10 +470,25 @@ window.nuDash = {
                         : { label: label, module: target };
                 })};
             case 'custom':
-                return { html: (document.getElementById('nuWHtml') || {}).value };
+                return { html: (document.getElementById('nuWHtml') || {}).value || '' };
             default:
                 return {};
         }
+    },
+
+    // FIX 1: validate before save
+    validateConfig: function(type, config) {
+        var sqlTypes = ['stat','chart_bar','chart_line','chart_pie','table','progress'];
+        if (sqlTypes.indexOf(type) !== -1 && !config.sql) {
+            return 'Please enter a SQL query for this widget type.';
+        }
+        if (type === 'list' && (!config.items || config.items.length === 0)) {
+            return 'Please add at least one link (Label|module or Label|https://...).';
+        }
+        if (type === 'custom' && !config.html) {
+            return 'Please enter some HTML content for this widget.';
+        }
+        return null; // valid
     },
 
     runPreview: function() {
@@ -436,16 +520,29 @@ window.nuDash = {
     },
 
     saveWidget: function() {
-        var self     = this;
-        var id       = document.getElementById('nuWid').value;
-        var type     = document.getElementById('nuWType').value;
-        var titleEl  = document.getElementById('nuWTitle');
-        var title    = (titleEl && titleEl.value.trim()) ? titleEl.value.trim() : 'Widget';
-        var width    = parseInt(document.getElementById('nuWWidth').value)  || 2;
-        var height   = parseInt(document.getElementById('nuWHeight').value) || 1;
-        var config   = this.buildConfig();
-        var roleEl   = document.getElementById('nuWTargetRole');
+        var self       = this;
+        var id         = document.getElementById('nuWid').value;
+        var type       = document.getElementById('nuWType').value;
+        var titleEl    = document.getElementById('nuWTitle');
+        var title      = (titleEl && titleEl.value.trim()) ? titleEl.value.trim() : '';
+        var width      = parseInt(document.getElementById('nuWWidth').value)  || 2;
+        var height     = parseInt(document.getElementById('nuWHeight').value) || 1;
+        var config     = this.buildConfig();
+        var roleEl     = document.getElementById('nuWTargetRole');
         var targetRole = roleEl ? roleEl.value : null;
+
+        // FIX 1: validate
+        if (!title) {
+            alert('Please enter a title for this widget.');
+            document.getElementById('nuWTitle').focus();
+            return;
+        }
+        var validationError = this.validateConfig(type, config);
+        if (validationError) {
+            alert(validationError);
+            return;
+        }
+
         var payload  = { type: type, title: title, width: width, height: height, config: config };
         if (targetRole) payload.target_role = targetRole;
         if (id) payload.id = id;
@@ -481,9 +578,7 @@ window.nuDash = {
     toggleEditMode: function() {
         this.editMode = !this.editMode;
         var btn = document.getElementById('nuDashEditBtn');
-        document.querySelectorAll('.nu-widget-controls').forEach(function(el) {
-            el.style.display = this.editMode ? 'flex' : 'none';
-        }.bind(this));
+        // In edit mode, hide the always-visible controls and show drag outlines only
         document.querySelectorAll('.nu-widget-card').forEach(function(el) {
             el.style.outline = this.editMode ? '2px dashed var(--color-primary,#01696f)' : '';
             el.draggable = this.editMode;
