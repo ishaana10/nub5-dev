@@ -200,19 +200,57 @@ try {
     $hasPersonal = false;
 }
 
-// Key by string widget_id
+// ── Pre-group widgets by role (globeadmin role-preview only) ──────────────────
+// Groups: [ 'rolecode' => [ widget, widget, ... ], ... ]
+// For personal / normal-user views we skip grouping entirely.
+$showRoleGroups = ($isGlobeAdmin && !$hasPersonal);
+$roleGroups     = [];
+
+if ($showRoleGroups) {
+    foreach ($widgets as $w) {
+        $isRoleWgt = ($w['widget_user_id'] === null || $w['widget_user_id'] === '');
+        $key = $isRoleWgt ? ($w['widget_role'] ?? 'unassigned') : '__personal__';
+        $roleGroups[$key][] = $w;
+    }
+} else {
+    // Single flat group — key doesn't matter
+    $roleGroups['__flat__'] = $widgets;
+}
+
+// Fetch the human-readable role names once for globeadmin view
+$roleNames = [];
+if ($showRoleGroups) {
+    try {
+        $rRows = $db->fetchAll('SELECT role_code, role_name FROM nu_roles ORDER BY role_name');
+        foreach ($rRows as $r) {
+            $roleNames[$r['role_code']] = $r['role_name'];
+        }
+    } catch (Throwable $e) { /* non-fatal */ }
+}
+
+// Key by string widget_id for JS
 $widgetsForJs = [];
 foreach ($widgets as $w) {
     $widgetsForJs[(string)$w['widget_id']] = $w;
 }
-// JSON is safe to embed here because it goes into a JS string, not innerHTML
 $widgetsJson = json_encode($widgetsForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
+
+// Accent colours cycling for role group headers
+$groupAccents = [
+    'var(--color-primary,#01696f)',
+    'var(--color-success,#437a22)',
+    '#006494',
+    '#7a39bb',
+    'var(--color-warning,#964219)',
+    'var(--color-error,#a12c7b)',
+];
+$accentIdx = 0;
 ?>
 
 <!-- Toolbar -->
 <div id="nuDashToolbar" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
     <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:var(--text-sm,.875rem);font-weight:600;color:var(--color-text-muted);">&#x1F4CA; My Dashboard
+        <span style="font-size:var(--text-sm,.875rem);font-weight:600;color:var(--color-text-muted);">My Dashboard
             <?php if (!$hasPersonal): ?><span style="font-size:var(--text-xs,.75rem);background:var(--color-surface-offset);border-radius:var(--radius-full);padding:2px 8px;margin-left:4px;"><?= $isGlobeAdmin ? 'all roles preview' : 'role default' ?></span><?php endif; ?>
         </span>
     </div>
@@ -242,22 +280,61 @@ $widgetsJson = json_encode($widgetsForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HE
         </div>
     </div>
 <?php else: ?>
-<?php
-$prevRole = null;
-foreach ($widgets as $w):
-    $colSpan   = max(1, min(4, (int)($w['widget_width']  ?? 2)));
-    $rowSpan   = max(1, min(3, (int)($w['widget_height'] ?? 1)));
-    $wRole     = $w['widget_role'] ?? null;
-    $isRoleWgt = ($w['widget_user_id'] === null || $w['widget_user_id'] === '');
-    if ($isGlobeAdmin && !$hasPersonal && $isRoleWgt && $wRole !== $prevRole):
-        $prevRole = $wRole;
+
+<?php foreach ($roleGroups as $groupKey => $groupWidgets):
+    $isNamedGroup = ($showRoleGroups && $groupKey !== '__personal__');
+    $accentColor  = $groupAccents[$accentIdx % count($groupAccents)];
+    $accentIdx++;
+    $displayRole  = htmlspecialchars($roleNames[$groupKey] ?? ucfirst($groupKey));
+    $roleCode     = htmlspecialchars($groupKey);
+    $widgetCount  = count($groupWidgets);
 ?>
-    <div style="grid-column:1/-1;padding:8px 4px 0;border-top:1px solid var(--color-border,#e5e7eb);margin-top:4px;">
-        <span style="font-size:var(--text-xs,.75rem);font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted,#888);">Role: <?= htmlspecialchars($wRole ?? 'unassigned') ?></span>
+
+<?php if ($isNamedGroup): ?>
+    <!-- Role group header -->
+    <div style="grid-column:1/-1;margin-top:<?= $accentIdx > 1 ? '24px' : '0' ?>;">
+        <div style="
+            display:flex;
+            align-items:center;
+            gap:12px;
+            padding:14px 16px;
+            background:var(--color-surface-offset,#f8f9fa);
+            border-radius:var(--radius-md,.5rem);
+            border-left:4px solid <?= $accentColor ?>;
+        ">
+            <!-- Role name + code pill -->
+            <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+                <span style="font-size:var(--text-sm,.875rem);font-weight:700;color:var(--color-text,#111);"><?= $displayRole ?></span>
+                <span style="
+                    font-size:var(--text-xs,.75rem);
+                    font-weight:600;
+                    padding:2px 8px;
+                    border-radius:var(--radius-full,9999px);
+                    background:<?= $accentColor ?>;
+                    color:#fff;
+                    letter-spacing:.04em;
+                "><?= $roleCode ?></span>
+                <span style="font-size:var(--text-xs,.75rem);color:var(--color-text-muted,#888);">
+                    <?= $widgetCount ?> widget<?= $widgetCount !== 1 ? 's' : '' ?>
+                </span>
+            </div>
+            <!-- Quick action: add widget for this role -->
+            <button
+                class="nu-btn nu-btn-ghost nu-btn-sm"
+                style="color:<?= $accentColor ?>;white-space:nowrap;"
+                onclick="nuDash.openBuilderForRole('<?= $roleCode ?>')"
+                title="Add widget for this role"
+            >+ Add</button>
+        </div>
     </div>
 <?php endif; ?>
+
+<?php foreach ($groupWidgets as $w):
+    $colSpan = max(1, min(4, (int)($w['widget_width']  ?? 2)));
+    $rowSpan = max(1, min(3, (int)($w['widget_height'] ?? 1)));
+?>
     <div class="nu-widget-card nu-card" data-widget-id="<?= (int)$w['widget_id'] ?>"
-         style="grid-column:span <?= $colSpan ?>;grid-row:span <?= $rowSpan ?>;position:relative;">
+         style="grid-column:span <?= $colSpan ?>;grid-row:span <?= $rowSpan ?>;position:relative;<?= $isNamedGroup ? 'border-top:2px solid ' . $accentColor . ';' : '' ?>">
         <div class="nu-card-header" style="margin-bottom:12px;">
             <h3 class="nu-card-title" style="font-size:var(--text-sm,.875rem);">
                 <?php if (!empty($w['widget_icon'])): ?><span style="margin-right:6px;"><?= htmlspecialchars($w['widget_icon']) ?></span><?php endif; ?>
@@ -270,6 +347,8 @@ foreach ($widgets as $w):
         </div>
         <div class="nu-widget-body"><?= wu_render($w, $db, $userId) ?></div>
     </div>
+<?php endforeach; ?>
+
 <?php endforeach; ?>
 <?php endif; ?>
 </div>
@@ -343,14 +422,8 @@ foreach ($widgets as $w):
 <!-- chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 
-<!--
-  WIDGET_DATA is written as a tiny inline <script> that only sets a global.
-  It contains NO HTML entities (json_encode with JSON_HEX_* flags), so the
-  nubuilder innerHTML injection is safe here.
--->
 <script>
 window.NUDASH_WIDGET_DATA = <?= $widgetsJson ?>;
 </script>
 
-<!-- All logic lives in the external JS file - never touched by innerHTML -->
 <script src="modules/widgets/widgets.js?v=<?= filemtime(__DIR__ . '/widgets.js') ?>"></script>
