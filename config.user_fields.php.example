@@ -1,0 +1,42 @@
+<?php
+/**
+ * config.user_fields.php  —  Custom user fields configuration
+ *
+ * Copy this file to config.user_fields.php and edit to define extra fields
+ * that appear on the User create/edit form and are stored in nu_user_meta.
+ *
+ * Field options:
+ *   key      (string, required)  — DB key, alphanumeric + underscore only
+ *   label    (string, required)  — Label shown in the UI
+ *   type     (string)            — HTML input type: text, email, number, date (default: text)
+ *   options  (array)             — If set, renders a <select> instead of <input>
+ *   global   (bool)              — If true, value is stored in $_SESSION['nu_user_meta'][key]
+ *                                  after login and available as ##key## in SQL queries
+ *
+ * Global variables example usage in a browse SQL:
+ *   SELECT * FROM orders WHERE station_code = '##station##'
+ *
+ * The session injection happens in config.php after successful login.
+ */
+
+return [
+    [
+        'key'     => 'station',
+        'label'   => 'Station',
+        'type'    => 'text',
+        'options' => ['HQ', 'North', 'South', 'East', 'West'],
+        'global'  => true,   // available as ##station## in SQL
+    ],
+    [
+        'key'     => 'department',
+        'label'   => 'Department',
+        'type'    => 'text',
+        'global'  => false,
+    ],
+    [
+        'key'     => 'employee_id',
+        'label'   => 'Employee ID',
+        'type'    => 'text',
+        'global'  => false,
+    ],
+];
