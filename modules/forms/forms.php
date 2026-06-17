@@ -1064,7 +1064,7 @@ if (!window._nbFormsModuleInit) {
       return editor;
     }
 
-    // ── FIX: setValue waits for editor to be mounted, retries up to 20x ──
+    // setValue: if editor not yet mounted, retry every 100ms up to 20x (2s)
     function _setValue(editorId, value) {
       var entry = _editors[editorId];
       if (entry) {
@@ -1074,7 +1074,6 @@ if (!window._nbFormsModuleInit) {
         var h = document.getElementById(entry.hiddenId);
         if (h) h.value = value || '';
       } else {
-        // Editor not yet mounted — retry up to 20 times (2 seconds total)
         var attempts = 0;
         var timer = setInterval(function() {
           attempts++;
@@ -1285,63 +1284,73 @@ if (!window._nbFormsModuleInit) {
   };
 
   // ══════════════════════════════════════════════════════════════════
-  //  FIX: Patch nbFormBuilder.edit to populate Ace AFTER fetch resolves
-  //  We hook into the custom event 'nbFormLoaded' that the original
-  //  edit() must dispatch, OR we poll the hidden textareas until they
-  //  have content (safe fallback for any fetch timing).
+  //  FIX: Populate Ace editors when editing an existing form.
+  //
+  //  Approach: make our OWN direct fetch to api/forms.php?action=get
+  //  immediately after _origEdit is called, then push the values
+  //  straight into Ace — no fetch interception, no timing race.
   // ══════════════════════════════════════════════════════════════════
-  var _aceFieldMap = {
-    aceCustomJs:     'formCustomJs',
-    aceJsBeforeSave: 'formJsBeforeSave',
-    aceJsAfterSave:  'formJsAfterSave',
-    aceCustomPhp:    'formCustomPhp',
-    aceCustomCss:    'formCustomCss',
+  var _aceDataMap = {
+    aceCustomJs:     'form_custom_js',
+    aceJsBeforeSave: 'form_js_before_save',
+    aceJsAfterSave:  'form_js_after_save',
+    aceCustomPhp:    'form_custom_php',
+    aceCustomCss:    'form_custom_css',
   };
 
   function _pushDataToAce(formData) {
-    var map = {
-      aceCustomJs:     formData.form_custom_js      || '',
-      aceJsBeforeSave: formData.form_js_before_save || '',
-      aceJsAfterSave:  formData.form_js_after_save  || '',
-      aceCustomPhp:    formData.form_custom_php      || '',
-      aceCustomCss:    formData.form_custom_css      || '',
-    };
-    Object.keys(map).forEach(function(aceId) {
-      nbAce.setValue(aceId, map[aceId]);
+    Object.keys(_aceDataMap).forEach(function(aceId) {
+      nbAce.setValue(aceId, formData[_aceDataMap[aceId]] || '');
     });
     nbAce.resizeAll();
   }
 
-  // Strategy 1: listen for a custom event dispatched by nbFormBuilder.edit
+  // Strategy 1: custom event (in case original edit() dispatches it)
   document.addEventListener('nbFormLoaded', function(e) {
     if (e.detail && e.detail.form) _pushDataToAce(e.detail.form);
   });
 
-  // Strategy 2: wrap nbFormBuilder.edit and intercept the fetch response
-  const _origEdit = nbFormBuilder.edit;
+  // Strategy 2: make our own direct fetch after _origEdit fires
+  var _origEdit = nbFormBuilder.edit;
   nbFormBuilder.edit = function(formId) {
-    // Intercept fetch globally for the duration of this edit call
-    var _origFetch = window.fetch;
-    window.fetch = function(url, opts) {
-      return _origFetch.apply(this, arguments).then(function(response) {
-        // Clone so original consumer can still read body
-        var clone = response.clone();
-        clone.json().then(function(data) {
-          if (data && data.success && data.form && data.form.form_id == formId) {
-            // Restore fetch immediately, then push data to Ace
-            window.fetch = _origFetch;
-            // Small delay so original edit() handler populates the DOM first
-            setTimeout(function() { _pushDataToAce(data.form); }, 80);
-          }
-        }).catch(function() {});
-        return response;
-      });
-    };
-
-    // Fallback: restore fetch after 5s in case form request never matched
-    var _restoreTimer = setTimeout(function() { window.fetch = _origFetch; }, 5000);
-
+    // Call original first so the builder UI opens/populates
     if (typeof _origEdit === 'function') _origEdit.call(nbFormBuilder, formId);
+
+    // Independently fetch form data and push to Ace editors
+    fetch('api/forms.php?action=get&id=' + encodeURIComponent(formId))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data && data.success && data.form) {
+          _pushDataToAce(data.form);
+        }
+      })
+      .catch(function(err) {
+        console.warn('[nub5] ace edit fetch failed, falling back to textarea poll', err);
+        // Strategy 3: poll hidden textareas as last resort
+        var polls = 0;
+        var textareaMap = {
+          aceCustomJs:     'formCustomJs',
+          aceJsBeforeSave: 'formJsBeforeSave',
+          aceJsAfterSave:  'formJsAfterSave',
+          aceCustomPhp:    'formCustomPhp',
+          aceCustomCss:    'formCustomCss',
+        };
+        var timer = setInterval(function() {
+          polls++;
+          var anyFilled = false;
+          Object.keys(textareaMap).forEach(function(aceId) {
+            var ta = document.getElementById(textareaMap[aceId]);
+            if (ta && ta.value) {
+              nbAce.setValue(aceId, ta.value);
+              anyFilled = true;
+            }
+          });
+          if (anyFilled || polls >= 30) {
+            clearInterval(timer);
+            nbAce.resizeAll();
+          }
+        }, 100);
+      });
   };
 
   // ── Patch nbFormBuilder.open: clear Ace editors on new form ──────
