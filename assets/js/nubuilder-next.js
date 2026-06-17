@@ -917,6 +917,17 @@ window.submitNuForm = async function (formElement) {
   formElement.querySelectorAll('input[type="checkbox"]').forEach((el) => {
     if (!Object.prototype.hasOwnProperty.call(data, el.name)) data[el.name] = '';
   });
+
+  // ── Before-save hook ──────────────────────────────────────────────────────
+  if (window._nuFormBeforeSave && typeof window._nuFormBeforeSave[formCode] === 'function') {
+    const result = window._nuFormBeforeSave[formCode](formElement, data);
+    // Hook may return false (or a rejected promise) to abort the save
+    if (result === false) return;
+    if (result && typeof result.then === 'function') {
+      try { const v = await result; if (v === false) return; } catch (e) { return; }
+    }
+  }
+
   try {
     const json = await NuApp.apiJson(url, {
       method: 'POST',
@@ -926,6 +937,12 @@ window.submitNuForm = async function (formElement) {
     });
     if (!json.success) { NuApp.toast(json.error || 'Save failed', 'error'); return; }
     NuApp.toast(recordId ? 'Updated' : 'Saved');
+
+    // ── After-save hook ──────────────────────────────────────────────────────
+    if (window._nuFormAfterSave && typeof window._nuFormAfterSave[formCode] === 'function') {
+      window._nuFormAfterSave[formCode](formElement, json);
+    }
+
     const overlay = formElement.closest('.nu-form-overlay');
     if (overlay) overlay.remove();
     if (typeof NuApp.browseForm === 'function' && formCode) {
