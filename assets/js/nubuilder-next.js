@@ -402,6 +402,9 @@ window.NuApp = {
       applySize(currentSize);
       overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
+      // ── Re-exec scripts NOW that box is in the live DOM so document.querySelector works
+      this._execModuleScripts(box);
+
       this._dispatchFormOpened(box);
       if (window.nuForm && typeof window.nuForm.init === 'function') {
         if (formEl) window.nuForm.init(formEl.dataset.formCode || code, {}, true);
@@ -466,6 +469,9 @@ window.NuApp = {
       overlay.appendChild(box);
       document.body.appendChild(overlay);
       overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+      // ── Re-exec scripts NOW that box is in the live DOM so document.querySelector works
+      this._execModuleScripts(box);
 
       this._dispatchFormOpened(box);
       if (window.nuForm && typeof window.nuForm.init === 'function') {
@@ -825,6 +831,9 @@ window.NuApp = {
       const formEl = container.querySelector('.nu-generated-form');
       if (formEl) formEl.dataset.displayMode = 'inline';
 
+      // ── Re-exec scripts NOW that formWrap is in the live DOM so document.querySelector works
+      this._execModuleScripts(container);
+
       this._dispatchFormOpened(container);
       if (window.nuForm && typeof window.nuForm.init === 'function') {
         if (formEl) window.nuForm.init(formEl.dataset.formCode || code, {}, isPreview);
@@ -871,6 +880,9 @@ window.NuApp = {
       // ── Stamp display-mode so submitNuForm routes back to fullpage browse
       const formEl = container.querySelector('.nu-generated-form');
       if (formEl) formEl.dataset.displayMode = 'fullpage';
+
+      // ── Re-exec scripts NOW that formWrap is in the live DOM so document.querySelector works
+      this._execModuleScripts(container);
 
       this._dispatchFormOpened(container);
       if (window.nuForm && typeof window.nuForm.init === 'function') {
