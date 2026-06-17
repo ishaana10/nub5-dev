@@ -459,6 +459,8 @@ foreach ($forms as $f) {
   border-radius:8px;
   overflow:hidden;
   background:#1e1e2e;
+  display:flex;
+  flex-direction:column;
 }
 .nb-ace-topbar {
   display:flex; align-items:center; justify-content:space-between;
@@ -466,6 +468,7 @@ foreach ($forms as $f) {
   background:#181825;
   border-bottom:1px solid rgba(255,255,255,.07);
   gap:8px;
+  flex-shrink:0;
 }
 .nb-ace-lang-badge {
   font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
@@ -487,6 +490,7 @@ foreach ($forms as $f) {
   width:100%;
   font-size:13px;
   line-height:1.6;
+  flex-shrink:0;
 }
 /* ── Resize handle below each Ace editor ── */
 .nb-ace-resize-handle {
@@ -604,14 +608,7 @@ foreach ($forms as $f) {
       <button class="nu-btn nu-btn-ghost nu-btn-sm" onclick="nbFormBuilder.close()">✕ Cancel</button>
     </div>
 
-    <!-- ══════════════════════════════════════════════════════════
-         COLLAPSIBLE SETTINGS GROUP
-         Contains: Form Type · Name/Code · Table · Primary Key
-         Collapsed by default — click header to expand
-    ═══════════════════════════════════════════════════════════════ -->
     <div class="nb-settings-group" id="nbSettingsGroup">
-
-      <!-- Group header (clickable toggle) -->
       <div class="nb-settings-group-header" id="nbSettingsHeader" onclick="nbToggleSettingsGroup()">
         <div class="nb-settings-group-title">
           ⚙ Form Settings
@@ -619,11 +616,8 @@ foreach ($forms as $f) {
         </div>
         <svg class="nb-settings-group-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
       </div>
-
-      <!-- Group body (hidden by default) -->
       <div class="nb-settings-group-body" id="nbSettingsBody">
 
-        <!-- ── Option row: Form Type ── -->
         <div class="nb-option-row" id="optRowFormType">
           <div class="nb-option-row-header" onclick="nbToggleOptionRow('optRowFormType')">
             <div class="nb-option-row-label">
@@ -665,7 +659,6 @@ foreach ($forms as $f) {
           </div>
         </div>
 
-        <!-- ── Option row: Name + Code ── -->
         <div class="nb-option-row" id="optRowNameCode">
           <div class="nb-option-row-header" onclick="nbToggleOptionRow('optRowNameCode')">
             <div class="nb-option-row-label">
@@ -693,7 +686,6 @@ foreach ($forms as $f) {
           </div>
         </div>
 
-        <!-- ── Option row: Table ── -->
         <div class="nb-option-row" id="optRowTable">
           <div class="nb-option-row-header" onclick="nbToggleOptionRow('optRowTable')">
             <div class="nb-option-row-label">
@@ -718,14 +710,10 @@ foreach ($forms as $f) {
                 <div class="nb-tmode-card-desc">Attach this form to a table that already exists in the database</div>
               </label>
             </div>
-
-            <!-- New table name input -->
             <div id="newTableWrap">
               <label class="nu-label">DB Table Name</label>
               <input type="text" id="builderFormTable" class="nu-input" placeholder="e.g. customers">
             </div>
-
-            <!-- Existing table dropdown -->
             <div id="existingTableWrap" style="display:none;">
               <label class="nu-label">Select Existing Table</label>
               <select id="builderFormTableExisting" class="nu-input" onchange="document.getElementById('builderFormTable').value=this.value">
@@ -739,7 +727,6 @@ foreach ($forms as $f) {
           </div>
         </div>
 
-        <!-- ── Option row: Primary Key ── -->
         <div class="nb-option-row" id="optRowPk">
           <div class="nb-option-row-header" onclick="nbToggleOptionRow('optRowPk')">
             <div class="nb-option-row-label">
@@ -769,8 +756,8 @@ foreach ($forms as $f) {
           </div>
         </div>
 
-      </div><!-- /nb-settings-group-body -->
-    </div><!-- /nb-settings-group -->
+      </div>
+    </div>
 
     <!-- Tabs -->
     <div class="nb-tabs" id="nbTabsRow">
@@ -783,11 +770,8 @@ foreach ($forms as $f) {
     <!-- ── TAB: Fields ── -->
     <div class="nb-tab-panel active" id="panelFields">
       <div class="nb-builder-wrap">
-
-        <!-- Toolbox -->
         <div class="nb-toolbox">
           <div class="nb-toolbox-title">Field Types</div>
-
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Basic</div>
             <div class="nb-tool" data-type="text"     draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>Text</div>
@@ -801,29 +785,27 @@ foreach ($forms as $f) {
             <div class="nb-tool" data-type="checkbox" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>Checkbox</div>
             <div class="nb-tool" data-type="file"     draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>File</div>
           </div>
-
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Choice</div>
-            <div class="nb-tool" data-type="select" data-preset="standard_select"    draggable="true"
+            <div class="nb-tool" data-type="select" data-preset="standard_select" draggable="true"
                  onclick="nbFormBuilder.addField('select','Standard Select','',false,{select2:false,multiple:false})">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>Standard Select
             </div>
-            <div class="nb-tool" data-type="select" data-preset="select2_single"     draggable="true"
+            <div class="nb-tool" data-type="select" data-preset="select2_single" draggable="true"
                  onclick="nbFormBuilder.addField('select','Select2 (searchable)','',false,{select2:true,multiple:false})">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>Select2
             </div>
-            <div class="nb-tool" data-type="select" data-preset="standard_multi"     draggable="true"
+            <div class="nb-tool" data-type="select" data-preset="standard_multi" draggable="true"
                  onclick="nbFormBuilder.addField('select','Standard Multi-Select','',false,{select2:false,multiple:true})">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6M6 4l6 6 6-6"/></svg>Multi-Select
             </div>
-            <div class="nb-tool" data-type="select" data-preset="select2_multi"      draggable="true"
+            <div class="nb-tool" data-type="select" data-preset="select2_multi" draggable="true"
                  onclick="nbFormBuilder.addField('select','Select2 Multi-Select','',false,{select2:true,multiple:true})">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4M6 4l6 6 6-6"/></svg>S2 Multi
             </div>
             <div class="nb-tool" data-type="radio"          draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>Radio</div>
             <div class="nb-tool" data-type="checkbox_group" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Checks</div>
           </div>
-
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Advanced</div>
             <div class="nb-tool" data-type="lookup"     draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>Lookup</div>
@@ -832,7 +814,6 @@ foreach ($forms as $f) {
             <div class="nb-tool" data-type="range"      draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="12" r="2"/><path d="M2 12h4M10 12h12"/></svg>Range</div>
             <div class="nb-tool" data-type="color"      draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>Color</div>
           </div>
-
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Layout</div>
             <div class="nb-tool" data-type="html"    draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-5-6 5-6M15 6l5 6-5 6"/></svg>HTML</div>
@@ -854,7 +835,6 @@ foreach ($forms as $f) {
             <div class="nb-canvas-empty" id="canvasEmpty">&#x2B06; Drag a field here or click a field type · rows are created automatically</div>
           </div>
         </div>
-
       </div>
     </div>
 
@@ -863,8 +843,6 @@ foreach ($forms as $f) {
       <div style="margin-bottom:12px;padding:10px 14px;background:color-mix(in oklch,#f59e0b 10%,var(--bg-surface));border:1px solid color-mix(in oklch,#f59e0b 30%,transparent);border-radius:8px;font-size:12px;color:#92400e;" id="browseNotApplicable" style="display:none;">
         ℹ️ Browse settings only apply to <strong>Main</strong> and <strong>Popup</strong> form types.
       </div>
-
-      <!-- Browse Display Mode selector -->
       <div style="margin-bottom:20px;">
         <label class="nu-label" style="margin-bottom:10px;display:block;">Browse Display Mode</label>
         <div class="nb-display-modes" id="browseDisplayModes">
@@ -888,7 +866,6 @@ foreach ($forms as $f) {
           </label>
         </div>
       </div>
-
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div style="grid-column:1/-1;">
           <label class="nu-label">Browse SQL <span style="font-weight:400;color:var(--text-tertiary);">(leave empty for auto SELECT *)</span></label>
@@ -926,7 +903,6 @@ foreach ($forms as $f) {
     <div class="nb-tab-panel" id="panelEvents">
       <div style="display:grid;gap:16px;">
 
-        <!-- JS On Load -->
         <div>
           <label class="nu-label" style="margin-bottom:6px;display:block;">
             JS On Load
@@ -935,7 +911,7 @@ foreach ($forms as $f) {
           <div class="nb-ace-wrap" id="wrapCustomJs">
             <div class="nb-ace-topbar">
               <span class="nb-ace-lang-badge js">JS</span>
-              <span class="nb-ace-hint">Ctrl+Space autocomplete · Ctrl+Z undo</span>
+              <span class="nb-ace-hint">Ctrl+Space autocomplete · Ctrl+Z undo · drag handle to resize</span>
               <button class="nb-ace-theme-btn" onclick="nbAce.toggleTheme('aceCustomJs')">☀ theme</button>
             </div>
             <div id="aceCustomJs" class="nb-ace-editor" style="height:180px;"></div>
@@ -944,7 +920,6 @@ foreach ($forms as $f) {
           <textarea id="formCustomJs" class="nb-ace-hidden"></textarea>
         </div>
 
-        <!-- JS Before Save -->
         <div>
           <label class="nu-label" style="margin-bottom:6px;display:block;">
             JS Before Save
@@ -953,7 +928,7 @@ foreach ($forms as $f) {
           <div class="nb-ace-wrap" id="wrapJsBeforeSave">
             <div class="nb-ace-topbar">
               <span class="nb-ace-lang-badge js">JS</span>
-              <span class="nb-ace-hint">Ctrl+Space autocomplete · Ctrl+Z undo</span>
+              <span class="nb-ace-hint">Ctrl+Space autocomplete · Ctrl+Z undo · drag handle to resize</span>
               <button class="nb-ace-theme-btn" onclick="nbAce.toggleTheme('aceJsBeforeSave')">☀ theme</button>
             </div>
             <div id="aceJsBeforeSave" class="nb-ace-editor" style="height:140px;"></div>
@@ -962,7 +937,6 @@ foreach ($forms as $f) {
           <textarea id="formJsBeforeSave" class="nb-ace-hidden"></textarea>
         </div>
 
-        <!-- JS After Save -->
         <div>
           <label class="nu-label" style="margin-bottom:6px;display:block;">
             JS After Save
@@ -971,7 +945,7 @@ foreach ($forms as $f) {
           <div class="nb-ace-wrap" id="wrapJsAfterSave">
             <div class="nb-ace-topbar">
               <span class="nb-ace-lang-badge js">JS</span>
-              <span class="nb-ace-hint">Ctrl+Space autocomplete · Ctrl+Z undo</span>
+              <span class="nb-ace-hint">Ctrl+Space autocomplete · Ctrl+Z undo · drag handle to resize</span>
               <button class="nb-ace-theme-btn" onclick="nbAce.toggleTheme('aceJsAfterSave')">☀ theme</button>
             </div>
             <div id="aceJsAfterSave" class="nb-ace-editor" style="height:140px;"></div>
@@ -987,7 +961,6 @@ foreach ($forms as $f) {
     <div class="nb-tab-panel" id="panelPhpCss">
       <div style="display:grid;gap:16px;">
 
-        <!-- Custom PHP -->
         <div>
           <label class="nu-label" style="margin-bottom:6px;display:block;">
             Custom PHP
@@ -996,7 +969,7 @@ foreach ($forms as $f) {
           <div class="nb-ace-wrap" id="wrapCustomPhp">
             <div class="nb-ace-topbar">
               <span class="nb-ace-lang-badge php">PHP</span>
-              <span class="nb-ace-hint">Ctrl+Space autocomplete · Ctrl+Z undo</span>
+              <span class="nb-ace-hint">Ctrl+Space autocomplete · Ctrl+Z undo · drag handle to resize</span>
               <button class="nb-ace-theme-btn" onclick="nbAce.toggleTheme('aceCustomPhp')">☀ theme</button>
             </div>
             <div id="aceCustomPhp" class="nb-ace-editor" style="height:200px;"></div>
@@ -1005,7 +978,6 @@ foreach ($forms as $f) {
           <textarea id="formCustomPhp" class="nb-ace-hidden"></textarea>
         </div>
 
-        <!-- Custom CSS -->
         <div>
           <label class="nu-label" style="margin-bottom:6px;display:block;">
             Custom CSS
@@ -1014,7 +986,7 @@ foreach ($forms as $f) {
           <div class="nb-ace-wrap" id="wrapCustomCss">
             <div class="nb-ace-topbar">
               <span class="nb-ace-lang-badge css">CSS</span>
-              <span class="nb-ace-hint">Ctrl+Space autocomplete · Ctrl+Z undo</span>
+              <span class="nb-ace-hint">Ctrl+Space autocomplete · Ctrl+Z undo · drag handle to resize</span>
               <button class="nb-ace-theme-btn" onclick="nbAce.toggleTheme('aceCustomCss')">☀ theme</button>
             </div>
             <div id="aceCustomCss" class="nb-ace-editor" style="height:180px;"></div>
@@ -1037,7 +1009,6 @@ foreach ($forms as $f) {
 </div>
 
 <script>
-// ── Guard: only run once per page load to prevent re-declaration errors ──
 if (!window._nbFormsModuleInit) {
   window._nbFormsModuleInit = true;
 
@@ -1045,7 +1016,6 @@ if (!window._nbFormsModuleInit) {
   //  Ace Editor manager
   // ══════════════════════════════════════════════════════════════════
   window.nbAce = (function() {
-    // Map of editorId -> { editor, hiddenId, dark }
     var _editors = {};
     var _darkTheme  = 'ace/theme/one_dark';
     var _lightTheme = 'ace/theme/chrome';
@@ -1080,16 +1050,13 @@ if (!window._nbFormsModuleInit) {
         fontFamily:                  'ui-monospace, "Cascadia Code", "Fira Code", monospace',
       });
 
-      // ── FIX: sync to hidden textarea on every keystroke ──────────
       var hidden = document.getElementById(hiddenId);
       editor.session.on('change', function() {
         if (hidden) hidden.value = editor.getValue();
       });
 
-      // Store with correct hiddenId reference
       _editors[editorId] = { editor: editor, hiddenId: hiddenId, dark: _isDarkMode() };
 
-      // Load existing content from hidden textarea
       if (hidden && hidden.value) {
         editor.setValue(hidden.value, -1);
       }
@@ -1097,17 +1064,32 @@ if (!window._nbFormsModuleInit) {
       return editor;
     }
 
-    // ── FIX: _setValue — look up hiddenId from the _editors map ────
+    // ── FIX: setValue waits for editor to be mounted, retries up to 20x ──
     function _setValue(editorId, value) {
       var entry = _editors[editorId];
       if (entry) {
         entry.editor.setValue(value || '', -1);
-        // Also sync to hidden textarea immediately
+        entry.editor.clearSelection();
+        entry.editor.getSession().getUndoManager().reset();
         var h = document.getElementById(entry.hiddenId);
         if (h) h.value = value || '';
       } else {
-        // Editor not yet mounted — write to textarea so it loads correctly on mount
-        // We don't know the hiddenId here, so do nothing (mount will pull from textarea)
+        // Editor not yet mounted — retry up to 20 times (2 seconds total)
+        var attempts = 0;
+        var timer = setInterval(function() {
+          attempts++;
+          var e2 = _editors[editorId];
+          if (e2) {
+            clearInterval(timer);
+            e2.editor.setValue(value || '', -1);
+            e2.editor.clearSelection();
+            e2.editor.getSession().getUndoManager().reset();
+            var h2 = document.getElementById(e2.hiddenId);
+            if (h2) h2.value = value || '';
+          } else if (attempts >= 20) {
+            clearInterval(timer);
+          }
+        }, 100);
       }
     }
 
@@ -1116,7 +1098,6 @@ if (!window._nbFormsModuleInit) {
       return entry ? entry.editor.getValue() : '';
     }
 
-    // ── syncAll: flush all editors → hidden textareas before save ──
     function _syncAll() {
       Object.keys(_editors).forEach(function(id) {
         var entry = _editors[id];
@@ -1177,8 +1158,6 @@ if (!window._nbFormsModuleInit) {
   });
 
   // ── Drag-to-resize handles ────────────────────────────────────────
-  // Each .nb-ace-resize-handle[data-ace="aceId"] drags to grow/shrink
-  // the editor div above it.
   document.addEventListener('mousedown', function(e) {
     var handle = e.target.closest('.nb-ace-resize-handle');
     if (!handle) return;
@@ -1188,9 +1167,9 @@ if (!window._nbFormsModuleInit) {
     var editorDiv = document.getElementById(aceId);
     if (!editorDiv) return;
 
-    var startY  = e.clientY;
-    var startH  = editorDiv.offsetHeight;
-    var minH    = 80;
+    var startY = e.clientY;
+    var startH = editorDiv.offsetHeight;
+    var minH   = 80;
 
     function onMove(ev) {
       var newH = Math.max(minH, startH + (ev.clientY - startY));
@@ -1216,7 +1195,6 @@ if (!window._nbFormsModuleInit) {
     });
   };
 
-  // ── Collapsible settings group toggle ────────────────────────────
   window.nbToggleSettingsGroup = function() {
     const header = document.getElementById('nbSettingsHeader');
     const body   = document.getElementById('nbSettingsBody');
@@ -1225,7 +1203,6 @@ if (!window._nbFormsModuleInit) {
     header.classList.toggle('open', !isOpen);
   };
 
-  // ── Expandable option row toggle ─────────────────────────────────
   window.nbToggleOptionRow = function(rowId) {
     const row    = document.getElementById(rowId);
     const header = row.querySelector('.nb-option-row-header');
@@ -1241,7 +1218,6 @@ if (!window._nbFormsModuleInit) {
     }
   };
 
-  // ── Update settings group summary line ───────────────────────────
   window.nbUpdateSettingsSummary = function() {
     const name    = document.getElementById('builderFormName')?.value?.trim() || '';
     const ftype   = document.querySelector('input[name="formType"]:checked')?.value || 'main';
@@ -1253,7 +1229,6 @@ if (!window._nbFormsModuleInit) {
     if (summary) summary.textContent = parts.join(' · ');
   };
 
-  // ── Update Name/Code option row value pill ────────────────────────
   window.nbUpdateNameCodeSummary = function() {
     const name = document.getElementById('builderFormName')?.value?.trim() || '';
     const code = document.getElementById('builderFormCode')?.value?.trim() || '';
@@ -1272,27 +1247,22 @@ if (!window._nbFormsModuleInit) {
     window.nbUpdateSettingsSummary();
   };
 
-  // ── Form type selector ───────────────────────────────────────────
   nbFormBuilder.selectFormType = function(type, card) {
     document.querySelectorAll('.nb-ftype-card').forEach(c => c.classList.remove('selected'));
     if (card) card.classList.add('selected');
     const radio = document.querySelector('input[name="formType"][value="'+type+'"]');
     if (radio) radio.checked = true;
-
     const typeLabels = { main:'⊞ Main Form', subform:'⊟ Subform', popup:'▣ Popup', report:'📊 Report' };
     const pill = document.getElementById('optValFormType');
     if (pill) pill.textContent = typeLabels[type] || type;
-
-    const browseTabEl = document.getElementById('browseTab');
+    const browseTabEl  = document.getElementById('browseTab');
     const browseNotice = document.getElementById('browseNotApplicable');
     const isBrowseable = type === 'main' || type === 'popup';
-    if (browseTabEl) browseTabEl.style.opacity = isBrowseable ? '1' : '0.4';
-    if (browseNotice) browseNotice.style.display = isBrowseable ? 'none' : 'block';
-
+    if (browseTabEl)  browseTabEl.style.opacity  = isBrowseable ? '1' : '0.4';
+    if (browseNotice) browseNotice.style.display  = isBrowseable ? 'none' : 'block';
     window.nbUpdateSettingsSummary();
   };
 
-  // Patch selectTableMode to update pill
   const _origSelectTableMode = nbFormBuilder.selectTableMode;
   nbFormBuilder.selectTableMode = function(mode, card) {
     if (typeof _origSelectTableMode === 'function') _origSelectTableMode.call(nbFormBuilder, mode, card);
@@ -1300,7 +1270,6 @@ if (!window._nbFormsModuleInit) {
     if (pill) pill.textContent = mode === 'existing' ? '⊞ Use existing' : '✦ Create new';
   };
 
-  // Patch selectPkType to update pill
   const _origSelectPkType = nbFormBuilder.selectPkType;
   nbFormBuilder.selectPkType = function(type, card) {
     if (typeof _origSelectPkType === 'function') _origSelectPkType.call(nbFormBuilder, type, card);
@@ -1315,25 +1284,64 @@ if (!window._nbFormsModuleInit) {
     if (typeof _origSaveForm === 'function') return _origSaveForm.apply(this, arguments);
   };
 
-  // ── Patch nbFormBuilder.edit: push saved values into Ace on open ─
+  // ══════════════════════════════════════════════════════════════════
+  //  FIX: Patch nbFormBuilder.edit to populate Ace AFTER fetch resolves
+  //  We hook into the custom event 'nbFormLoaded' that the original
+  //  edit() must dispatch, OR we poll the hidden textareas until they
+  //  have content (safe fallback for any fetch timing).
+  // ══════════════════════════════════════════════════════════════════
+  var _aceFieldMap = {
+    aceCustomJs:     'formCustomJs',
+    aceJsBeforeSave: 'formJsBeforeSave',
+    aceJsAfterSave:  'formJsAfterSave',
+    aceCustomPhp:    'formCustomPhp',
+    aceCustomCss:    'formCustomCss',
+  };
+
+  function _pushDataToAce(formData) {
+    var map = {
+      aceCustomJs:     formData.form_custom_js      || '',
+      aceJsBeforeSave: formData.form_js_before_save || '',
+      aceJsAfterSave:  formData.form_js_after_save  || '',
+      aceCustomPhp:    formData.form_custom_php      || '',
+      aceCustomCss:    formData.form_custom_css      || '',
+    };
+    Object.keys(map).forEach(function(aceId) {
+      nbAce.setValue(aceId, map[aceId]);
+    });
+    nbAce.resizeAll();
+  }
+
+  // Strategy 1: listen for a custom event dispatched by nbFormBuilder.edit
+  document.addEventListener('nbFormLoaded', function(e) {
+    if (e.detail && e.detail.form) _pushDataToAce(e.detail.form);
+  });
+
+  // Strategy 2: wrap nbFormBuilder.edit and intercept the fetch response
   const _origEdit = nbFormBuilder.edit;
   nbFormBuilder.edit = function(formId) {
-    if (typeof _origEdit === 'function') _origEdit.call(nbFormBuilder, formId);
-    // Wait for original edit() to populate the hidden textareas, then push to Ace
-    setTimeout(function() {
-      var map = {
-        aceCustomJs:     'formCustomJs',
-        aceJsBeforeSave: 'formJsBeforeSave',
-        aceJsAfterSave:  'formJsAfterSave',
-        aceCustomPhp:    'formCustomPhp',
-        aceCustomCss:    'formCustomCss',
-      };
-      Object.keys(map).forEach(function(aceId) {
-        var hidden = document.getElementById(map[aceId]);
-        if (hidden) nbAce.setValue(aceId, hidden.value);
+    // Intercept fetch globally for the duration of this edit call
+    var _origFetch = window.fetch;
+    window.fetch = function(url, opts) {
+      return _origFetch.apply(this, arguments).then(function(response) {
+        // Clone so original consumer can still read body
+        var clone = response.clone();
+        clone.json().then(function(data) {
+          if (data && data.success && data.form && data.form.form_id == formId) {
+            // Restore fetch immediately, then push data to Ace
+            window.fetch = _origFetch;
+            // Small delay so original edit() handler populates the DOM first
+            setTimeout(function() { _pushDataToAce(data.form); }, 80);
+          }
+        }).catch(function() {});
+        return response;
       });
-      nbAce.resizeAll();
-    }, 150);
+    };
+
+    // Fallback: restore fetch after 5s in case form request never matched
+    var _restoreTimer = setTimeout(function() { window.fetch = _origFetch; }, 5000);
+
+    if (typeof _origEdit === 'function') _origEdit.call(nbFormBuilder, formId);
   };
 
   // ── Patch nbFormBuilder.open: clear Ace editors on new form ──────
