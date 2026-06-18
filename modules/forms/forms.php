@@ -503,7 +503,6 @@ foreach ($forms as $f) {
   justify-content:center;
   user-select:none;
   flex-shrink:0;
-  /* single visible grip line using a text character */
   font-size:11px;
   letter-spacing:2px;
   color:rgba(255,255,255,.45);
@@ -1016,6 +1015,7 @@ foreach ($forms as $f) {
 </div>
 
 <script>
+// ── One-time setup: nbAce manager + UI helpers ───────────────────────
 if (!window._nbFormsModuleInit) {
   window._nbFormsModuleInit = true;
 
@@ -1071,7 +1071,6 @@ if (!window._nbFormsModuleInit) {
       return editor;
     }
 
-    // setValue: push value into editor, retrying via rAF if not yet mounted
     function _setValue(editorId, value) {
       var entry = _editors[editorId];
       if (entry) {
@@ -1081,7 +1080,6 @@ if (!window._nbFormsModuleInit) {
         var h = document.getElementById(entry.hiddenId);
         if (h) h.value = value || '';
       } else {
-        // Editor not yet mounted — retry on next animation frame (up to 40 frames ~660ms)
         var attempts = 0;
         function _retry() {
           attempts++;
@@ -1254,6 +1252,13 @@ if (!window._nbFormsModuleInit) {
     window.nbUpdateSettingsSummary();
   };
 
+  // ── Patch saveForm: flush Ace editors first ───────────────────────
+  const _origSaveForm = window.saveForm;
+  window.saveForm = function() {
+    nbAce.syncAll();
+    if (typeof _origSaveForm === 'function') return _origSaveForm.apply(this, arguments);
+  };
+
   nbFormBuilder.selectFormType = function(type, card) {
     document.querySelectorAll('.nb-ftype-card').forEach(c => c.classList.remove('selected'));
     if (card) card.classList.add('selected');
@@ -1284,61 +1289,6 @@ if (!window._nbFormsModuleInit) {
     if (pill) pill.textContent = type === 'uuid' ? 'NuBuilder UUID' : 'Auto-increment INT';
   };
 
-  // ── Patch saveForm: flush Ace editors first ───────────────────────
-  const _origSaveForm = window.saveForm;
-  window.saveForm = function() {
-    nbAce.syncAll();
-    if (typeof _origSaveForm === 'function') return _origSaveForm.apply(this, arguments);
-  };
-
-  // ── Patch nbFormBuilder.open: clear Ace editors on new form ──────
-  const _origOpen = nbFormBuilder.open;
-  nbFormBuilder.open = function() {
-    if (typeof _origOpen === 'function') _origOpen.call(nbFormBuilder);
-    requestAnimationFrame(function() {
-      ['aceCustomJs','aceJsBeforeSave','aceJsAfterSave','aceCustomPhp','aceCustomCss'].forEach(function(id) {
-        nbAce.setValue(id, '');
-      });
-      nbAce.resizeAll();
-    });
-  };
-
-  // ── Patch nbFormBuilder.edit: push saved values into Ace editors ─
-  //
-  // Root cause: edit() calls open() which schedules a RAF that clears
-  // all Ace editors. We must capture the values from the hidden
-  // textareas BEFORE that RAF fires, then push them AFTER it fires
-  // (second RAF), so the clear doesn't overwrite our restored values.
-  const _origEdit = nbFormBuilder.edit;
-  nbFormBuilder.edit = async function(formId) {
-    if (typeof _origEdit === 'function') await _origEdit.call(nbFormBuilder, formId);
-    // Snapshot textarea values synchronously (they are now populated
-    // by the original edit() but the open() RAF clear hasn't run yet).
-    const aceMap = {
-      aceCustomJs:     'formCustomJs',
-      aceJsBeforeSave: 'formJsBeforeSave',
-      aceJsAfterSave:  'formJsAfterSave',
-      aceCustomPhp:    'formCustomPhp',
-      aceCustomCss:    'formCustomCss',
-    };
-    const snapshot = {};
-    Object.keys(aceMap).forEach(function(aceId) {
-      const hidden = document.getElementById(aceMap[aceId]);
-      snapshot[aceId] = hidden ? (hidden.value || '') : '';
-    });
-    // Schedule AFTER the open() RAF clear by using a nested rAF.
-    // First RAF: open()'s clear runs now.
-    // Second RAF (inside): our restore runs after the clear.
-    requestAnimationFrame(function() {
-      requestAnimationFrame(function() {
-        Object.keys(snapshot).forEach(function(aceId) {
-          nbAce.setValue(aceId, snapshot[aceId]);
-        });
-        nbAce.resizeAll();
-      });
-    });
-  };
-
   // ── Patch toolbox drag for preset-bearing select tools ───────────
   const _origInitAfterLoad = nbFormBuilder._initAfterLoad;
   nbFormBuilder._initAfterLoad = function() {
@@ -1355,5 +1305,62 @@ if (!window._nbFormsModuleInit) {
     });
   };
 
-}
+} // end _nbFormsModuleInit guard
+
+// ── open/edit patches run EVERY module load (idempotent via _nbAcePatchVersion) ──
+//
+// Problem: the SPA re-injects this PHP on navigation (e.g. Preview → Forms).
+// Each re-injection resets nbFormBuilder.open/edit back to their originals,
+// stripping our patches. The _nbFormsModuleInit guard prevents re-patching.
+// Fix: apply open/edit patches outside the guard, but stamp a version token
+// on the function so we only wrap each generation once.
+(function _applyNbAcePatches() {
+  var STAMP = '_nbAcePatchV2';
+
+  // ── open: clear Ace on new form ──────────────────────────────────
+  if (!nbFormBuilder.open[STAMP]) {
+    var _rawOpen = nbFormBuilder.open;
+    nbFormBuilder.open = function() {
+      if (typeof _rawOpen === 'function') _rawOpen.call(nbFormBuilder);
+      requestAnimationFrame(function() {
+        ['aceCustomJs','aceJsBeforeSave','aceJsAfterSave','aceCustomPhp','aceCustomCss'].forEach(function(id) {
+          if (window.nbAce) nbAce.setValue(id, '');
+        });
+        if (window.nbAce) nbAce.resizeAll();
+      });
+    };
+    nbFormBuilder.open[STAMP] = true;
+  }
+
+  // ── edit: restore Ace values after open()'s RAF clear ────────────
+  if (!nbFormBuilder.edit[STAMP]) {
+    var _rawEdit = nbFormBuilder.edit;
+    nbFormBuilder.edit = async function(formId) {
+      if (typeof _rawEdit === 'function') await _rawEdit.call(nbFormBuilder, formId);
+      var aceMap = {
+        aceCustomJs:     'formCustomJs',
+        aceJsBeforeSave: 'formJsBeforeSave',
+        aceJsAfterSave:  'formJsAfterSave',
+        aceCustomPhp:    'formCustomPhp',
+        aceCustomCss:    'formCustomCss',
+      };
+      // Snapshot textarea values now (populated by _rawEdit, before open()'s RAF clear)
+      var snapshot = {};
+      Object.keys(aceMap).forEach(function(aceId) {
+        var hidden = document.getElementById(aceMap[aceId]);
+        snapshot[aceId] = hidden ? (hidden.value || '') : '';
+      });
+      // Double-RAF: first RAF lets open()'s clear fire, second RAF restores our values
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          Object.keys(snapshot).forEach(function(aceId) {
+            if (window.nbAce) nbAce.setValue(aceId, snapshot[aceId]);
+          });
+          if (window.nbAce) nbAce.resizeAll();
+        });
+      });
+    };
+    nbFormBuilder.edit[STAMP] = true;
+  }
+})();
 </script>
