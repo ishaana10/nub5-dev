@@ -7,11 +7,20 @@ declare(strict_types=1);
  *   POST ?action=create   Create user + meta
  *   POST ?action=update   Update user + meta
  *   POST ?action=delete   Delete user
+ *
+ * Supports both userIdType modes set during setup:
+ *   'uuid'           — usr_id is VARCHAR(36), generated via nuGenerateUuid()
+ *   'auto_increment' — usr_id is INT AUTO_INCREMENT, resolved via lastInsertId()
  */
 header('Content-Type: application/json');
 require_once '../config.php';
 require_once '../core/Database.php';
 require_once '../core/Auth.php';
+
+// Load local config (contains userIdType written by setup.php)
+if (file_exists('../config.local.php')) {
+    require_once '../config.local.php';
+}
 
 $auth = new NuAuth();
 if (!$auth->checkAuth()) {
@@ -23,6 +32,41 @@ if (!$auth->checkAuth()) {
 $db     = NuDatabase::getInstance();
 $action = $_GET['action'] ?? '';
 $body   = json_decode(file_get_contents('php://input'), true) ?? [];
+
+/**
+ * Returns true if the installation uses UUID for usr_id.
+ */
+function nuIsUuidMode(): bool {
+    global $nuConfig;
+    return ($nuConfig['userIdType'] ?? 'auto_increment') === 'uuid';
+}
+
+/**
+ * Generate a v4 UUID using random_bytes() — cryptographically secure.
+ */
+function nuGenerateUuid(): string {
+    $data    = random_bytes(16);
+    $data[6] = chr((ord($data[6]) & 0x0f) | 0x40); // version 4
+    $data[8] = chr((ord($data[8]) & 0x3f) | 0x80); // variant RFC 4122
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+}
+
+/**
+ * Parse a user ID from request body.
+ * UUID mode  : returns validated UUID string, or null if malformed.
+ * INT mode   : casts to int, returns null if <= 0.
+ */
+function nuParseUserId(mixed $raw): string|int|null {
+    if ($raw === null || $raw === '' || $raw === 0) return null;
+    if (nuIsUuidMode()) {
+        $id = trim((string)$raw);
+        return preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $id)
+            ? $id
+            : null;
+    }
+    $id = (int)$raw;
+    return $id > 0 ? $id : null;
+}
 
 try {
     switch ($action) {
@@ -43,15 +87,28 @@ try {
             $exists = $db->fetchOne('SELECT usr_id FROM nu_users WHERE usr_username = :u', [':u' => $username]);
             if ($exists) throw new Exception('Username already exists');
 
-            $hash = password_hash($password, PASSWORD_BCRYPT);
-            $db->insert('nu_users', [
+            $hash   = password_hash($password, PASSWORD_BCRYPT);
+            $fields = [
                 'usr_username' => $username,
                 'usr_email'    => $email,
                 'usr_role'     => $role,
                 'usr_password' => $hash,
                 'usr_active'   => $active,
-            ]);
-            $newId = $db->lastInsertId();
+            ];
+
+            if (nuIsUuidMode()) {
+                // Pre-generate UUID in PHP and supply it explicitly.
+                // This avoids a second SELECT to retrieve the ID after insert,
+                // since lastInsertId() returns 0 for non-AUTO_INCREMENT PKs.
+                $newId          = nuGenerateUuid();
+                $fields['usr_id'] = $newId;
+            }
+
+            $db->insert('nu_users', $fields);
+
+            if (!nuIsUuidMode()) {
+                $newId = $db->lastInsertId();
+            }
 
             saveMeta($db, $newId, $meta);
             echo json_encode(['success' => true, 'usr_id' => $newId]);
@@ -61,13 +118,13 @@ try {
         case 'update': {
             if (!$auth->hasPermission('users.edit')) throw new Exception('Access denied');
 
-            $id     = (int)($body['id'] ?? 0);
+            $id     = nuParseUserId($body['id'] ?? null);
             $email  = trim($body['email']  ?? '');
             $role   = trim($body['role']   ?? '');
             $active = isset($body['active']) ? (int)$body['active'] : 1;
             $meta   = $body['meta'] ?? [];
 
-            if (!$id) throw new Exception('User ID required');
+            if ($id === null) throw new Exception('Valid User ID required');
 
             $user = $db->fetchOne('SELECT * FROM nu_users WHERE usr_id = :id', [':id' => $id]);
             if (!$user) throw new Exception('User not found');
@@ -78,7 +135,6 @@ try {
                 'usr_active' => $active,
             ];
 
-            // Only update password if provided
             if (!empty($body['password'])) {
                 $update['usr_password'] = password_hash($body['password'], PASSWORD_BCRYPT);
             }
@@ -93,15 +149,15 @@ try {
         case 'delete': {
             if (!$auth->hasPermission('users.delete')) throw new Exception('Access denied');
 
-            $id = (int)($body['id'] ?? 0);
-            if (!$id) throw new Exception('User ID required');
+            $id = nuParseUserId($body['id'] ?? null);
+            if ($id === null) throw new Exception('Valid User ID required');
 
             $user = $db->fetchOne('SELECT usr_username FROM nu_users WHERE usr_id = :id', [':id' => $id]);
             if (!$user) throw new Exception('User not found');
             if ($user['usr_username'] === 'globeadmin') throw new Exception('Cannot delete globeadmin');
 
             $db->delete('nu_user_meta', 'umeta_user_id = :id', [':id' => $id]);
-            $db->delete('nu_users', 'usr_id = :id', [':id' => $id]);
+            $db->delete('nu_users', 'usr_id = :id',            [':id' => $id]);
 
             echo json_encode(['success' => true]);
             break;
@@ -117,11 +173,12 @@ try {
 
 /**
  * Upsert meta key/value pairs for a user.
- * Skips empty values (won't overwrite existing with blank).
+ * Accepts string|int $userId to support both UUID and auto_increment modes.
+ * Skips empty keys; preserves existing values when $value is blank.
  */
-function saveMeta(NuDatabase $db, int $userId, array $meta): void {
+function saveMeta(NuDatabase $db, string|int $userId, array $meta): void {
     foreach ($meta as $key => $value) {
-        $key   = preg_replace('/[^a-zA-Z0-9_]/', '', $key);
+        $key   = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$key);
         $value = trim((string)$value);
         if ($key === '') continue;
 
