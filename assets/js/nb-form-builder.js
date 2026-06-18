@@ -295,25 +295,39 @@
       if (canvasType === 'select' || canvasType === 'radio' || canvasType === 'checkbox_group') {
         // ── Select-type sub-selector (only for 'select') ──────────────
         var selectTypeHtml = '';
+        var resolvedSelType = selectType || 'select';
+
         if (canvasType === 'select') {
-          var resolvedSelType = selectType || 'select';
-          var isS2     = resolvedSelType === 'select2'     ? 'selected' : '';
-          var isMulti  = resolvedSelType === 'multiselect' ? 'selected' : '';
-          var isSingle = (!isS2 && !isMulti)               ? 'selected' : '';
+          // Determine: is multi-select?
+          var isMulti     = (resolvedSelType === 'multiselect');
+          // Determine: is select2 (searchable)?
+          // select2 applies to single OR multi — stored as select2:true + multiple flag
+          var isSelect2   = (resolvedSelType === 'select2') ||
+                            (extra.select2 === true || extra.select2 === 'true' || extra.select2 === 1);
+
+          var multiSel    = isMulti    ? 'selected' : '';
+          var singleSel   = !isMulti   ? 'selected' : '';
+          var s2Checked   = isSelect2  ? 'checked'  : '';
+
           selectTypeHtml =
             '<div class="nb-fp">'
               + '<label style="font-size:11px;font-weight:600;">Select Type</label>'
               + '<select class="nu-input nu-field-select-type" style="font-size:12px;">'
-                + '<option value="select" '      + isSingle + '>Standard Select</option>'
-                + '<option value="select2" '     + isS2     + '>Select2 (searchable)</option>'
-                + '<option value="multiselect" ' + isMulti  + '>Multi-Select</option>'
+                + '<option value="single" ' + singleSel + '>Single Select</option>'
+                + '<option value="multi"  ' + multiSel  + '>Multi-Select</option>'
               + '</select>'
+            + '</div>'
+            + '<div class="nb-fp nb-fp-select2-opt">'
+              + '<label class="nb-fp-check" style="font-size:11px;">'
+                + '<input type="checkbox" class="nu-field-use-select2"' + (s2Checked ? ' checked' : '') + '>'
+                + ' Use Select2 (searchable)'
+              + '</label>'
             + '</div>';
         }
 
-        // ── Allow Clear toggle (select2 only, hidden for others) ────
+        // ── Allow Clear toggle (select2 only, hidden when select2 unchecked) ────
         var allowClearChecked = (extra.allow_clear === false || extra.allow_clear === 'false') ? '' : 'checked';
-        var allowClearStyle   = (resolvedSelType === 'select2') ? '' : 'display:none;';
+        var allowClearStyle   = (isSelect2) ? '' : 'display:none;';
         var allowClearHtml =
           '<div class="nb-fp nb-fp-allow-clear" style="' + allowClearStyle + '">'
             + '<label class="nb-fp-check" style="font-size:11px;">'
@@ -497,7 +511,7 @@
       // Wire options-source radio toggle for select / radio / checkbox_group
       if (canvasType === 'select' || canvasType === 'radio' || canvasType === 'checkbox_group') {
         _attachSelectOptionsToggle(card);
-        // Wire select-type dropdown → show/hide allow_clear row
+        // Wire select2 checkbox → show/hide allow_clear row
         _attachSelectTypeToggle(card);
       }
 
@@ -549,19 +563,25 @@
           var lkExtraEl  = card.querySelector('.nu-lookup-extra');
 
           // ── Resolve the real serialised type ───────────────────────
-          // canvasType is always 'select' for all select variants.
-          // Read the Select Type dropdown to get the real runtime type:
-          //   'select'      → type: 'select'       (plain browser select)
-          //   'select2'     → type: 'select2'      (Select2 enhanced)
-          //   'multiselect' → type: 'select', multiple: true
+          // Read Select Type dropdown (single/multi) and Select2 checkbox.
+          //
+          //   single + no select2  → type: 'select'
+          //   single + select2     → type: 'select2'
+          //   multi  + no select2  → type: 'select', multiple: true
+          //   multi  + select2     → type: 'select2', multiple: true
           var runtimeType = canvasType;
+          var isMultiSel  = false;
+          var useSelect2  = false;
+
           if (canvasType === 'select') {
-            var selTypeEl = card.querySelector('.nu-field-select-type');
-            var selTypeVal = selTypeEl ? (selTypeEl.value || 'select') : 'select';
-            if (selTypeVal === 'select2') {
+            var selTypeEl   = card.querySelector('.nu-field-select-type');
+            var useS2El     = card.querySelector('.nu-field-use-select2');
+            var selTypeVal  = selTypeEl ? (selTypeEl.value || 'single') : 'single';
+            isMultiSel      = (selTypeVal === 'multi');
+            useSelect2      = useS2El ? useS2El.checked : false;
+
+            if (useSelect2) {
               runtimeType = 'select2';
-            } else if (selTypeVal === 'multiselect') {
-              runtimeType = 'select'; // stays 'select' but gets multiple:true below
             } else {
               runtimeType = 'select';
             }
@@ -582,18 +602,23 @@
           // ── select / select2 / multiselect ────────────────────
           if (canvasType === 'select' || canvasType === 'radio' || canvasType === 'checkbox_group') {
             if (canvasType === 'select') {
-              var selTypeEl2  = card.querySelector('.nu-field-select-type');
-              var selTypeVal2 = selTypeEl2 ? (selTypeEl2.value || 'select') : 'select';
-              field.select_type = selTypeVal2;
-              // Flags consumed by api/form.php and FormRenderer.php
-              field.select2  = selTypeVal2 === 'select2';
-              field.multiple = selTypeVal2 === 'multiselect';
-              if (field.multiple) {
-                field.type = 'select'; // multiselect stays as 'select' with multiple flag
+              // Persist the two independent flags
+              field.select2  = useSelect2;
+              field.multiple = isMultiSel;
+
+              // select_type for back-compat / display restore
+              if (isMultiSel) {
+                field.select_type = 'multiselect';
+                field.type        = 'select';
+              } else if (useSelect2) {
+                field.select_type = 'select2';
+              } else {
+                field.select_type = 'select';
               }
-              // allow_clear — read from checkbox, only meaningful for select2
+
+              // allow_clear — only meaningful when select2 is on
               var allowClearEl = card.querySelector('.nu-field-allow-clear');
-              if (selTypeVal2 === 'select2') {
+              if (useSelect2) {
                 field.allow_clear = allowClearEl ? allowClearEl.checked : true;
               }
             }
@@ -757,15 +782,16 @@
   }
 
   // ── _attachSelectTypeToggle ────────────────────────────────
-  // Shows/hides the Allow Clear row depending on whether select2 is chosen.
+  // Shows/hides the Allow Clear row depending on whether the
+  // "Use Select2 (searchable)" checkbox is ticked.
   function _attachSelectTypeToggle(card) {
-    var selTypeEl   = card.querySelector('.nu-field-select-type');
+    var useS2El       = card.querySelector('.nu-field-use-select2');
     var allowClearRow = card.querySelector('.nb-fp-allow-clear');
-    if (!selTypeEl || !allowClearRow) return;
+    if (!useS2El || !allowClearRow) return;
     function _sync() {
-      allowClearRow.style.display = (selTypeEl.value === 'select2') ? '' : 'none';
+      allowClearRow.style.display = useS2El.checked ? '' : 'none';
     }
-    selTypeEl.addEventListener('change', _sync);
+    useS2El.addEventListener('change', _sync);
     _sync();
   }
 
@@ -1196,33 +1222,33 @@
 
         window.nbFormBuilder._applyColSpan(card, parseInt(f.col, 10) || 12);
 
-        if (type === 'select' || type === 'select2' || type === 'multiselect' ||
-            type === 'radio'  || type === 'checkbox_group') {
-          _attachSelectOptionsToggle(card);
-          _attachSelectTypeToggle(card);
+        if (type === 'select' || type === 'select2' || type === 'multiselect') {
+          var selTypeEl = card.querySelector('.nu-field-select-type');
+          var useS2El   = card.querySelector('.nu-field-use-select2');
+
+          if (selTypeEl) {
+            var isMulti = f.multiple === true || f.multiple === 'true' || f.multiple === 1
+                       || f.select_type === 'multiselect';
+            selTypeEl.value = isMulti ? 'multi' : 'single';
+          }
+
+          if (useS2El) {
+            var isS2 = f.select2 === true || f.select2 === 'true' || f.select2 === 1
+                    || f.select_type === 'select2'
+                    || type === 'select2';
+            useS2El.checked = isS2;
+          }
+
+          // Re-sync the allow_clear visibility after restoring values
+          var allowClearRow = card.querySelector('.nb-fp-allow-clear');
+          if (allowClearRow && useS2El) {
+            allowClearRow.style.display = useS2El.checked ? '' : 'none';
+          }
         }
-        var body = card.querySelector('.nb-cfield-body');
-        if (body) body.classList.add('open');
       });
     });
 
-    _attachAllRowDrops();
+    window.nbFormBuilder._updateEmptyState();
   }
-
-
-  /* ════════════════════════════════════════════════════════════════════
-     SECTION 6 — Init
-  ═══════════════════════════════════════════════════════════════════ */
-  function _init() {
-    _attachAllRowDrops();
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _init);
-  } else {
-    _init();
-  }
-
-  console.log('[nb-form-builder] ready.');
 
 }(window));
