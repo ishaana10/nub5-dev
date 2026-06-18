@@ -793,24 +793,14 @@ foreach ($forms as $f) {
           </div>
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Choice</div>
-            <div class="nb-tool" data-type="select" data-preset="standard_select" draggable="true"
-                 onclick="nbFormBuilder.addField('select','Standard Select','',false,{select2:false,multiple:false})">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>Standard Select
+            <!-- Select: drag drops as 'select', default single select -->
+            <div class="nb-tool" data-type="select" draggable="true">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>Select
             </div>
-            <div class="nb-tool" data-type="select" data-preset="select2_single" draggable="true"
-                 onclick="nbFormBuilder.addField('select','Select2 (searchable)','',false,{select2:true,multiple:false})">
+            <!-- Select2: drag drops as 'select2' (searchable, single by default) -->
+            <div class="nb-tool" data-type="select2" draggable="true">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>Select2
             </div>
-            <div class="nb-tool" data-type="select" data-preset="standard_multi" draggable="true"
-                 onclick="nbFormBuilder.addField('select','Standard Multi-Select','',false,{select2:false,multiple:true})">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6M6 4l6 6 6-6"/></svg>Multi-Select
-            </div>
-            <div class="nb-tool" data-type="select" data-preset="select2_multi" draggable="true"
-                 onclick="nbFormBuilder.addField('select','Select2 Multi-Select','',false,{select2:true,multiple:true})">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4M6 4l6 6 6-6"/></svg>S2 Multi
-            </div>
-            <div class="nb-tool" data-type="radio"          draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>Radio</div>
-            <div class="nb-tool" data-type="checkbox_group" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Checks</div>
           </div>
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Advanced</div>
@@ -1289,31 +1279,9 @@ if (!window._nbFormsModuleInit) {
     if (pill) pill.textContent = type === 'uuid' ? 'NuBuilder UUID' : 'Auto-increment INT';
   };
 
-  // ── Patch toolbox drag for preset-bearing select tools ───────────
-  const _origInitAfterLoad = nbFormBuilder._initAfterLoad;
-  nbFormBuilder._initAfterLoad = function() {
-    if (typeof _origInitAfterLoad === 'function') _origInitAfterLoad.call(nbFormBuilder);
-    document.querySelectorAll('#panelFields .nb-tool[data-preset]').forEach(function(tool) {
-      tool.addEventListener('dragstart', function(e) {
-        e.stopImmediatePropagation();
-        window._nbDragPreset = tool.dataset.preset;
-        e.dataTransfer.effectAllowed = 'copy';
-      });
-      tool.addEventListener('dragend', function() {
-        window._nbDragPreset = null;
-      });
-    });
-  };
-
 } // end _nbFormsModuleInit guard
 
 // ── open/edit patches run EVERY module load (idempotent via _nbAcePatchVersion) ──
-//
-// Problem: the SPA re-injects this PHP on navigation (e.g. Preview → Forms).
-// Each re-injection resets nbFormBuilder.open/edit back to their originals,
-// stripping our patches. The _nbFormsModuleInit guard prevents re-patching.
-// Fix: apply open/edit patches outside the guard, but stamp a version token
-// on the function so we only wrap each generation once.
 (function _applyNbAcePatches() {
   var STAMP = '_nbAcePatchV2';
 
@@ -1344,13 +1312,11 @@ if (!window._nbFormsModuleInit) {
         aceCustomPhp:    'formCustomPhp',
         aceCustomCss:    'formCustomCss',
       };
-      // Snapshot textarea values now (populated by _rawEdit, before open()'s RAF clear)
       var snapshot = {};
       Object.keys(aceMap).forEach(function(aceId) {
         var hidden = document.getElementById(aceMap[aceId]);
         snapshot[aceId] = hidden ? (hidden.value || '') : '';
       });
-      // Double-RAF: first RAF lets open()'s clear fire, second RAF restores our values
       requestAnimationFrame(function() {
         requestAnimationFrame(function() {
           Object.keys(snapshot).forEach(function(aceId) {
