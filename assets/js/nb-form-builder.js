@@ -261,29 +261,19 @@
 
       // ── Normalise incoming type for the builder canvas ──────────
       // The form layout stores the real runtime type (select2, multiselect).
-      // The builder canvas always uses 'select' as the card type so the
-      // options panel renders; the Select Type dropdown records the sub-type.
-      var canvasType  = type;
-      var selectType  = extra.select_type || '';
+      // The builder canvas separates 'select' and 'select2' as distinct
+      // card types with their own config panels — no shared checkbox.
+      var canvasType = type;
 
-      if (type === 'select2') {
-        canvasType = 'select';
-        selectType = selectType || 'select2';
-      } else if (type === 'multiselect') {
-        canvasType = 'select';
-        selectType = selectType || 'multiselect';
-      } else if (type === 'select') {
-        // Back-compat: old saves used select2:true / multiple:true flags
-        // instead of select_type. Resolve those here.
-        if (!selectType) {
-          if (extra.select2 === true || extra.select2 === 'true' || extra.select2 === 1) {
-            selectType = 'select2';
-          } else if (extra.multiple === true || extra.multiple === 'true' || extra.multiple === 1) {
-            selectType = 'multiselect';
-          } else {
-            selectType = 'select';
-          }
-        }
+      // Coerce legacy 'multiselect' → select2 + multiple flag
+      if (type === 'multiselect') {
+        canvasType = 'select2';
+        if (!extra.multiple) extra = Object.assign({}, extra, { multiple: true });
+      }
+
+      // Back-compat: old saves used select2:true flag on a 'select' card
+      if (type === 'select' && (extra.select2 === true || extra.select2 === 'true' || extra.select2 === 1)) {
+        canvasType = 'select2';
       }
 
       var spanBtns = [3,4,6,8,12].map(function (n) {
@@ -292,51 +282,11 @@
 
       var extraBody = '';
 
-      if (canvasType === 'select' || canvasType === 'radio' || canvasType === 'checkbox_group') {
-        // ── Select-type sub-selector (only for 'select') ──────────────
-        var selectTypeHtml = '';
-        var resolvedSelType = selectType || 'select';
+      // ── SELECT (native <select>, no Select2) ─────────────────────────────
+      if (canvasType === 'select') {
+        var selIsMulti = extra.multiple === true || extra.multiple === 'true' || extra.multiple === 1
+                      || extra.select_type === 'multiselect';
 
-        if (canvasType === 'select') {
-          // Determine: is multi-select?
-          var isMulti     = (resolvedSelType === 'multiselect');
-          // Determine: is select2 (searchable)?
-          // select2 applies to single OR multi — stored as select2:true + multiple flag
-          var isSelect2   = (resolvedSelType === 'select2') ||
-                            (extra.select2 === true || extra.select2 === 'true' || extra.select2 === 1);
-
-          var multiSel    = isMulti    ? 'selected' : '';
-          var singleSel   = !isMulti   ? 'selected' : '';
-          var s2Checked   = isSelect2  ? 'checked'  : '';
-
-          selectTypeHtml =
-            '<div class="nb-fp">'
-              + '<label style="font-size:11px;font-weight:600;">Select Type</label>'
-              + '<select class="nu-input nu-field-select-type" style="font-size:12px;">'
-                + '<option value="single" ' + singleSel + '>Single Select</option>'
-                + '<option value="multi"  ' + multiSel  + '>Multi-Select</option>'
-              + '</select>'
-            + '</div>'
-            + '<div class="nb-fp nb-fp-select2-opt">'
-              + '<label class="nb-fp-check" style="font-size:11px;">'
-                + '<input type="checkbox" class="nu-field-use-select2"' + (s2Checked ? ' checked' : '') + '>'
-                + ' Use Select2 (searchable)'
-              + '</label>'
-            + '</div>';
-        }
-
-        // ── Allow Clear toggle (select2 only, hidden when select2 unchecked) ────
-        var allowClearChecked = (extra.allow_clear === false || extra.allow_clear === 'false') ? '' : 'checked';
-        var allowClearStyle   = (isSelect2) ? '' : 'display:none;';
-        var allowClearHtml =
-          '<div class="nb-fp nb-fp-allow-clear" style="' + allowClearStyle + '">'
-            + '<label class="nb-fp-check" style="font-size:11px;">'
-              + '<input type="checkbox" class="nu-field-allow-clear"' + (allowClearChecked ? ' checked' : '') + '>'
-              + ' Allow Clear (×)'
-            + '</label>'
-          + '</div>';
-
-        // ── Options source: manual | from table ─────────────────
         var optSource    = extra.options_source || 'manual';
         var fromTable    = extra.options_table  || '';
         var fromValCol   = extra.options_value_col || '';
@@ -348,31 +298,17 @@
           return typeof o === 'object' ? (o.value + '|' + o.label) : o;
         }).join('\n');
 
-        var fromTablePanel =
-          '<div class="nb-select-from-table" style="' + (isFromTable ? '' : 'display:none;') + 'grid-column:1/-1;">'
-            + '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;">'
-              + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">📋 OPTIONS FROM TABLE</div>'
-              + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
-                + '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Table Name</label>'
-                  + '<input type="text" class="nu-input nu-field-opt-table" value="' + _esc(fromTable) + '" placeholder="e.g. categories" style="font-size:12px;width:100%;box-sizing:border-box;"></div>'
-                + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Value Column <span style="font-weight:400;">(stored)</span></label>'
-                  + '<input type="text" class="nu-input nu-field-opt-val-col" value="' + _esc(fromValCol) + '" placeholder="e.g. id" style="font-size:12px;"></div>'
-                + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Label Column <span style="font-weight:400;">(shown)</span></label>'
-                  + '<input type="text" class="nu-input nu-field-opt-label-col" value="' + _esc(fromLabelCol) + '" placeholder="e.g. name" style="font-size:12px;"></div>'
-                + '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Filter SQL <span style="font-weight:400;">(optional WHERE)</span></label>'
-                  + '<input type="text" class="nu-input nu-field-opt-filter" value="' + _esc(fromFilter) + '" placeholder="e.g. active=1" style="font-size:12px;width:100%;box-sizing:border-box;"></div>'
-              + '</div>'
-            + '</div>'
-          + '</div>';
-
-        var manualPanel =
-          '<div class="nb-select-manual" style="' + (isFromTable ? 'display:none;' : '') + 'grid-column:1/-1;">'
-            + '<label style="font-size:11px;font-weight:600;">Options <span style="font-weight:400;color:var(--text-muted);">(value|label per line)</span></label>'
-            + '<textarea class="nu-input nu-field-options" rows="3" style="width:100%;box-sizing:border-box;">' + _esc(opts) + '</textarea>'
-          + '</div>';
-
-        var sourceSwitcherHtml =
-          '<div class="nb-fp nb-fp-full" style="grid-column:1/-1;">'
+        extraBody +=
+          // Multi-select toggle
+          '<div class="nb-fp">'
+            + '<label style="font-size:11px;font-weight:600;">Select Mode</label>'
+            + '<select class="nu-input nu-field-select-mode" style="font-size:12px;">'
+              + '<option value="single"' + (!selIsMulti ? ' selected' : '') + '>Single</option>'
+              + '<option value="multi"'  + ( selIsMulti ? ' selected' : '') + '>Multi-Select</option>'
+            + '</select>'
+          + '</div>'
+          // Options source switcher
+          + '<div class="nb-fp nb-fp-full" style="grid-column:1/-1;">'
             + '<label style="font-size:11px;font-weight:600;">Options Source</label>'
             + '<div style="display:flex;gap:8px;margin-top:4px;">'
               + '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">'
@@ -384,9 +320,148 @@
                 + ' From table'
               + '</label>'
             + '</div>'
+          + '</div>'
+          // Manual options textarea
+          + '<div class="nb-select-manual" style="' + (isFromTable ? 'display:none;' : '') + 'grid-column:1/-1;">'
+            + '<label style="font-size:11px;font-weight:600;">Options <span style="font-weight:400;color:var(--text-muted);">(value|label per line)</span></label>'
+            + '<textarea class="nu-input nu-field-options" rows="3" style="width:100%;box-sizing:border-box;">' + _esc(opts) + '</textarea>'
+          + '</div>'
+          // From-table panel
+          + '<div class="nb-select-from-table" style="' + (isFromTable ? '' : 'display:none;') + 'grid-column:1/-1;">'
+            + '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;">'
+              + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">📋 OPTIONS FROM TABLE</div>'
+              + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+                + '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Table Name</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-table" value="' + _esc(fromTable) + '" placeholder="e.g. categories" style="font-size:12px;width:100%;box-sizing:border-box;"></div>'
+                + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Value Column</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-val-col" value="' + _esc(fromValCol) + '" placeholder="e.g. id" style="font-size:12px;"></div>'
+                + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Label Column</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-label-col" value="' + _esc(fromLabelCol) + '" placeholder="e.g. name" style="font-size:12px;"></div>'
+                + '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Filter SQL <span style="font-weight:400;">(optional WHERE)</span></label>'
+                  + '<input type="text" class="nu-input nu-field-opt-filter" value="' + _esc(fromFilter) + '" placeholder="e.g. active=1" style="font-size:12px;width:100%;box-sizing:border-box;"></div>'
+              + '</div>'
+            + '</div>'
           + '</div>';
+      }
 
-        extraBody += selectTypeHtml + allowClearHtml + sourceSwitcherHtml + manualPanel + fromTablePanel;
+      // ── SELECT2 (searchable, powered by Select2 library) ─────────────────
+      if (canvasType === 'select2') {
+        var s2IsMulti      = extra.multiple === true || extra.multiple === 'true' || extra.multiple === 1
+                           || extra.select_type === 'multiselect';
+        var allowClearChk  = (extra.allow_clear === false || extra.allow_clear === 'false') ? '' : 'checked';
+        var s2OptSource    = extra.options_source || 'manual';
+        var s2FromTable    = extra.options_table  || '';
+        var s2FromValCol   = extra.options_value_col || '';
+        var s2FromLabelCol = extra.options_label_col || '';
+        var s2FromFilter   = extra.options_filter || '';
+        var s2IsFromTable  = (s2OptSource === 'table');
+
+        var s2Opts = (extra.options || []).map(function (o) {
+          return typeof o === 'object' ? (o.value + '|' + o.label) : o;
+        }).join('\n');
+
+        extraBody +=
+          // Select2-specific config box
+          '<div style="background:var(--bg-offset,#eef2ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;grid-column:1/-1;margin-bottom:4px;">'
+            + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">🔍 SELECT2 CONFIG</div>'
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+              // Multi toggle
+              + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Selection Mode</label>'
+                + '<select class="nu-input nu-field-select-mode" style="font-size:12px;">'
+                  + '<option value="single"' + (!s2IsMulti ? ' selected' : '') + '>Single</option>'
+                  + '<option value="multi"'  + ( s2IsMulti ? ' selected' : '') + '>Multi-Select</option>'
+                + '</select>'
+              + '</div>'
+              // Allow Clear
+              + '<div style="display:flex;align-items:flex-end;padding-bottom:4px;">'
+                + '<label class="nb-fp-check" style="font-size:11px;">'
+                  + '<input type="checkbox" class="nu-field-allow-clear"' + (allowClearChk ? ' checked' : '') + '>'
+                  + ' Allow Clear (×)'
+                + '</label>'
+              + '</div>'
+            + '</div>'
+          + '</div>'
+          // Options source switcher
+          + '<div class="nb-fp nb-fp-full" style="grid-column:1/-1;">'
+            + '<label style="font-size:11px;font-weight:600;">Options Source</label>'
+            + '<div style="display:flex;gap:8px;margin-top:4px;">'
+              + '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">'
+                + '<input type="radio" name="opt-src-' + _esc(name) + '" class="nu-field-opt-src" value="manual"' + (s2IsFromTable ? '' : ' checked') + '>'
+                + ' Manual list'
+              + '</label>'
+              + '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">'
+                + '<input type="radio" name="opt-src-' + _esc(name) + '" class="nu-field-opt-src" value="table"' + (s2IsFromTable ? ' checked' : '') + '>'
+                + ' From table'
+              + '</label>'
+            + '</div>'
+          + '</div>'
+          // Manual options
+          + '<div class="nb-select-manual" style="' + (s2IsFromTable ? 'display:none;' : '') + 'grid-column:1/-1;">'
+            + '<label style="font-size:11px;font-weight:600;">Options <span style="font-weight:400;color:var(--text-muted);">(value|label per line)</span></label>'
+            + '<textarea class="nu-input nu-field-options" rows="3" style="width:100%;box-sizing:border-box;">' + _esc(s2Opts) + '</textarea>'
+          + '</div>'
+          // From-table panel
+          + '<div class="nb-select-from-table" style="' + (s2IsFromTable ? '' : 'display:none;') + 'grid-column:1/-1;">'
+            + '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;">'
+              + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">📋 OPTIONS FROM TABLE</div>'
+              + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+                + '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Table Name</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-table" value="' + _esc(s2FromTable) + '" placeholder="e.g. categories" style="font-size:12px;width:100%;box-sizing:border-box;"></div>'
+                + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Value Column</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-val-col" value="' + _esc(s2FromValCol) + '" placeholder="e.g. id" style="font-size:12px;"></div>'
+                + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Label Column</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-label-col" value="' + _esc(s2FromLabelCol) + '" placeholder="e.g. name" style="font-size:12px;"></div>'
+                + '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Filter SQL <span style="font-weight:400;">(optional WHERE)</span></label>'
+                  + '<input type="text" class="nu-input nu-field-opt-filter" value="' + _esc(s2FromFilter) + '" placeholder="e.g. active=1" style="font-size:12px;width:100%;box-sizing:border-box;"></div>'
+              + '</div>'
+            + '</div>'
+          + '</div>';
+      }
+
+      if (canvasType === 'radio' || canvasType === 'checkbox_group') {
+        var rcOptSource    = extra.options_source || 'manual';
+        var rcFromTable    = extra.options_table  || '';
+        var rcFromValCol   = extra.options_value_col || '';
+        var rcFromLabelCol = extra.options_label_col || '';
+        var rcFromFilter   = extra.options_filter || '';
+        var rcIsFromTable  = (rcOptSource === 'table');
+        var rcOpts = (extra.options || []).map(function (o) {
+          return typeof o === 'object' ? (o.value + '|' + o.label) : o;
+        }).join('\n');
+
+        extraBody +=
+          '<div class="nb-fp nb-fp-full" style="grid-column:1/-1;">'
+            + '<label style="font-size:11px;font-weight:600;">Options Source</label>'
+            + '<div style="display:flex;gap:8px;margin-top:4px;">'
+              + '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">'
+                + '<input type="radio" name="opt-src-' + _esc(name) + '" class="nu-field-opt-src" value="manual"' + (rcIsFromTable ? '' : ' checked') + '>'
+                + ' Manual list'
+              + '</label>'
+              + '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">'
+                + '<input type="radio" name="opt-src-' + _esc(name) + '" class="nu-field-opt-src" value="table"' + (rcIsFromTable ? ' checked' : '') + '>'
+                + ' From table'
+              + '</label>'
+            + '</div>'
+          + '</div>'
+          + '<div class="nb-select-manual" style="' + (rcIsFromTable ? 'display:none;' : '') + 'grid-column:1/-1;">'
+            + '<label style="font-size:11px;font-weight:600;">Options <span style="font-weight:400;color:var(--text-muted);">(value|label per line)</span></label>'
+            + '<textarea class="nu-input nu-field-options" rows="3" style="width:100%;box-sizing:border-box;">' + _esc(rcOpts) + '</textarea>'
+          + '</div>'
+          + '<div class="nb-select-from-table" style="' + (rcIsFromTable ? '' : 'display:none;') + 'grid-column:1/-1;">'
+            + '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;">'
+              + '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">📋 OPTIONS FROM TABLE</div>'
+              + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+                + '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Table Name</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-table" value="' + _esc(rcFromTable) + '" placeholder="e.g. categories" style="font-size:12px;width:100%;box-sizing:border-box;"></div>'
+                + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Value Column</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-val-col" value="' + _esc(rcFromValCol) + '" placeholder="e.g. id" style="font-size:12px;"></div>'
+                + '<div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Label Column</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-label-col" value="' + _esc(rcFromLabelCol) + '" placeholder="e.g. name" style="font-size:12px;"></div>'
+                + '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Filter SQL</label>'
+                  + '<input type="text" class="nu-input nu-field-opt-filter" value="' + _esc(rcFromFilter) + '" placeholder="e.g. active=1" style="font-size:12px;width:100%;box-sizing:border-box;"></div>'
+              + '</div>'
+            + '</div>'
+          + '</div>';
       }
 
       if (canvasType === 'calculated') {
@@ -449,16 +524,14 @@
 
       var card = document.createElement('div');
       card.className = 'nb-cfield';
-      // Store the normalised canvas type (always 'select' for all select variants)
       card.dataset.type = canvasType;
-      // Also store the actual runtime type so getLayout() can read it back
       card.dataset.runtimeType = type;
       card.style.gridColumn = 'span ' + col;
       card.dataset.col = String(col);
       card.innerHTML =
         '<div class="nb-cfield-header">'
           + '<span class="nb-cfield-drag">⠇</span>'
-          + '<span class="nb-cfield-type-badge">' + _esc(type) + '</span>'
+          + '<span class="nb-cfield-type-badge">' + _esc(canvasType) + '</span>'
           + '<span class="nb-cfield-label">' + _esc(label) + '</span>'
           + '<span class="nb-cfield-span-badge">' + col + '/12</span>'
           + '<span class="nb-cfield-actions">'
@@ -508,11 +581,9 @@
         });
       });
 
-      // Wire options-source radio toggle for select / radio / checkbox_group
-      if (canvasType === 'select' || canvasType === 'radio' || canvasType === 'checkbox_group') {
+      // Wire options-source radio toggle
+      if (canvasType === 'select' || canvasType === 'select2' || canvasType === 'radio' || canvasType === 'checkbox_group') {
         _attachSelectOptionsToggle(card);
-        // Wire select2 checkbox → show/hide allow_clear row
-        _attachSelectTypeToggle(card);
       }
 
       if (canvasType === 'subform') {
@@ -562,33 +633,19 @@
           var lkFilterEl = card.querySelector('.nu-lookup-filter');
           var lkExtraEl  = card.querySelector('.nu-lookup-extra');
 
-          // ── Resolve the real serialised type ───────────────────────
-          // Read Select Type dropdown (single/multi) and Select2 checkbox.
-          //
-          //   single + no select2  → type: 'select'
-          //   single + select2     → type: 'select2'
-          //   multi  + no select2  → type: 'select', multiple: true
-          //   multi  + select2     → type: 'select2', multiple: true
+          // ── Resolve serialised type ────────────────────────────────────
+          // canvasType is now either 'select' or 'select2' — they are
+          // separate card types with separate panels, no shared checkbox.
           var runtimeType = canvasType;
           var isMultiSel  = false;
-          var useSelect2  = false;
+          var selModeEl   = card.querySelector('.nu-field-select-mode');
 
-          if (canvasType === 'select') {
-            var selTypeEl   = card.querySelector('.nu-field-select-type');
-            var useS2El     = card.querySelector('.nu-field-use-select2');
-            var selTypeVal  = selTypeEl ? (selTypeEl.value || 'single') : 'single';
-            isMultiSel      = (selTypeVal === 'multi');
-            useSelect2      = useS2El ? useS2El.checked : false;
-
-            if (useSelect2) {
-              runtimeType = 'select2';
-            } else {
-              runtimeType = 'select';
-            }
+          if (canvasType === 'select' || canvasType === 'select2') {
+            isMultiSel = selModeEl && selModeEl.value === 'multi';
           }
 
           var field = {
-            type:          runtimeType,
+            type:          runtimeType,  // 'select' or 'select2'
             label:         labelEl ? labelEl.value  : '',
             name:          nameEl  ? nameEl.value   : '',
             required:      reqEl   ? reqEl.checked  : false,
@@ -599,31 +656,22 @@
             row_index:     rowIndex
           };
 
-          // ── select / select2 / multiselect ────────────────────
-          if (canvasType === 'select' || canvasType === 'radio' || canvasType === 'checkbox_group') {
-            if (canvasType === 'select') {
-              // Persist the two independent flags
-              field.select2  = useSelect2;
-              field.multiple = isMultiSel;
+          if (canvasType === 'select') {
+            field.multiple    = isMultiSel;
+            field.select2     = false;
+            field.select_type = isMultiSel ? 'multiselect' : 'select';
+          }
 
-              // select_type for back-compat / display restore
-              if (isMultiSel) {
-                field.select_type = 'multiselect';
-                field.type        = 'select';
-              } else if (useSelect2) {
-                field.select_type = 'select2';
-              } else {
-                field.select_type = 'select';
-              }
+          if (canvasType === 'select2') {
+            field.select2     = true;
+            field.multiple    = isMultiSel;
+            field.select_type = 'select2';
+            var allowClearEl  = card.querySelector('.nu-field-allow-clear');
+            field.allow_clear = allowClearEl ? allowClearEl.checked : true;
+          }
 
-              // allow_clear — only meaningful when select2 is on
-              var allowClearEl = card.querySelector('.nu-field-allow-clear');
-              if (useSelect2) {
-                field.allow_clear = allowClearEl ? allowClearEl.checked : true;
-              }
-            }
-
-            // options source: manual list or from table
+          // options source: manual list or from table
+          if (canvasType === 'select' || canvasType === 'select2' || canvasType === 'radio' || canvasType === 'checkbox_group') {
             var optSrcEl  = card.querySelector('.nu-field-opt-src:checked');
             var optSource = optSrcEl ? optSrcEl.value : 'manual';
             field.options_source = optSource;
@@ -779,20 +827,6 @@
       manualPanel.style.display    = isTable ? 'none' : '';
       fromTablePanel.style.display = isTable ? ''     : 'none';
     }
-  }
-
-  // ── _attachSelectTypeToggle ────────────────────────────────
-  // Shows/hides the Allow Clear row depending on whether the
-  // "Use Select2 (searchable)" checkbox is ticked.
-  function _attachSelectTypeToggle(card) {
-    var useS2El       = card.querySelector('.nu-field-use-select2');
-    var allowClearRow = card.querySelector('.nb-fp-allow-clear');
-    if (!useS2El || !allowClearRow) return;
-    function _sync() {
-      allowClearRow.style.display = useS2El.checked ? '' : 'none';
-    }
-    useS2El.addEventListener('change', _sync);
-    _sync();
   }
 
   function _attachRowBodyDrop(rowBody) {
@@ -1191,9 +1225,9 @@
       var rowBody = row ? row.querySelector('.nb-row-body') : null;
 
       groups[ri].forEach(function (f) {
-        // Pass the real stored type (e.g. 'select2') into _makeFieldCard
-        // so it can normalise to canvasType='select' and pre-select the
-        // correct Select Type dropdown value.
+        // Resolve the canvas type from saved data:
+        // select2:true or type==='select2' → canvas type 'select2'
+        // otherwise → type as-is
         var type = f.type || f.fieldtype || 'text';
         var card = window.nbFormBuilder._makeFieldCard(
           type,
@@ -1222,27 +1256,13 @@
 
         window.nbFormBuilder._applyColSpan(card, parseInt(f.col, 10) || 12);
 
+        // Restore select-mode dropdown for select/select2 cards
         if (type === 'select' || type === 'select2' || type === 'multiselect') {
-          var selTypeEl = card.querySelector('.nu-field-select-type');
-          var useS2El   = card.querySelector('.nu-field-use-select2');
-
-          if (selTypeEl) {
+          var selModeEl = card.querySelector('.nu-field-select-mode');
+          if (selModeEl) {
             var isMulti = f.multiple === true || f.multiple === 'true' || f.multiple === 1
                        || f.select_type === 'multiselect';
-            selTypeEl.value = isMulti ? 'multi' : 'single';
-          }
-
-          if (useS2El) {
-            var isS2 = f.select2 === true || f.select2 === 'true' || f.select2 === 1
-                    || f.select_type === 'select2'
-                    || type === 'select2';
-            useS2El.checked = isS2;
-          }
-
-          // Re-sync the allow_clear visibility after restoring values
-          var allowClearRow = card.querySelector('.nb-fp-allow-clear');
-          if (allowClearRow && useS2El) {
-            allowClearRow.style.display = useS2El.checked ? '' : 'none';
+            selModeEl.value = isMulti ? 'multi' : 'single';
           }
         }
       });
