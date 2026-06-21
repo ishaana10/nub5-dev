@@ -90,13 +90,26 @@ class NuFormRenderer {
                 break;
 
             // -------------------------------------------------------
-            // Standard browser <select> — no Select2, ever
+            // Standard browser <select> — no Select2, ever.
+            // Supports single and multi-select via the 'multiple' flag
+            // stored in the field JSON by the form builder.
             // -------------------------------------------------------
             case 'select':
-                $html .= '<select name="' . $name . '" class="nu-input" ' . $required . ' ' . $disabledAttr . '>';
-                $html .= '<option value="">-- Select --</option>';
+                $isMulti = !empty($field['multiple']);
+                $html .= '<select name="' . $name . ($isMulti ? '[]' : '') . '"'
+                       . ' class="nu-input"'
+                       . ($isMulti ? ' multiple' : '')
+                       . ' ' . $required
+                       . ' ' . $disabledAttr . '>';
+                if (!$isMulti) {
+                    $html .= '<option value="">-- Select --</option>';
+                }
+                // Support scalar value for single, array for multi
+                $selectedValues = $isMulti
+                    ? (is_array($value) ? $value : (strlen($value) ? explode(',', $value) : []))
+                    : [$value];
                 foreach ($options as $opt) {
-                    $selected = $value == $opt['value'] ? 'selected' : '';
+                    $selected = in_array($opt['value'], $selectedValues) ? 'selected' : '';
                     $html .= '<option value="' . htmlspecialchars($opt['value']) . '" ' . $selected . '>' . htmlspecialchars($opt['label']) . '</option>';
                 }
                 $html .= '</select>';
@@ -104,29 +117,49 @@ class NuFormRenderer {
 
             // -------------------------------------------------------
             // Select2 — born as Select2, initialised once by
-            // nu-select2-init.js via the .nu-select2 class.
-            // No destroy/swap logic needed; element is always fresh.
-            // Supports: placeholder, allow_clear, multiple.
-            // JSON field example:
-            //   { "type": "select2", "name": "status",
-            //     "placeholder": "Choose…", "allow_clear": true,
-            //     "options": [{"value":"a","label":"A"}] }
+            // nu-select2-init.js via data-select-type="select2" and
+            // the .nu-select2 class.
+            //
+            // Attributes emitted:
+            //   data-select-type="select2"    → picked up by nuInitSelect2
+            //   data-select-mode="single|multiple" → controls multiple flag
+            //   data-placeholder="…"           → Select2 placeholder
+            //   data-allow-clear="true|false"  → show/hide × button
+            //   multiple                       → native HTML multi attr
+            //
+            // Field JSON keys consumed:
+            //   placeholder  string
+            //   allow_clear  bool   (default true)
+            //   multiple     bool
+            //   select_type  string ("select2" or "multiselect" — legacy)
+            //   options      [{value, label}, …]
             // -------------------------------------------------------
             case 'select2':
-                $s2Placeholder = htmlspecialchars($field['placeholder'] ?? '-- Select --');
-                $s2AllowClear  = !empty($field['allow_clear'])  ? 'true'  : 'false';
-                $s2Multiple    = !empty($field['multiple'])     ? 'multiple' : '';
-                $html .= '<select name="' . $name . '"'
+                $s2Multiple   = !empty($field['multiple'])
+                             || ($field['select_type'] ?? '') === 'multiselect';
+                $s2Mode       = $s2Multiple ? 'multiple' : 'single';
+                $s2Placeholder = htmlspecialchars($field['placeholder'] ?? 'Select\u2026');
+                $s2AllowClear  = isset($field['allow_clear']) && $field['allow_clear'] === false
+                               ? 'false' : 'true';
+
+                $html .= '<select name="' . $name . ($s2Multiple ? '[]' : '') . '"'
                        . ' class="nu-input nu-select2"'
+                       . ' data-select-type="select2"'
+                       . ' data-select-mode="' . $s2Mode . '"'
                        . ' data-placeholder="' . $s2Placeholder . '"'
                        . ' data-allow-clear="'  . $s2AllowClear  . '"'
                        . ($s2Multiple ? ' multiple' : '')
                        . ' ' . $required
                        . ' ' . $disabledAttr . '>';
-                // Empty first option is required by Select2 for placeholder to work
+
+                // Empty first option is required by Select2 for placeholder
                 if (!$s2Multiple) $html .= '<option value=""></option>';
+
+                $selectedValues = $s2Multiple
+                    ? (is_array($value) ? $value : (strlen($value) ? explode(',', $value) : []))
+                    : [$value];
                 foreach ($options as $opt) {
-                    $selected = $value == $opt['value'] ? 'selected' : '';
+                    $selected = in_array($opt['value'], $selectedValues) ? 'selected' : '';
                     $html .= '<option value="' . htmlspecialchars($opt['value']) . '" ' . $selected . '>' . htmlspecialchars($opt['label']) . '</option>';
                 }
                 $html .= '</select>';
@@ -189,8 +222,8 @@ class NuFormRenderer {
     /**
      * Render a lookup (remote-populated) <select>.
      * Add "use_select2": true in the field JSON to get a Select2-enhanced
-     * lookup — it will receive the .nu-select2 class and be initialised
-     * by nu-select2-init.js exactly like a native select2 field.
+     * lookup — it receives data-select-type="select2", .nu-select2, and
+     * is initialised by nu-select2-init.js on form open.
      */
     private function renderLookup($field, $value, $readonly = false) {
         $name         = $field['name'];
@@ -213,6 +246,8 @@ class NuFormRenderer {
 
         $html = '<select name="' . $name . '" class="' . $cssClass . '"';
         if ($useSelect2) {
+            $html .= ' data-select-type="select2"';
+            $html .= ' data-select-mode="single"';
             $html .= ' data-placeholder="' . $placeholder . '"';
             $html .= ' data-allow-clear="true"';
         }
