@@ -340,7 +340,8 @@ window.NuApp = {
 
       const overlay = document.createElement('div');
       overlay.className = 'nu-form-overlay';
-      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+      // z-index 1000: sits below Select2 dropdown (1051) so dropdowns are always visible
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;';
 
       const box = document.createElement('div');
       box.style.cssText = 'background:var(--card-bg,#fff);border-radius:12px;padding:24px;width:92%;overflow-y:auto;transition:max-width 0.2s,max-height 0.2s;max-width:' + sizes[currentSize].maxWidth + ';max-height:' + sizes[currentSize].maxHeight + ';';
@@ -423,7 +424,8 @@ window.NuApp = {
 
       const overlay = document.createElement('div');
       overlay.className = 'nu-form-overlay';
-      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+      // z-index 1000: sits below Select2 dropdown (1051) so dropdowns are always visible
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;';
 
       const box = document.createElement('div');
       box.style.cssText = 'background:var(--card-bg,#fff);border-radius:12px;padding:24px;max-width:900px;max-height:90vh;overflow-y:auto;width:92%;';
@@ -650,7 +652,8 @@ window.NuApp = {
         isNew = true;
         overlay = document.createElement('div');
         overlay.className = 'nu-browse-overlay nu-form-overlay';
-        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+        // z-index 1000: sits below Select2 dropdown (1051) so dropdowns are always visible
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;';
       }
       const box = document.createElement('div');
       box.style.cssText = 'background:var(--card-bg,#fff);border-radius:12px;padding:24px;width:96%;max-width:1100px;max-height:92vh;overflow-y:auto;';
@@ -802,8 +805,16 @@ window.submitNuForm = async function (formElement) {
   const displayMode = formElement.dataset.displayMode || 'inline';
   const url = 'api/form.php?action=save&code=' + encodeURIComponent(formCode) +
     (recordId ? '&id=' + encodeURIComponent(recordId) : '');
+
+  // ── Collect form data ────────────────────────────────────────────────────
+  // Use FormData as the base, then explicitly overwrite every <select> value
+  // (single and multiple) by reading the DOM directly. This is necessary
+  // because Select2 rebuilds the native <select> element and the values it
+  // syncs back may not survive a FormData snapshot reliably.
   const formData = new FormData(formElement);
   const data = {};
+
+  // 1. Seed from FormData (covers all non-select inputs)
   formData.forEach((value, key) => {
     if (Object.prototype.hasOwnProperty.call(data, key)) {
       if (!Array.isArray(data[key])) data[key] = [data[key]];
@@ -812,9 +823,28 @@ window.submitNuForm = async function (formElement) {
       data[key] = value;
     }
   });
+
+  // 2. Overwrite ALL <select> values from live DOM (fixes Select2 single + multi)
+  formElement.querySelectorAll('select[name]').forEach((sel) => {
+    const name = sel.name;
+    if (!name) return;
+    const selected = Array.from(sel.options)
+      .filter(function (o) { return o.selected; })
+      .map(function (o) { return o.value; });
+    if (sel.multiple) {
+      // multi: always store as array (empty array if nothing chosen)
+      data[name] = selected;
+    } else {
+      // single: store as scalar string
+      data[name] = selected.length ? selected[0] : '';
+    }
+  });
+
+  // 3. Ensure unchecked checkboxes are present
   formElement.querySelectorAll('input[type="checkbox"]').forEach((el) => {
     if (!Object.prototype.hasOwnProperty.call(data, el.name)) data[el.name] = '';
   });
+
   if (window._nuFormBeforeSave && typeof window._nuFormBeforeSave[formCode] === 'function') {
     const result = window._nuFormBeforeSave[formCode](formElement, data);
     if (result === false) return;
