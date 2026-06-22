@@ -437,28 +437,56 @@ function nu_render_field($field, $value = '', $record = []) {
                          . nu_html($value) . '</textarea>';
                 break;
 
-            // ── select2: always renders as <select data-select2="1"> ────────
-            // A field stored with type='select2' is a Select2-enhanced dropdown.
-            // Without this case it would fall through to `default:` and render
-            // as a plain <input type="text">, which nu-select2-init.js can never
-            // find or initialise.
+            // ── select2: searchable dropdown enhanced by the Select2 library ───
+            // Emits data-select-type="select2"  (primary init selector in nu-select2-init.js)
+            //        data-select2="1"            (legacy compat)
+            //        data-allow-clear             (passed to Select2 init)
+            //        data-select-mode             (single|multiple for Select2 init)
             case 'select2':
-                $multiple = !empty($field['multiple']) ? ' multiple' : '';
-                $control  = '<select class="' . nu_attr(trim($cssClass . ' nu-select2')) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $required . $multiple . ' data-select2="1" style="width:100%;">'
+                $isMultiple  = !empty($field['multiple']);
+                $allowClear  = isset($field['allow_clear']) ? (bool)$field['allow_clear'] : true;
+                $selectMode  = $isMultiple ? 'multiple' : 'single';
+                $multipleAttr = $isMultiple ? ' multiple' : '';
+                $control  = '<select'
+                          . ' class="' . nu_attr(trim($cssClass . ' nu-select2')) . '"'
+                          . ' data-field="'       . nu_attr($name)         . '"'
+                          . ' name="'             . nu_attr($name)         . '"'
+                          . $required
+                          . $multipleAttr
+                          . ' data-select-type="select2"'
+                          . ' data-select2="1"'
+                          . ' data-select-mode="' . $selectMode            . '"'
+                          . ' data-allow-clear="' . ($allowClear ? 'true' : 'false') . '"'
+                          . ' style="width:100%;">'
                           . '<option value="">Select...</option>'
                           . nu_render_options($field, $value)
                           . '</select>';
                 break;
 
             case 'select':
-                $multiple   = !empty($field['multiple']) ? ' multiple' : '';
-                $useSelect2 = !empty($field['select2']);
-                $s2Class    = $useSelect2 ? ' nu-select2' : '';
-                $s2Attr     = $useSelect2 ? ' data-select2="1"' : '';
-                $control    = '<select class="' . nu_attr(trim($cssClass . $s2Class)) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $required . $multiple . $s2Attr . ' style="width:100%;">'
-                            . '<option value="">Select...</option>'
-                            . nu_render_options($field, $value)
-                            . '</select>';
+                $isMultiple  = !empty($field['multiple']);
+                $useSelect2  = !empty($field['select2']);
+                $allowClear  = isset($field['allow_clear']) ? (bool)$field['allow_clear'] : true;
+                $selectMode  = $isMultiple ? 'multiple' : 'single';
+                $multipleAttr = $isMultiple ? ' multiple' : '';
+                // When select2 flag is set, emit same data-* attributes as the select2 case
+                $s2Class  = $useSelect2 ? ' nu-select2' : '';
+                $s2Attrs  = $useSelect2
+                    ? ' data-select-type="select2" data-select2="1"'
+                    . ' data-select-mode="' . $selectMode . '"'
+                    . ' data-allow-clear="' . ($allowClear ? 'true' : 'false') . '"'
+                    : '';
+                $control  = '<select'
+                          . ' class="' . nu_attr(trim($cssClass . $s2Class)) . '"'
+                          . ' data-field="' . nu_attr($name) . '"'
+                          . ' name="'       . nu_attr($name) . '"'
+                          . $required
+                          . $multipleAttr
+                          . $s2Attrs
+                          . ' style="width:100%;">'
+                          . '<option value="">Select...</option>'
+                          . nu_render_options($field, $value)
+                          . '</select>';
                 break;
 
             case 'radio':
@@ -520,7 +548,7 @@ function nu_render_field($field, $value = '', $record = []) {
                 break;
 
             case 'password':
-                $control = '<input type="password" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $placeholder . $required . ' style="width:100%;">';
+                $control = '<input type="password" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '"' . $placeholder . $required . ' style="width:100%;">';
                 break;
 
             case 'file':
@@ -787,13 +815,13 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
             foreach ($entry['byRow'] as $rowFields) {
                 $html .= '<div class="nu-form-row" style="' . $ROW_STYLE . '">';
                 foreach ($rowFields as $node) {
-                    $html .= nu_render_field($node, nu_field_value($record, $node), $record);
+                    $html .= nu_render_field($node, nu_field_value($record, $node), $node);
                 }
                 $html .= '</div>';
             }
             foreach ($entry['noRow'] as $node) {
                 $html .= '<div class="nu-form-row" style="' . $ROW_STYLE . '">';
-                $html .= nu_render_field($node, nu_field_value($record, $node), $record);
+                $html .= nu_render_field($node, nu_field_value($record, $node), $node);
                 $html .= '</div>';
             }
         }
