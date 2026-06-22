@@ -438,10 +438,12 @@ function nu_render_field($field, $value = '', $record = []) {
                 break;
 
             // ── select2: searchable dropdown enhanced by the Select2 library ───
-            // Emits data-select-type="select2"  (primary init selector in nu-select2-init.js)
-            //        data-select2="1"            (legacy compat)
-            //        data-allow-clear             (passed to Select2 init)
-            //        data-select-mode             (single|multiple for Select2 init)
+            // Emits data-select-type="select2"  (primary init selector used by nuInitSelect2
+            //                                    in nubuilder-next.js)
+            // NOTE: data-select2="1" is intentionally NOT emitted here.
+            //       Select2 v4 auto-initialises any <select data-select2="1"> at DOM-ready,
+            //       which fires before nubuilder-next.js loads and causes the
+            //       "already been initialized" double-init error.
             case 'select2':
                 $isMultiple  = !empty($field['multiple']);
                 $allowClear  = isset($field['allow_clear']) ? (bool)$field['allow_clear'] : true;
@@ -454,7 +456,6 @@ function nu_render_field($field, $value = '', $record = []) {
                           . $required
                           . $multipleAttr
                           . ' data-select-type="select2"'
-                          . ' data-select2="1"'
                           . ' data-select-mode="' . $selectMode            . '"'
                           . ' data-allow-clear="' . ($allowClear ? 'true' : 'false') . '"'
                           . ' style="width:100%;">'
@@ -469,10 +470,11 @@ function nu_render_field($field, $value = '', $record = []) {
                 $allowClear  = isset($field['allow_clear']) ? (bool)$field['allow_clear'] : true;
                 $selectMode  = $isMultiple ? 'multiple' : 'single';
                 $multipleAttr = $isMultiple ? ' multiple' : '';
-                // When select2 flag is set, emit same data-* attributes as the select2 case
+                // When select2 flag is set, emit data-select-type="select2" as the init trigger.
+                // data-select2="1" is intentionally omitted (see note in select2 case above).
                 $s2Class  = $useSelect2 ? ' nu-select2' : '';
                 $s2Attrs  = $useSelect2
-                    ? ' data-select-type="select2" data-select2="1"'
+                    ? ' data-select-type="select2"'
                     . ' data-select-mode="' . $selectMode . '"'
                     . ' data-allow-clear="' . ($allowClear ? 'true' : 'false') . '"'
                     : '';
