@@ -9,6 +9,22 @@
  * data-placeholder="…"                placeholder text.
  * data-allow-clear="true|false"       show/hide the × clear button.
  *
+ * ─── Double-init crash (root cause) ──────────────────────────────────
+ * The rendered form HTML contains inline <script> tags.
+ * _execModuleScripts() re-executes those scripts the moment the form is
+ * inserted into the live DOM — one of them calls nuInitSelect2().
+ * 50 ms later, the nu:form:opened event fires and nuInitSelect2() runs
+ * AGAIN on the same <select> elements.
+ *
+ * Select2's constructor internally calls GetData(el, '<generated-key>').destroy()
+ * on whatever it finds in jQuery's data store.  If the first init already
+ * wrote a live (but not fully settled) instance there, the second call
+ * finds an object without a .destroy() method → crash.
+ *
+ * Fix: stamp data-nu-s2="1" on every element right after a successful
+ * init.  nuInitSelect2 skips already-stamped elements.  nuDestroySelect2
+ * removes the stamp so explicit re-inits (field-type swap, etc.) still work.
+ *
  * Public API
  *   nuDestroySelect2(el)   — hard-destroy a single element (safe if none)
  *   nuInitSelect2(scope)   — init/re-init all targets inside scope
@@ -17,8 +33,9 @@
 (function () {
   'use strict';
 
-  var DEBUG = (window.NU_SELECT2_DEBUG !== false);
+  var READY_ATTR = 'data-nu-s2';   // stamp written after successful init
 
+  var DEBUG = (window.NU_SELECT2_DEBUG !== false);
   function dbg() {
     if (!DEBUG) return;
     var args = Array.prototype.slice.call(arguments);
@@ -26,22 +43,15 @@
     console.log.apply(console, args);
   }
 
-  /**
-   * Wipe every key that starts with "select2" from both levels of the
-   * jQuery expando bucket for `el`.
-   *
+  /* ── Wipe ALL select2-* keyed data from the jQuery expando ────────────
    * Select2 v4 stores its instance under a GENERATED key such as
-   * "select2-data-9-0u0n" inside bucket.data — NOT under the literal
-   * key "select2".  Deleting only bucket.data['select2'] therefore
-   * leaves the stale instance alive, which causes the next Select2
-   * constructor to call GetData(el,'select2-data-…').destroy() on the
-   * ghost object → "destroy is not a function".
+   * "select2-data-9-0u0n" inside bucket.data.  Deleting only the literal
+   * key "select2" leaves the stale instance alive.
    */
   function nuNukeExpandoSelect2(el) {
     if (typeof jQuery === 'undefined') return;
     var expando = jQuery.expando;
     if (!expando || el[expando] === undefined) return;
-
     var bucket = el[expando];
 
     function nukeKeys(obj) {
@@ -52,46 +62,43 @@
     }
 
     if (typeof bucket === 'object' && bucket !== null) {
-      // jQuery 3.x — bucket IS the data container
-      nukeKeys(bucket);          // top-level keys (e.g. bucket['select2'])
-      nukeKeys(bucket.data);     // nested keys   (e.g. bucket.data['select2-data-9-0u0n'])
+      nukeKeys(bucket);
+      nukeKeys(bucket.data);
     } else if (typeof bucket === 'number') {
-      // jQuery 1.x / 2.x — bucket is a numeric cache index
       var cache = jQuery.cache && jQuery.cache[bucket];
-      if (cache) {
-        nukeKeys(cache);
-        nukeKeys(cache.data);
-      }
+      if (cache) { nukeKeys(cache); nukeKeys(cache.data); }
     }
   }
 
   /**
    * Hard-destroy any Select2 instance on `el`, including corrupted ones.
-   * Safe to call when no instance exists.
+   * Clears the ready stamp so the element can be re-initialised.
    */
   function nuDestroySelect2(el) {
     if (typeof jQuery === 'undefined') return;
     var $ = jQuery;
 
-    dbg('destroy START', el.tagName,
-        'name=' + (el.name || el.getAttribute('data-field') || '?'),
-        'data-select2-id before clean:', el.getAttribute('data-select2-id'));
+    // Clear ready stamp first — must happen before any re-init attempt
+    el.removeAttribute(READY_ATTR);
 
-    // Step 1: nuclear expando wipe — removes ALL select2-* keyed data
+    dbg('destroy START', el.tagName,
+        'name=' + (el.name || el.getAttribute('data-field') || '?'));
+
+    // Step 1: nuclear expando wipe
     nuNukeExpandoSelect2(el);
 
-    // Step 2: polite destroy via the public API (now safe — no stale stub)
+    // Step 2: polite destroy (now safe — stale stub is gone)
     try {
       if (typeof $.fn.select2 !== 'undefined') {
         var existing = $.data(el, 'select2');
-        dbg('existing Select2 instance found —', existing ? 'destroying' : 'none');
+        dbg('existing Select2 instance —', existing ? 'destroying' : 'none');
         if (existing && typeof existing.destroy === 'function') {
           $(el).select2('destroy');
         }
       }
     } catch (e) { dbg('destroy threw (ignored):', e.message); }
 
-    // Step 3: flush any remaining public $.data entries that start with select2
+    // Step 3: flush all select2-* public $.data entries
     try {
       var jqData = $.data(el);
       if (jqData) {
@@ -101,10 +108,10 @@
       }
     } catch (e) { /* ignore */ }
 
-    // Step 4: remove the HTML attribute stamp
+    // Step 4: remove the HTML attribute stamp Select2 writes
     el.removeAttribute('data-select2-id');
 
-    // Step 5: remove orphaned Select2 container siblings from the DOM
+    // Step 5: remove orphaned Select2 DOM siblings
     var next = el.nextElementSibling;
     while (next && next.classList && (
       next.classList.contains('select2') ||
@@ -115,14 +122,61 @@
       toRemove.parentNode.removeChild(toRemove);
     }
 
-    dbg('destroy END', el.tagName,
-        'name=' + (el.name || el.getAttribute('data-field') || '?'));
+    dbg('destroy END', 'name=' + (el.name || el.getAttribute('data-field') || '?'));
   }
 
   window.nuDestroySelect2 = nuDestroySelect2;
 
+  /* ── Internal: run select2() on one already-cleaned element ───────── */
+  function _initOne(el) {
+    var $ = jQuery;
+    var placeholder = el.dataset.placeholder || 'Select\u2026';
+    var allowClear  = el.dataset.allowClear !== 'false';
+    var isMultiple  = el.dataset.selectMode === 'multiple' || el.hasAttribute('multiple');
+
+    dbg('  placeholder:', placeholder, '| allowClear:', allowClear, '| multiple:', isMultiple);
+
+    try {
+      $(el).select2({
+        width:          '100%',
+        theme:          (window.nuUXOptions && window.nuUXOptions.nuSelect2Theme) || 'default',
+        placeholder:    placeholder,
+        allowClear:     allowClear,
+        multiple:       isMultiple,
+        dropdownParent: $(document.body),
+      });
+      // ── Stamp success — prevents the double-init crash ──────────────
+      el.setAttribute(READY_ATTR, '1');
+      dbg('  init OK ✅', el.name || el.getAttribute('data-field') || '?');
+      return true;
+    } catch (initErr) {
+      console.error('[nu-select2] select2() init FAILED ❌', initErr.message, el);
+      // Nuclear retry: wipe expando completely then try once more
+      try {
+        nuNukeExpandoSelect2(el);
+        el.removeAttribute('data-select2-id');
+        $(el).select2({
+          width:          '100%',
+          theme:          (window.nuUXOptions && window.nuUXOptions.nuSelect2Theme) || 'default',
+          placeholder:    placeholder,
+          allowClear:     allowClear,
+          multiple:       isMultiple,
+          dropdownParent: $(document.body),
+        });
+        el.setAttribute(READY_ATTR, '1');
+        dbg('  retry OK ✅', el.name || el.getAttribute('data-field') || '?');
+        return true;
+      } catch (retryErr) {
+        console.error('[nu-select2] retry also FAILED ❌', retryErr.message, el);
+        return false;
+      }
+    }
+  }
+
   /**
    * Initialise (or re-initialise) all Select2 targets within `scope`.
+   * Elements already stamped with data-nu-s2="1" are skipped — this is
+   * the key guard that prevents the double-init crash.
    */
   function nuInitSelect2(scope) {
     var hasJQ      = typeof jQuery !== 'undefined';
@@ -141,79 +195,54 @@
       'select.nu-select2'
     );
 
-    dbg('nuInitSelect2 called — scope:', root === document ? 'document' : (root.tagName + '#' + (root.id || '?')),
-        '| targets matched:', $targets.length);
-
-    if (!$targets.length) return;
+    dbg('nuInitSelect2 — scope:', root === document ? 'document' : root.tagName,
+        '| targets:', $targets.length);
 
     $targets.each(function () {
       var el = this;
 
-      dbg('init [' + (el.name || el.getAttribute('data-field') || '?') + ']',
-          '| options:', el.options.length,
-          '| in DOM:', document.contains(el));
-
-      // Full nuclear destroy before every init — wipes ALL select2-* keys
-      nuDestroySelect2(el);
-
-      var placeholder = el.dataset.placeholder || 'Select\u2026';
-      var allowClear  = el.dataset.allowClear !== 'false';
-      var isMultiple  = el.dataset.selectMode === 'multiple' || el.hasAttribute('multiple');
-
-      try {
-        $(el).select2({
-          width:          '100%',
-          theme:          (window.nuUXOptions && window.nuUXOptions.nuSelect2Theme) || 'default',
-          placeholder:    placeholder,
-          allowClear:     allowClear,
-          multiple:       isMultiple,
-          dropdownParent: $(document.body),
-        });
-        dbg('  select2() init OK ✅', el.name || el.getAttribute('data-field') || '?');
-      } catch (initErr) {
-        console.error('[nu-select2] select2() init FAILED ❌', initErr.message, el);
-        // Nuclear retry: wipe expando completely then try once more
-        try {
-          nuNukeExpandoSelect2(el);
-          el.removeAttribute('data-select2-id');
-          $(el).select2({
-            width:          '100%',
-            theme:          (window.nuUXOptions && window.nuUXOptions.nuSelect2Theme) || 'default',
-            placeholder:    placeholder,
-            allowClear:     allowClear,
-            multiple:       isMultiple,
-            dropdownParent: $(document.body),
-          });
-          dbg('  select2() retry OK ✅', el.name || el.getAttribute('data-field') || '?');
-        } catch (retryErr) {
-          console.error('[nu-select2] select2() retry also FAILED ❌', retryErr.message, el);
-        }
+      // ── GUARD: skip if already successfully initialised ──────────────
+      // This is what stops the double-init crash when both the inline
+      // <script> and the nu:form:opened handler call nuInitSelect2.
+      if (el.getAttribute(READY_ATTR) === '1') {
+        dbg('  skip (already ready):', el.name || el.getAttribute('data-field') || '?');
+        return;
       }
+
+      dbg('init [' + (el.name || el.getAttribute('data-field') || '?') + ']',
+          '| options:', el.options.length, '| in DOM:', document.contains(el));
+
+      // Full destroy before every fresh init
+      nuDestroySelect2(el);
+      _initOne(el);
     });
   }
 
   window.nuInitSelect2 = nuInitSelect2;
 
   /**
-   * Atomically destroy + re-initialise Select2 on a single element.
+   * Atomically destroy + re-initialise a single element.
+   * Forces re-init even if already stamped.
    */
   function nuReinitSelect2(el) {
     if (!el) return;
-    dbg('nuReinitSelect2 called on', el.tagName,
-        el.name || el.getAttribute('data-field') || '?');
+    dbg('nuReinitSelect2:', el.name || el.getAttribute('data-field') || '?');
+    el.removeAttribute(READY_ATTR);   // force re-init regardless of stamp
     nuDestroySelect2(el);
-    nuInitSelect2(el.parentElement || document);
+    _initOne(el);
   }
 
   window.nuReinitSelect2 = nuReinitSelect2;
 
-  // Re-init whenever a form modal/panel is opened
+  // ── Auto-init hooks ──────────────────────────────────────────────────
+
   document.addEventListener('nu:form:opened', function (e) {
     var scope = e.detail && e.detail.scope;
+    // Delay to let inline scripts run first (they stamp elements they init).
+    // Any element already stamped will be skipped — no double-init.
     setTimeout(function () { nuInitSelect2(scope); }, 50);
   });
 
-  // Init on page load
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { nuInitSelect2(); });
   } else {
