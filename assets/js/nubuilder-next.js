@@ -1,129 +1,69 @@
 // ─── Select2 helpers ─────────────────────────────────────────────────────────
-// Merged from nu-select2-init.js so Select2 is initialised synchronously
-// inside each form-open method, eliminating the nu:form:opened → setTimeout
-// timing race that caused "r.GetData(...).destroy is not a function".
-
 (function () {
   'use strict';
 
   /**
-   * Atomically wipe ALL Select2 state from a single <select>.
-   * Removes attribute first (critical — Select2 reads it before $.data),
-   * then flushes both jQuery cache layers, then kills the expando bucket.
+   * Replace el with a fresh clone — this is the ONLY reliable way to sever
+   * ALL jQuery internal cache associations (both user and _data stores).
+   * Returns the new element.
    */
-  function _s2HardWipe(el) {
-    if (typeof jQuery === 'undefined') return;
-    var $ = jQuery;
-    el.removeAttribute('data-select2-id');
-    try { $.removeData(el); } catch (e) {/* ignore */}
-    try {
-      var expando = $.expando;
-      if (expando && el[expando]) {
-        var b = el[expando];
-        if (b && typeof b === 'object') {
-          if (b.data) b.data = {};
-          Object.keys(b).forEach(function (k) {
-            if (k.indexOf('select2') === 0) delete b[k];
-          });
-        }
-      }
-    } catch (e) {/* ignore */}
-  }
-
-  /**
-   * Fully destroy any (possibly corrupt) Select2 instance on el.
-   * Safe to call even if Select2 was never initialised.
-   */
-  function _s2Destroy(el) {
-    if (typeof jQuery === 'undefined') return;
-    var $ = jQuery;
-    el.removeAttribute('data-nu-s2');
-    _s2HardWipe(el);                         // wipe BEFORE polite destroy
-    try {
-      if (typeof $.fn.select2 !== 'undefined') {
-        var inst = $.data(el, 'select2');
-        if (inst && typeof inst.destroy === 'function') $(el).select2('destroy');
-      }
-    } catch (e) {/* ignore */}
-    _s2HardWipe(el);                         // wipe again after destroy
-    // Remove orphaned Select2 DOM siblings
-    var next = el.nextElementSibling;
+  function _s2FreshClone(el) {
+    var clone = el.cloneNode(true);
+    clone.removeAttribute('data-select2-id');
+    clone.removeAttribute('data-nu-s2');
+    el.parentNode.replaceChild(clone, el);
+    // Remove any orphaned Select2 DOM siblings that belonged to the old el
+    var next = clone.nextElementSibling;
     while (next && next.classList &&
            (next.classList.contains('select2') || next.classList.contains('select2-container'))) {
       var rem = next; next = next.nextElementSibling; rem.parentNode.removeChild(rem);
     }
+    return clone;
   }
 
-  /**
-   * Run select2() on one already-cleaned element.
-   * Hard-wipes before calling the constructor so even if _execModuleScripts
-   * stamped data-select2-id via an inline script, we start clean.
-   */
   function _s2InitOne(el) {
+    if (typeof jQuery === 'undefined' || typeof jQuery.fn.select2 === 'undefined') return;
     var $ = jQuery;
-    var placeholder = el.dataset.placeholder || 'Select\u2026';
-    var allowClear  = el.dataset.allowClear !== 'false';
-    var isMultiple  = el.dataset.selectMode === 'multiple' || el.hasAttribute('multiple');
+    // Replace with a clean clone — no jQuery history, no stale IDs
+    var fresh = _s2FreshClone(el);
     var opts = {
       width: '100%',
       theme: (window.nuUXOptions && window.nuUXOptions.nuSelect2Theme) || 'default',
-      placeholder: placeholder,
-      allowClear:  allowClear,
-      multiple:    isMultiple,
+      placeholder: fresh.dataset.placeholder || 'Select\u2026',
+      allowClear:  fresh.dataset.allowClear !== 'false',
+      multiple:    fresh.dataset.selectMode === 'multiple' || fresh.hasAttribute('multiple'),
       dropdownParent: $(document.body),
     };
-    _s2HardWipe(el);
     try {
-      $(el).select2(opts);
-      el.setAttribute('data-nu-s2', '1');
-      return true;
+      $(fresh).select2(opts);
+      fresh.setAttribute('data-nu-s2', '1');
     } catch (err) {
-      console.error('[nu-select2] init FAILED', err.message, el);
-      _s2HardWipe(el);
-      try {
-        $(el).select2(opts);
-        el.setAttribute('data-nu-s2', '1');
-        return true;
-      } catch (e2) {
-        console.error('[nu-select2] retry FAILED', e2.message, el);
-        return false;
-      }
+      console.error('[nu-select2] init FAILED', err.message, fresh);
     }
   }
 
-  /**
-   * Public: init all Select2 targets within scope (Element or document).
-   * Called directly — no setTimeout, no event listener.
-   */
   function nuInitSelect2(scope) {
     if (typeof jQuery === 'undefined' || typeof jQuery.fn.select2 === 'undefined') return;
-    var $ = jQuery;
     var root = (scope instanceof Element) ? scope : document;
-    var $targets = $(root).find('select[data-select-type="select2"], select.nu-select2');
-    if (!$targets.length) return;
-    // Hard-wipe ALL targets first before touching any of them
-    $targets.each(function () { _s2HardWipe(this); });
-    $targets.each(function () { _s2Destroy(this); _s2InitOne(this); });
+    var targets = Array.prototype.slice.call(
+      root.querySelectorAll('select[data-select-type="select2"], select.nu-select2')
+    );
+    targets.forEach(function (el) { _s2InitOne(el); });
   }
 
-  // Expose globals so external code (subforms, custom JS) can call them
-  window.nuInitSelect2   = nuInitSelect2;
-  window.nuDestroySelect2 = _s2Destroy;
-  window.nuReinitSelect2  = function (el) { if (!el) return; _s2Destroy(el); _s2InitOne(el); };
+  window.nuInitSelect2    = nuInitSelect2;
+  window.nuDestroySelect2 = function (el) { _s2FreshClone(el); };
+  window.nuReinitSelect2  = function (el) { _s2InitOne(el); };
 
-  // Page-load init (for selects present on the initial page, not inside forms)
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { nuInitSelect2(document); });
   } else {
     nuInitSelect2(document);
   }
 
-  // Keep nu:form:opened listener ONLY as a safety net for third-party code
-  // that dispatches the event from outside NuApp. NuApp itself calls
-  // nuInitSelect2 directly and never relies on this path.
   document.addEventListener('nu:form:opened', function (e) {
     var scope = e.detail && e.detail.scope;
-    if (scope && scope.dataset && scope.dataset.nuS2Done) return; // already handled inline
+    if (scope && scope.dataset && scope.dataset.nuS2Done) return;
     nuInitSelect2(scope);
   });
 
@@ -241,13 +181,6 @@ window.NuApp = {
     });
   },
 
-  /**
-   * Called after HTML is injected and scripts re-executed.
-   * Runs Select2 init SYNCHRONOUSLY (no setTimeout) so there is exactly
-   * one init path and zero timing races.
-   * Marks the scope with data-nu-s2-done so the nu:form:opened safety-net
-   * listener skips it.
-   */
   _initFormWidgets(scope) {
     if (scope) scope.dataset.nuS2Done = '1';
     if (typeof window.nuInitSelect2 === 'function') window.nuInitSelect2(scope);
@@ -455,7 +388,6 @@ window.NuApp = {
       applySize(currentSize);
       overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
-      // Scripts run first, then Select2 init — synchronous, no setTimeout
       this._execModuleScripts(box);
       this._initFormWidgets(box);
       this._dispatchFormOpened(box);
