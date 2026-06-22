@@ -24,11 +24,6 @@ class NuDatabase {
         return self::$instance;
     }
 
-    /**
-     * Static bridge so code that calls NuDatabase::getConnection() (or
-     * Database::getConnection() via the class_alias below) doesn't trigger
-     * "Non-static method … should not be called statically".
-     */
     public static function getConnection() {
         return self::getInstance()->pdo;
     }
@@ -45,7 +40,10 @@ class NuDatabase {
         $options = [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES   => false,
+            // MUST be true: MySQL native prepared statements cannot execute DDL
+            // (CREATE TABLE / ALTER TABLE / DROP TABLE). Emulated prepares
+            // route DDL through PDO::exec() internally and work correctly.
+            PDO::ATTR_EMULATE_PREPARES   => true,
         ];
         $this->pdo = new PDO($dsn, $user, $pass, $options);
     }
@@ -54,10 +52,28 @@ class NuDatabase {
         return $this->pdo;
     }
 
+    /**
+     * Run a DML query (SELECT / INSERT / UPDATE / DELETE) via a prepared statement.
+     */
     public function query($sql, $params = []) {
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         return $stmt;
+    }
+
+    /**
+     * Run a DDL statement (CREATE TABLE, ALTER TABLE, DROP TABLE, etc.)
+     * directly via PDO::exec() — bypasses the prepared-statement layer.
+     * MySQL cannot run DDL through native prepared statements.
+     * Throws PDOException on failure.
+     */
+    public function exec(string $sql) {
+        $result = $this->pdo->exec($sql);
+        if ($result === false) {
+            $err = $this->pdo->errorInfo();
+            throw new \PDOException('DDL exec failed [' . ($err[0] ?? '') . ']: ' . ($err[2] ?? 'unknown error'));
+        }
+        return $result;
     }
 
     public function fetchOne($sql, $params = []) {
@@ -68,9 +84,10 @@ class NuDatabase {
         return $this->query($sql, $params)->fetchAll();
     }
 
+    // PHP 7.4 compatible — no arrow functions
     public function insert($table, $data) {
         $cols         = implode(', ', array_keys($data));
-        $placeholders = implode(', ', array_map(fn($k) => ":$k", array_keys($data)));
+        $placeholders = implode(', ', array_map(function($k) { return ":$k"; }, array_keys($data)));
         $params       = [];
         foreach ($data as $k => $v) {
             $params[":$k"] = $v;
@@ -80,28 +97,15 @@ class NuDatabase {
         return (int)$this->pdo->lastInsertId();
     }
 
-    /**
-     * UPDATE a table row.
-     *
-     * $where must use named placeholders that do NOT collide with :set_* names.
-     * Example:  update('nu_forms', $row, 'form_id = :where_form_id', [':where_form_id' => 16])
-     *
-     * For convenience, if $whereParams is a plain positional array (e.g. [$id])
-     * AND $where contains exactly one '?' we auto-convert it to a named placeholder
-     * so PDO never sees mixed named + positional params.
-     */
+    // PHP 7.4 compatible — no arrow functions
     public function update($table, $data, $where, $whereParams = []) {
-        // Build named SET params (:set_colname = value)
-        $sets   = implode(', ', array_map(fn($k) => "{$k} = :set_{$k}", array_keys($data)));
+        $sets   = implode(', ', array_map(function($k) { return "{$k} = :set_{$k}"; }, array_keys($data)));
         $params = [];
         foreach ($data as $k => $v) {
             $params[":set_{$k}"] = $v;
         }
 
-        // Auto-convert a single positional '?' in $where to a named placeholder
-        // so we never mix named and positional params (PDO HY093).
         if (!empty($whereParams) && array_keys($whereParams) === range(0, count($whereParams) - 1)) {
-            // Positional array detected — rewrite each '?' to :where_0, :where_1 …
             $i = 0;
             $where = preg_replace_callback('/\?/', function() use (&$i) {
                 return ':where_' . $i++;
@@ -130,10 +134,7 @@ class NuDatabase {
     public function commit()           { $this->pdo->commit(); }
     public function rollback()         { $this->pdo->rollBack(); }
 
-    // IMPORTANT: destructor must do nothing that affects sessions or output.
-    // PHP calls __destruct during shutdown AFTER session_write_close().
     public function __destruct() {
-        // Intentionally empty - do not call session_destroy() or any session function here
         $this->pdo = null;
     }
 

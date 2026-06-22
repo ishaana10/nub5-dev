@@ -75,13 +75,32 @@ function nu_resolve_col_name(array $field): string {
     return preg_replace('/[^a-zA-Z0-9_]/', '', $name);
 }
 
+/**
+ * Execute a DDL statement via PDO::exec() — NOT via a prepared statement.
+ * MySQL cannot run CREATE/ALTER/DROP TABLE through native prepared statements.
+ * All DDL in this file must go through this function.
+ */
+function nu_ddl(NuDatabase $db, string $sql): void {
+    error_log('[forms.php DDL] ' . $sql);
+    try {
+        $db->exec($sql);
+        error_log('[forms.php DDL] OK');
+    } catch (Throwable $e) {
+        error_log('[forms.php DDL] FAILED: ' . $e->getMessage());
+        throw $e;
+    }
+}
+
 function nu_sync_table_from_layout(NuDatabase $db, string $table, string $layoutJson, string $pkType = 'autoincrement'): void {
     if ($table === '') return;
     $table = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
     if ($table === '') return;
 
     $layout = json_decode($layoutJson, true);
-    if (!is_array($layout)) return;
+    if (!is_array($layout)) {
+        error_log('[forms.php] nu_sync_table_from_layout: invalid JSON for table=' . $table);
+        return;
+    }
 
     $fields  = nu_flatten_fields($layout);
     $desired = [];
@@ -93,23 +112,28 @@ function nu_sync_table_from_layout(NuDatabase $db, string $table, string $layout
         $desired[$col] = nu_col_def_for_type($type);
     }
 
-    // Check if table exists using the working $db->query() wrapper
     $tableExists = (bool)$db->fetchOne("SHOW TABLES LIKE ?", [$table]);
+    error_log('[forms.php] nu_sync_table_from_layout: table=' . $table . ' exists=' . ($tableExists ? 'yes' : 'no') . ' desired_cols=' . count($desired));
 
     if (!$tableExists) {
+        // ── CREATE TABLE ──────────────────────────────────────────────────
         $pkDef = ($pkType === 'uuid')
             ? "`id` VARCHAR(36) NOT NULL PRIMARY KEY"
             : "`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY";
+
         $colsSql = '';
         foreach ($desired as $col => $def) {
             $colsSql .= ",\n  `{$col}` {$def}";
         }
         $colsSql .= ",\n  `created_at` DATETIME NULL DEFAULT NULL";
         $colsSql .= ",\n  `updated_at` DATETIME NULL DEFAULT NULL";
-        $db->query("CREATE TABLE `{$table}` (\n  {$pkDef}{$colsSql}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        $createSql = "CREATE TABLE `{$table}` (\n  {$pkDef}{$colsSql}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+        nu_ddl($db, $createSql);  // uses exec(), not query()
         return;
     }
 
+    // ── ALTER TABLE: add any missing columns ──────────────────────────────
     $existing = [];
     foreach ($db->fetchAll("DESCRIBE `{$table}`") as $row) {
         $existing[$row['Field']] = true;
@@ -118,16 +142,15 @@ function nu_sync_table_from_layout(NuDatabase $db, string $table, string $layout
     foreach ($desired as $col => $def) {
         if (isset($existing[$col])) continue;
         try {
-            $db->query("ALTER TABLE `{$table}` ADD COLUMN `{$col}` {$def}");
+            nu_ddl($db, "ALTER TABLE `{$table}` ADD COLUMN `{$col}` {$def}");  // uses exec()
         } catch (Throwable $e) {
-            error_log("[forms.php] ALTER TABLE {$table} ADD COLUMN {$col}: " . $e->getMessage());
+            // logged inside nu_ddl — continue with remaining columns
         }
     }
 }
 
 /**
  * Ensure nu_forms has all expected columns (auto-migration).
- * Safe to call on every request — uses DESCRIBE cache per request.
  */
 function nu_ensure_nu_forms_columns(NuDatabase $db): void {
     static $checked = false;
@@ -140,43 +163,41 @@ function nu_ensure_nu_forms_columns(NuDatabase $db): void {
     }
 
     $needed = [
-        'form_panel_mode'  => "VARCHAR(20) NOT NULL DEFAULT 'fixed'",
-        'form_panel_width' => "INT NOT NULL DEFAULT 0",
-        'form_custom_js'   => "MEDIUMTEXT NULL DEFAULT NULL",
+        'form_panel_mode'     => "VARCHAR(20) NOT NULL DEFAULT 'fixed'",
+        'form_panel_width'    => "INT NOT NULL DEFAULT 0",
+        'form_custom_js'      => "MEDIUMTEXT NULL DEFAULT NULL",
         'form_js_before_save' => "MEDIUMTEXT NULL DEFAULT NULL",
         'form_js_after_save'  => "MEDIUMTEXT NULL DEFAULT NULL",
-        'form_custom_php'  => "MEDIUMTEXT NULL DEFAULT NULL",
-        'form_custom_css'  => "MEDIUMTEXT NULL DEFAULT NULL",
+        'form_custom_php'     => "MEDIUMTEXT NULL DEFAULT NULL",
+        'form_custom_css'     => "MEDIUMTEXT NULL DEFAULT NULL",
     ];
 
     foreach ($needed as $col => $def) {
         if (isset($existing[$col])) continue;
         try {
-            $db->query("ALTER TABLE `nu_forms` ADD COLUMN `{$col}` {$def}");
+            nu_ddl($db, "ALTER TABLE `nu_forms` ADD COLUMN `{$col}` {$def}");
         } catch (Throwable $e) {
-            error_log("[forms.php] nu_forms auto-migrate ADD {$col}: " . $e->getMessage());
+            // logged inside nu_ddl
         }
     }
 }
 
 /**
- * Drop a table using the $db->query() wrapper (same path as all other
- * successful DDL in this file). Checks existence first with SHOW TABLES
- * to avoid relying on IF EXISTS support. Returns [bool $dropped, string $error].
+ * Drop a data table — uses exec() (DDL path).
  */
 function nu_drop_table(NuDatabase $db, string $table): array {
     $table = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
     if ($table === '') return [false, 'Empty table name after sanitisation'];
 
-    // Confirm the table actually exists before attempting DROP
     $exists = $db->fetchOne("SHOW TABLES LIKE ?", [$table]);
-    if (!$exists) {
-        return [true, '']; // already gone — treat as success
-    }
+    if (!$exists) return [true, ''];
 
-    // Use $db->query() — the same PDO path that handles all other DDL
-    $db->query("DROP TABLE `{$table}`");
-    return [true, ''];
+    try {
+        nu_ddl($db, "DROP TABLE `{$table}`");
+        return [true, ''];
+    } catch (Throwable $e) {
+        return [false, $e->getMessage()];
+    }
 }
 
 // ── GET a single form by ID ───────────────────────────────────────────────
@@ -205,7 +226,7 @@ function actionGetByCode($db) {
     }
 }
 
-// ── PATCH only the form_layout column ───────────────────────────────────────────
+// ── PATCH only the form_layout column ────────────────────────────────────
 function actionPatchLayout($db) {
     $id = $_GET['id'] ?? '';
     if (!$id) { echo json_encode(['success' => false, 'error' => 'Missing id']); return; }
@@ -250,7 +271,6 @@ function actionList($db) {
 
 // ── SAVE (insert or update) ───────────────────────────────────────────────
 function actionSave($db) {
-    // Ensure all expected nu_forms columns exist before writing
     nu_ensure_nu_forms_columns($db);
 
     $raw  = file_get_contents('php://input');
@@ -267,15 +287,19 @@ function actionSave($db) {
     $formLayout = $data['form_layout'] ?? '';
     if (is_array($formLayout)) $formLayout = json_encode($formLayout);
 
-    $formTable = $data['form_table'] ?? '';
-    $pkType    = $data['form_pk_type'] ?? 'autoincrement';
+    // Read these BEFORE array processing so DDL always has them
+    $formTable = trim($data['form_table'] ?? '');
+    $pkType    = trim($data['form_pk_type'] ?? 'autoincrement');
+    $tableMode = trim($data['form_table_mode'] ?? 'new');
+
+    error_log('[forms.php] actionSave: name=' . $formName . ' table=' . $formTable . ' pk=' . $pkType . ' mode=' . $tableMode);
 
     $row = [
         'form_name'                 => $formName,
         'form_code'                 => $formCode,
         'form_table'                => $formTable,
         'form_type'                 => $data['form_type']                ?? 'main',
-        'form_table_mode'           => $data['form_table_mode']          ?? 'new',
+        'form_table_mode'           => $tableMode,
         'form_pk_type'              => $pkType,
         'form_layout'               => $formLayout,
         'form_active'               => 1,
@@ -292,7 +316,6 @@ function actionSave($db) {
         'form_js_after_save'        => $data['form_js_after_save']       ?? '',
         'form_custom_php'           => $data['form_custom_php']          ?? '',
         'form_custom_css'           => $data['form_custom_css']          ?? '',
-        // Panel resize settings
         'form_panel_mode'           => $data['form_panel_mode']          ?? 'fixed',
         'form_panel_width'          => isset($data['form_panel_width'])  ? (int)$data['form_panel_width'] : 0,
     ];
@@ -302,6 +325,7 @@ function actionSave($db) {
             $row['updated_at'] = date('Y-m-d H:i:s');
             $db->update('nu_forms', $row, 'form_id = ?', [$formId]);
             $savedId = $formId;
+            error_log('[forms.php] actionSave: updated form_id=' . $savedId);
         } else {
             $existing = $db->fetchOne('SELECT form_id FROM nu_forms WHERE form_code = ?', [$formCode]);
             if ($existing) { echo json_encode(['success' => false, 'error' => "Form code '{$formCode}' already exists"]); return; }
@@ -309,18 +333,30 @@ function actionSave($db) {
             $row['updated_at'] = date('Y-m-d H:i:s');
             $db->insert('nu_forms', $row);
             $savedId = $db->lastInsertId();
+            error_log('[forms.php] actionSave: inserted form_id=' . $savedId);
         }
 
-        if ($formTable !== '' && $formLayout !== '') {
-            try {
-                nu_sync_table_from_layout($db, $formTable, $formLayout, $pkType);
-            } catch (Throwable $e) {
-                error_log('[forms.php] sync after save: ' . $e->getMessage());
+        // ── DDL: create or sync the data table ───────────────────────────
+        if ($formTable !== '' && $tableMode !== 'existing_no_sync') {
+            if ($formLayout !== '' && $formLayout !== '[]') {
+                try {
+                    nu_sync_table_from_layout($db, $formTable, $formLayout, $pkType);
+                } catch (Throwable $e) {
+                    error_log('[forms.php] DDL sync FAILED: ' . $e->getMessage());
+                    // form row already saved — DDL failure is logged, not fatal
+                }
+            } else {
+                error_log('[forms.php] actionSave: skipping DDL — form_layout empty for table=' . $formTable);
             }
+        } elseif ($formTable === '') {
+            error_log('[forms.php] actionSave: no form_table — skipping DDL');
+        } else {
+            error_log('[forms.php] actionSave: table_mode=existing_no_sync — skipping DDL for ' . $formTable);
         }
 
         echo json_encode(['success' => true, 'form_id' => $savedId]);
     } catch (Exception $e) {
+        error_log('[forms.php] actionSave EXCEPTION: ' . $e->getMessage());
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
 }
@@ -331,16 +367,13 @@ function actionDelete($db) {
     if (!$id) { echo json_encode(['success' => false, 'error' => 'Missing id']); return; }
 
     try {
-        // Read form_table BEFORE deleting the metadata row
         $form = $db->fetchOne('SELECT form_table FROM nu_forms WHERE form_id = ?', [$id]);
         if (!$form) { echo json_encode(['success' => false, 'error' => 'Form not found']); return; }
 
         $formTable = preg_replace('/[^a-zA-Z0-9_]/', '', trim($form['form_table'] ?? ''));
 
-        // Delete the nu_forms metadata row first
         $db->query('DELETE FROM nu_forms WHERE form_id = ?', [$id]);
 
-        // Now drop the data table — surface any error in the response
         $dropWarning = null;
         if ($formTable !== '') {
             [$dropped, $dropErr] = nu_drop_table($db, $formTable);
