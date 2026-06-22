@@ -437,6 +437,19 @@ function nu_render_field($field, $value = '', $record = []) {
                          . nu_html($value) . '</textarea>';
                 break;
 
+            // ── select2: always renders as <select data-select2="1"> ────────
+            // A field stored with type='select2' is a Select2-enhanced dropdown.
+            // Without this case it would fall through to `default:` and render
+            // as a plain <input type="text">, which nu-select2-init.js can never
+            // find or initialise.
+            case 'select2':
+                $multiple = !empty($field['multiple']) ? ' multiple' : '';
+                $control  = '<select class="' . nu_attr(trim($cssClass . ' nu-select2')) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $required . $multiple . ' data-select2="1" style="width:100%;">'
+                          . '<option value="">Select...</option>'
+                          . nu_render_options($field, $value)
+                          . '</select>';
+                break;
+
             case 'select':
                 $multiple   = !empty($field['multiple']) ? ' multiple' : '';
                 $useSelect2 = !empty($field['select2']);
