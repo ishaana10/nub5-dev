@@ -21,11 +21,13 @@
  * intact, so the stale (destroy-less) stub survived and crashed.
  *
  * Fix:
- *   1. Remove data-select2-id FIRST, before any Select2 call, so the
- *      constructor never has an ID to look up.
- *   2. Call $.removeData(el) with NO key to atomically flush the entire
+ *   1. Strip data-select2-id from ALL targets at the very start of
+ *      nuInitSelect2, before any per-element work, so stale IDs left
+ *      over from a previous render never reach the Select2 constructor.
+ *   2. Remove data-select2-id FIRST per element, before any Select2 call.
+ *   3. Call $.removeData(el) with NO key to atomically flush the entire
  *      jQuery data store for the element (both cache layers).
- *   3. Stamp data-nu-s2="1" after success to guard against double-init.
+ *   4. Stamp data-nu-s2="1" after success to guard against double-init.
  *
  * Public API
  *   nuDestroySelect2(el)   — hard-destroy a single element (safe if none)
@@ -108,10 +110,10 @@
 
   window.nuDestroySelect2 = nuDestroySelect2;
 
-  /* ── Run select2() on one already-cleaned element ──────────────── */
+  /* ── Run select2() on one already-cleaned element ────────────────── */
   function _initOne(el) {
     var $ = jQuery;
-    var placeholder = el.dataset.placeholder || 'Select\u2026';
+    var placeholder = el.dataset.placeholder || 'Select…';
     var allowClear  = el.dataset.allowClear !== 'false';
     var isMultiple  = el.dataset.selectMode === 'multiple' || el.hasAttribute('multiple');
 
@@ -170,6 +172,18 @@
 
     dbg('nuInitSelect2 — targets:', $targets.length);
 
+    // ── KEY FIX: strip stale data-select2-id from every target up-front ──
+    // When a form is re-rendered into an existing container, Select2 may have
+    // previously stamped data-select2-id onto the <select> elements. If those
+    // IDs survive into the next init cycle, Select2's constructor tries to call
+    // .destroy() on whatever $.data(el, id) returns — which is no longer a
+    // real Select2 instance — causing "r.GetData(...).destroy is not a function".
+    // Removing the attribute before any per-element work ensures the constructor
+    // never finds a stale ID to look up.
+    $targets.each(function () {
+      this.removeAttribute('data-select2-id');
+    });
+
     $targets.each(function () {
       var el = this;
 
@@ -195,6 +209,7 @@
   function nuReinitSelect2(el) {
     if (!el) return;
     el.removeAttribute(READY_ATTR);
+    el.removeAttribute('data-select2-id');
     nuDestroySelect2(el);
     _initOne(el);
   }
