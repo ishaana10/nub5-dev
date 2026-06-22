@@ -13,7 +13,9 @@ register_shutdown_function(function () {
     $error = error_get_last();
     if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
         while (ob_get_level()) ob_end_clean();
-        echo json_encode(['success' => false, 'error' => $error['message'] . ' in ' . basename($error['file']) . ':' . $error['line']]);
+        $msg = $error['message'] . ' in ' . basename($error['file']) . ':' . $error['line'];
+        error_log('[NuForm FATAL] ' . $msg);
+        echo json_encode(['success' => false, 'error' => $msg]);
     }
 });
 
@@ -25,6 +27,11 @@ function nu_json($arr, $status = 200) {
     }
     echo json_encode($arr);
     exit;
+}
+
+function nu_log($message, $context = '') {
+    $prefix = '[NuForm' . ($context !== '' ? ':' . $context : '') . '] ';
+    error_log($prefix . $message);
 }
 
 require_once __DIR__ . '/../config.php';
@@ -72,10 +79,15 @@ function nu_table_exists($table) {
 
 /**
  * Returns a set (keyed by column name => true) of real columns for $table.
- * Results are cached for the lifetime of the request.
+ * Results are cached per-request. Cache can be busted via $GLOBALS['_nu_col_cache'].
  */
 function nu_get_table_columns($table) {
     static $cache = [];
+    // Allow external cache bust (e.g. after ALTER TABLE)
+    if (isset($GLOBALS['_nu_col_cache'][$table])) {
+        $cache[$table] = $GLOBALS['_nu_col_cache'][$table];
+        unset($GLOBALS['_nu_col_cache'][$table]);
+    }
     if (isset($cache[$table])) return $cache[$table];
     try {
         $rows = nu_q("DESCRIBE `{$table}`")->fetchAll(PDO::FETCH_ASSOC);
@@ -89,24 +101,9 @@ function nu_get_table_columns($table) {
     }
 }
 
-/** Bust the nu_get_table_columns() cache for a given table (call after ALTER TABLE). */
-function nu_bust_column_cache($table) {
-    static $cache = [];
-    // Access the static var inside nu_get_table_columns via a trick: just re-fetch
-    // We use a separate static array in this function as a flag, then force a re-fetch
-    // by temporarily removing the entry from nu_get_table_columns's cache via reflection.
-    // Simpler: just call DESCRIBE directly and rebuild.
-    $rows = nu_q("DESCRIBE `{$table}`")->fetchAll(PDO::FETCH_ASSOC);
-    $cols = [];
-    foreach ($rows as $row) $cols[$row['Field']] = true;
-    // We can't easily bust the static inside nu_get_table_columns, so we use a wrapper approach.
-    // The simplest reliable solution: store in a global so nu_get_table_columns checks it.
-    $GLOBALS['_nu_col_cache'][$table] = $cols;
-}
-
 /**
  * Filter a $save array so only columns that actually exist in $table are kept.
- * The PK is always kept if present (it may not be in DESCRIBE when autoincrement)
+ * The PK is always kept if present.
  */
 function nu_filter_save_to_columns($save, $table, $pk) {
     $cols = nu_get_table_columns($table);
@@ -120,9 +117,7 @@ function nu_filter_save_to_columns($save, $table, $pk) {
 
 /**
  * Coerce a value coming from the JSON body so it is safe to pass to PDO.
- *
- * - Arrays (checkbox_group, select[multiple]) are joined to a comma-separated string.
- * - null / scalar values pass through unchanged.
+ * Arrays (checkbox_group, select[multiple]) are joined to a comma-separated string.
  */
 function nu_coerce_save_value($value) {
     if (is_array($value)) {
@@ -452,13 +447,6 @@ function nu_render_field($field, $value = '', $record = []) {
                          . nu_html($value) . '</textarea>';
                 break;
 
-            // ── select2: searchable dropdown enhanced by the Select2 library ───
-            // Emits data-select-type="select2"  (primary init selector used by nuInitSelect2
-            //                                    in nubuilder-next.js)
-            // NOTE: data-select2="1" is intentionally NOT emitted here.
-            //       Select2 v4 auto-initialises any <select data-select2="1"> at DOM-ready,
-            //       which fires before nubuilder-next.js loads and causes the
-            //       "already been initialized" double-init error.
             case 'select2':
                 $isMultiple  = !empty($field['multiple']);
                 $allowClear  = isset($field['allow_clear']) ? (bool)$field['allow_clear'] : true;
@@ -485,8 +473,6 @@ function nu_render_field($field, $value = '', $record = []) {
                 $allowClear  = isset($field['allow_clear']) ? (bool)$field['allow_clear'] : true;
                 $selectMode  = $isMultiple ? 'multiple' : 'single';
                 $multipleAttr = $isMultiple ? ' multiple' : '';
-                // When select2 flag is set, emit data-select-type="select2" as the init trigger.
-                // data-select2="1" is intentionally omitted (see note in select2 case above).
                 $s2Class  = $useSelect2 ? ' nu-select2' : '';
                 $s2Attrs  = $useSelect2
                     ? ' data-select-type="select2"'
@@ -757,19 +743,14 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
 
     $layout = nu_inject_parent_context($layout, $formTable, (string)($recordId ?? ''));
 
-    // ── Custom PHP hook (runs before render, may modify $record) ──────────
     $customPhp = trim((string)($form[$c['custom_php']] ?? ''));
     if ($customPhp !== '') {
         try {
-            // Expose $record and $form to the custom PHP snippet
             $data = $record;
             eval($customPhp);
-            // If snippet modifies $data, merge back into $record
             if (is_array($data)) $record = array_merge($record, $data);
         } catch (Throwable $e) {
-            // Silently swallow custom PHP errors in production;
-            // expose error as HTML comment for debugging
-            // phpcs:ignore
+            nu_log('custom_php error in form ' . $formCode . ': ' . $e->getMessage(), 'render');
             $layout[] = ['type' => 'html', 'html_content' => '<!-- custom_php error: ' . htmlspecialchars($e->getMessage()) . ' -->', 'col' => 12];
         }
     }
@@ -782,7 +763,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
            . ' onsubmit="event.preventDefault(); submitNuForm(this);"'
            . ' style="font-size:13px;">';
 
-    // ── Custom CSS injection ──────────────────────────────────────────────
     $customCss = trim((string)($form[$c['custom_css']] ?? ''));
     if ($customCss !== '') {
         $scopeId = 'nu-form-' . preg_replace('/[^a-zA-Z0-9_-]/', '-', $formCode);
@@ -794,7 +774,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
               . '</style>';
     }
 
-    // ── Group flat fields by row_index before rendering ──────────────────
     $structuredNodes = [];
     $flatByRow       = [];
     $flatNoRow       = [];
@@ -849,7 +828,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
     $html .= '<button type="submit" class="nu-btn nu-btn-primary">Save</button>';
     $html .= '</div></form>';
 
-    // ── Custom JS injection (on-load hook) ────────────────────────────────
     $customJs       = trim((string)($form[$c['custom_js']] ?? ''));
     $jsBeforeSave   = trim((string)($form[$c['js_before_save']] ?? ''));
     $jsAfterSave    = trim((string)($form[$c['js_after_save']] ?? ''));
@@ -860,7 +838,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
         $html .= '(function(){';
         $html .= 'var _fc=' . json_encode($formCode) . ';';
 
-        // On-load: run after form is inserted into DOM
         if ($customJs !== '') {
             $html .= 'window._nuFormOnLoad=window._nuFormOnLoad||{};';
             $html .= 'window._nuFormOnLoad[_fc]=function(formEl){';
@@ -869,7 +846,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
             $html .= '};';
         }
 
-        // Before save hook
         if ($jsBeforeSave !== '') {
             $html .= 'window._nuFormBeforeSave=window._nuFormBeforeSave||{};';
             $html .= 'window._nuFormBeforeSave[_fc]=function(formEl,data){';
@@ -878,7 +854,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
             $html .= '};';
         }
 
-        // After save hook
         if ($jsAfterSave !== '') {
             $html .= 'window._nuFormAfterSave=window._nuFormAfterSave||{};';
             $html .= 'window._nuFormAfterSave[_fc]=function(formEl,result){';
@@ -887,7 +862,6 @@ function nu_render_form_html($form, $record = [], $recordId = null) {
             $html .= '};';
         }
 
-        // Auto-trigger on-load hook once this <script> runs (form is already in DOM at this point)
         if ($customJs !== '') {
             $html .= 'var _el=document.querySelector(\'form.nu-generated-form[data-form-code="\'+_fc+\'"]\');';
             $html .= 'if(_el && typeof window._nuFormOnLoad[_fc]==="function") window._nuFormOnLoad[_fc](_el);';
@@ -930,9 +904,10 @@ function nu_flatten_layout($layout) {
 }
 
 function nu_flatten_layout_for_grid($layout) {
+    // Explicit closure instead of arrow function for PHP 7.4 compatibility
     return array_values(array_filter(
         nu_flatten_layout($layout),
-        fn($f) => !nu_field_hide_in_grid($f)
+        function ($f) { return !nu_field_hide_in_grid($f); }
     ));
 }
 
@@ -960,14 +935,22 @@ function nu_field_type_to_sql($fieldType) {
  */
 function nu_create_form_table($tableName, $pkType, array $fields) {
     $tableName = nu_safe_ident($tableName);
-    if ($tableName === '') return ['created' => false, 'error' => 'Empty table name'];
+    if ($tableName === '') {
+        nu_log('create_form_table called with empty table name', 'DDL');
+        return ['created' => false, 'error' => 'Empty table name'];
+    }
 
-    if (nu_table_exists($tableName)) return ['created' => false, 'error' => null];
+    if (nu_table_exists($tableName)) {
+        nu_log('Table already exists, skipping CREATE: ' . $tableName, 'DDL');
+        return ['created' => false, 'error' => null];
+    }
 
-    // PK definition
-    if ($pkType === 'uuid') {
+    // PK definition — normalise common variants
+    $pkTypeLower = strtolower(trim($pkType));
+    if ($pkTypeLower === 'uuid') {
         $pkDef = '`id` VARCHAR(36) NOT NULL PRIMARY KEY';
     } else {
+        // autoincrement / auto / int / anything else → AUTO_INCREMENT
         $pkDef = '`id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY';
     }
 
@@ -980,7 +963,6 @@ function nu_create_form_table($tableName, $pkType, array $fields) {
         if ($name === '' || isset($added[$name])) continue;
         if (in_array($type, ['html','content','button','fieldset','subform','heading','divider'], true)) continue;
 
-        // For lookup fields use the store column name
         if ($type === 'lookup') {
             $dbCol = nu_safe_ident(nu_resolve_lookup_store_col($field));
             if ($dbCol === '' || isset($added[$dbCol])) continue;
@@ -992,10 +974,14 @@ function nu_create_form_table($tableName, $pkType, array $fields) {
     }
 
     $sql = 'CREATE TABLE `' . $tableName . '` (' . implode(', ', $colDefs) . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4';
+    nu_log('Creating table: ' . $tableName . ' | SQL: ' . $sql, 'DDL');
+
     try {
         nu_db()->exec($sql);
+        nu_log('Table created successfully: ' . $tableName, 'DDL');
         return ['created' => true, 'error' => null];
     } catch (Throwable $e) {
+        nu_log('CREATE TABLE failed for ' . $tableName . ': ' . $e->getMessage(), 'DDL');
         return ['created' => false, 'error' => $e->getMessage()];
     }
 }
@@ -1006,7 +992,10 @@ function nu_create_form_table($tableName, $pkType, array $fields) {
  */
 function nu_sync_form_table_columns($tableName, array $fields) {
     $tableName = nu_safe_ident($tableName);
-    if ($tableName === '' || !nu_table_exists($tableName)) return ['added' => [], 'errors' => []];
+    if ($tableName === '' || !nu_table_exists($tableName)) {
+        nu_log('sync_columns skipped — table missing or empty name: ' . $tableName, 'DDL');
+        return ['added' => [], 'errors' => []];
+    }
 
     $existing = nu_get_table_columns($tableName);
     $added    = [];
@@ -1018,22 +1007,27 @@ function nu_sync_form_table_columns($tableName, array $fields) {
         if ($name === '') continue;
         if (in_array($type, ['html','content','button','fieldset','subform','heading','divider'], true)) continue;
 
-        // For lookup fields use the store column name
         if ($type === 'lookup') {
             $dbCol = nu_safe_ident(nu_resolve_lookup_store_col($field));
             if ($dbCol === '') continue;
             $name = $dbCol;
         }
 
-        if (isset($existing[$name])) continue; // already exists
+        if (isset($existing[$name])) continue;
 
         $colSql = nu_field_type_to_sql($type);
+        $alterSql = "ALTER TABLE `{$tableName}` ADD COLUMN `{$name}` {$colSql}";
+        nu_log('Adding column: ' . $tableName . '.' . $name . ' | SQL: ' . $alterSql, 'DDL');
+
         try {
-            nu_db()->exec("ALTER TABLE `{$tableName}` ADD COLUMN `{$name}` {$colSql}");
-            $added[]          = $name;
-            $existing[$name]  = true; // update local cache so duplicates are skipped
+            nu_db()->exec($alterSql);
+            $added[]         = $name;
+            $existing[$name] = true;
+            nu_log('Column added: ' . $tableName . '.' . $name, 'DDL');
         } catch (Throwable $e) {
-            $errors[] = "Column {$name}: " . $e->getMessage();
+            $errMsg = 'Column ' . $name . ': ' . $e->getMessage();
+            $errors[] = $errMsg;
+            nu_log('ALTER TABLE failed — ' . $errMsg, 'DDL');
         }
     }
 
@@ -1162,7 +1156,8 @@ function nu_handle_subform_save() {
 
     $save = nu_filter_save_to_columns($save, $table, $pk);
 
-    $saveWithoutPk = array_filter($save, fn($k) => $k !== $pk, ARRAY_FILTER_USE_KEY);
+    // PHP 7.4 compatible — explicit closure instead of arrow function
+    $saveWithoutPk = array_filter($save, function ($v, $k) use ($pk) { return $k !== $pk; }, ARRAY_FILTER_USE_BOTH);
     if (!$id && !$saveWithoutPk && !($pkType === 'uuid')) {
         nu_json(['success' => false, 'error' => 'No fields to save'], 400);
     }
@@ -1336,7 +1331,8 @@ function nu_handle_save() {
 
     $save = nu_filter_save_to_columns($save, $table, $pk);
 
-    $saveWithoutPk = array_filter($save, fn($k) => $k !== $pk, ARRAY_FILTER_USE_KEY);
+    // PHP 7.4 compatible — explicit closure instead of arrow function
+    $saveWithoutPk = array_filter($save, function ($v, $k) use ($pk) { return $k !== $pk; }, ARRAY_FILTER_USE_BOTH);
     if (!$id && empty($saveWithoutPk) && $pkType !== 'uuid') {
         nu_json(['success' => false, 'error' => 'No fields to save'], 400);
     }
@@ -1372,64 +1368,65 @@ function nu_handle_save_form() {
     $c        = nu_form_columns();
     $ftable   = nu_form_table_name();
 
-    // Required
     $name      = trim((string)($data['form_name']   ?? ''));
     $code      = trim((string)($data['form_code']   ?? ''));
+    // Read table BEFORE any array_intersect_key strip so it is always available for DDL
     $table     = trim((string)($data['form_table']  ?? ''));
     $layout    = $data['form_layout'] ?? [];
     $tableMode = trim((string)($data['form_table_mode'] ?? 'new'));
-    $pkType    = trim((string)($data['form_pk_type']    ?? 'autoincrement'));
+    // Normalise pk_type — accept 'autoincrement', 'auto', 'int', or 'uuid'
+    $pkType    = trim((string)($data['form_pk_type'] ?? 'autoincrement'));
+
+    nu_log('save_form called — name="' . $name . '" code="' . $code . '" table="' . $table . '" table_mode="' . $tableMode . '" pk_type="' . $pkType . '"', 'save_form');
 
     if ($name === '') nu_json(['success' => false, 'error' => 'form_name is required'], 400);
 
-    // Auto-generate code from name if not provided
     if ($code === '') {
         $code = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '_', $name));
         $code = trim($code, '_');
     }
 
     $save = [
-        $c['name']                    => $name,
-        $c['code']                    => $code,
-        $c['table']                   => $table,
-        $c['layout']                  => json_encode(is_array($layout) ? $layout : []),
-        $c['active']                  => 1,
-        $c['type']                    => $data['form_type']        ?? 'main',
-        $c['display_mode']            => $data['browse_display_mode'] ?? 'inline',
-        $c['pk_type']                 => $pkType,
-        $c['table_mode']              => $tableMode,
-        $c['custom_js']               => $data['form_custom_js']   ?? '',
-        $c['js_before_save']          => $data['form_js_before_save'] ?? '',
-        $c['js_after_save']           => $data['form_js_after_save']  ?? '',
-        $c['custom_php']              => $data['form_custom_php']  ?? '',
-        $c['custom_css']              => $data['form_custom_css']  ?? '',
-        $c['browse_sql']              => $data['browse_sql']       ?? '',
-        $c['browse_columns']          => $data['browse_columns']   ?? '',
-        $c['browse_search_enabled']   => !empty($data['browse_search_enabled']) ? 1 : 0,
+        $c['name']                     => $name,
+        $c['code']                     => $code,
+        $c['table']                    => $table,
+        $c['layout']                   => json_encode(is_array($layout) ? $layout : []),
+        $c['active']                   => 1,
+        $c['type']                     => $data['form_type']           ?? 'main',
+        $c['display_mode']             => $data['browse_display_mode'] ?? 'inline',
+        $c['pk_type']                  => $pkType,
+        $c['table_mode']               => $tableMode,
+        $c['custom_js']                => $data['form_custom_js']      ?? '',
+        $c['js_before_save']           => $data['form_js_before_save'] ?? '',
+        $c['js_after_save']            => $data['form_js_after_save']  ?? '',
+        $c['custom_php']               => $data['form_custom_php']     ?? '',
+        $c['custom_css']               => $data['form_custom_css']     ?? '',
+        $c['browse_sql']               => $data['browse_sql']          ?? '',
+        $c['browse_columns']           => $data['browse_columns']      ?? '',
+        $c['browse_search_enabled']    => !empty($data['browse_search_enabled']) ? 1 : 0,
         $c['browse_search_placeholder']=> $data['browse_search_placeholder'] ?? 'Search...',
-        $c['browse_search_fields']    => $data['browse_search_fields'] ?? '',
-        $c['browse_page_size']        => (int)($data['browse_page_size'] ?? 20),
-        $c['browse_default_sort']     => $data['browse_default_sort'] ?? '',
+        $c['browse_search_fields']     => $data['browse_search_fields']     ?? '',
+        $c['browse_page_size']         => (int)($data['browse_page_size']   ?? 20),
+        $c['browse_default_sort']      => $data['browse_default_sort']      ?? '',
     ];
 
-    // Strip any columns that don't exist in nu_forms yet (graceful degradation)
+    // Strip columns that don't exist yet in nu_forms (graceful degradation)
     $formTableCols = nu_get_table_columns($ftable);
     if (!empty($formTableCols)) {
         $save = array_intersect_key($save, $formTableCols);
     }
 
     if ($formId > 0) {
-        // UPDATE
         $sets = []; $params = [];
         foreach ($save as $col => $val) {
             $sets[]   = "`{$col}` = ?";
             $params[] = $val;
         }
         $params[] = $formId;
-        $pk = $c['id'];
-        nu_q("UPDATE `{$ftable}` SET " . implode(', ', $sets) . " WHERE `{$pk}` = ?", $params);
+        $pkCol = $c['id'];
+        nu_q("UPDATE `{$ftable}` SET " . implode(', ', $sets) . " WHERE `{$pkCol}` = ?", $params);
+        nu_log('Updated form row id=' . $formId, 'save_form');
     } else {
-        // INSERT
         $cols         = array_keys($save);
         $placeholders = array_fill(0, count($cols), '?');
         nu_q(
@@ -1437,34 +1434,45 @@ function nu_handle_save_form() {
             array_values($save)
         );
         $formId = (int)nu_db()->lastInsertId();
+        nu_log('Inserted form row id=' . $formId, 'save_form');
     }
 
-    // ── DDL: create table or add missing columns ─────────────────────────
-    $ddlResult   = ['created' => false, 'added' => [], 'errors' => []];
-    $safeTable   = nu_safe_ident($table);
-    $flatFields  = nu_flatten_layout(is_array($layout) ? $layout : []);
+    // ── DDL: create table or sync missing columns ────────────────────────
+    $ddlResult  = ['created' => false, 'added' => [], 'errors' => []];
+    $safeTable  = nu_safe_ident($table);
+    $flatFields = nu_flatten_layout(is_array($layout) ? $layout : []);
 
-    if ($safeTable !== '' && $tableMode !== 'existing_no_sync') {
-        if (!nu_table_exists($safeTable)) {
-            // Table does not exist — create it (regardless of table_mode)
-            $createResult = nu_create_form_table($safeTable, $pkType, $flatFields);
-            $ddlResult['created'] = $createResult['created'];
-            if ($createResult['error']) $ddlResult['errors'][] = $createResult['error'];
-        } else {
-            // Table exists — add any missing columns
-            $syncResult = nu_sync_form_table_columns($safeTable, $flatFields);
-            $ddlResult['added']  = $syncResult['added'];
-            $ddlResult['errors'] = $syncResult['errors'];
+    if ($safeTable === '') {
+        nu_log('No form_table specified — skipping DDL for form_id=' . $formId, 'save_form');
+    } elseif ($tableMode === 'existing_no_sync') {
+        nu_log('table_mode=existing_no_sync — skipping DDL for table ' . $safeTable, 'save_form');
+    } elseif (!nu_table_exists($safeTable)) {
+        // Table does not exist — create it
+        nu_log('Table does not exist, will CREATE: ' . $safeTable, 'save_form');
+        $createResult = nu_create_form_table($safeTable, $pkType, $flatFields);
+        $ddlResult['created'] = $createResult['created'];
+        if ($createResult['error']) {
+            $ddlResult['errors'][] = $createResult['error'];
+            nu_log('Table creation error for ' . $safeTable . ': ' . $createResult['error'], 'save_form');
+        }
+    } else {
+        // Table exists — sync missing columns
+        nu_log('Table exists, syncing columns for: ' . $safeTable, 'save_form');
+        $syncResult = nu_sync_form_table_columns($safeTable, $flatFields);
+        $ddlResult['added']  = $syncResult['added'];
+        $ddlResult['errors'] = $syncResult['errors'];
+        if ($syncResult['errors']) {
+            nu_log('Column sync errors for ' . $safeTable . ': ' . implode('; ', $syncResult['errors']), 'save_form');
         }
     }
 
     nu_json([
-        'success'    => true,
-        'form_id'    => $formId,
-        'form_code'  => $code,
-        'table_created'       => $ddlResult['created'],
-        'columns_added'       => $ddlResult['added'],
-        'ddl_errors'          => $ddlResult['errors'],
+        'success'        => true,
+        'form_id'        => $formId,
+        'form_code'      => $code,
+        'table_created'  => $ddlResult['created'],
+        'columns_added'  => $ddlResult['added'],
+        'ddl_errors'     => $ddlResult['errors'],
     ]);
 }
 
@@ -1484,35 +1492,35 @@ function nu_handle_load_form() {
 
     if (!$form) nu_json(['success' => false, 'error' => 'Form not found'], 404);
 
-    // Normalise output keys to the builder's expected camelCase / snake_case names
     nu_json(['success' => true, 'data' => [
         'form_id'                  => (int)$form[$c['id']],
-        'form_name'                => $form[$c['name']]                     ?? '',
-        'form_code'                => $form[$c['code']]                     ?? '',
-        'form_table'               => $form[$c['table']]                    ?? '',
+        'form_name'                => $form[$c['name']]                      ?? '',
+        'form_code'                => $form[$c['code']]                      ?? '',
+        'form_table'               => $form[$c['table']]                     ?? '',
         'form_layout'              => json_decode($form[$c['layout']] ?? '[]', true) ?: [],
-        'form_type'                => $form[$c['type']]                     ?? 'main',
-        'browse_display_mode'      => $form[$c['display_mode']]             ?? 'inline',
-        'form_pk_type'             => $form[$c['pk_type']]                  ?? 'autoincrement',
-        'form_table_mode'          => $form[$c['table_mode']]               ?? 'new',
-        'form_custom_js'           => $form[$c['custom_js']]                ?? '',
-        'form_js_before_save'      => $form[$c['js_before_save']]           ?? '',
-        'form_js_after_save'       => $form[$c['js_after_save']]            ?? '',
-        'form_custom_php'          => $form[$c['custom_php']]               ?? '',
-        'form_custom_css'          => $form[$c['custom_css']]               ?? '',
-        'browse_sql'               => $form[$c['browse_sql']]               ?? '',
-        'browse_columns'           => $form[$c['browse_columns']]           ?? '',
-        'browse_search_enabled'    => (int)($form[$c['browse_search_enabled']] ?? 0),
-        'browse_search_placeholder'=> $form[$c['browse_search_placeholder']] ?? 'Search...',
-        'browse_search_fields'     => $form[$c['browse_search_fields']]     ?? '',
-        'browse_page_size'         => (int)($form[$c['browse_page_size']]   ?? 20),
-        'browse_default_sort'      => $form[$c['browse_default_sort']]      ?? '',
+        'form_type'                => $form[$c['type']]                      ?? 'main',
+        'browse_display_mode'      => $form[$c['display_mode']]              ?? 'inline',
+        'form_pk_type'             => $form[$c['pk_type']]                   ?? 'autoincrement',
+        'form_table_mode'          => $form[$c['table_mode']]                ?? 'new',
+        'form_custom_js'           => $form[$c['custom_js']]                 ?? '',
+        'form_js_before_save'      => $form[$c['js_before_save']]            ?? '',
+        'form_js_after_save'       => $form[$c['js_after_save']]             ?? '',
+        'form_custom_php'          => $form[$c['custom_php']]                ?? '',
+        'form_custom_css'          => $form[$c['custom_css']]                ?? '',
+        'browse_sql'               => $form[$c['browse_sql']]                ?? '',
+        'browse_columns'           => $form[$c['browse_columns']]            ?? '',
+        'browse_search_enabled'    => (int)($form[$c['browse_search_enabled']]  ?? 0),
+        'browse_search_placeholder'=> $form[$c['browse_search_placeholder']]  ?? 'Search...',
+        'browse_search_fields'     => $form[$c['browse_search_fields']]      ?? '',
+        'browse_page_size'         => (int)($form[$c['browse_page_size']]    ?? 20),
+        'browse_default_sort'      => $form[$c['browse_default_sort']]       ?? '',
     ]]);
 }
 
 /* ── Router ────────────────────────────────────────── */
 try {
     $action = $_GET['action'] ?? '';
+    nu_log('action=' . $action, 'router');
     switch ($action) {
         case 'render':           nu_handle_render();          break;
         case 'fields':           nu_handle_fields();          break;
@@ -1525,8 +1533,11 @@ try {
         case 'subform_list':     nu_handle_subform_list();    break;
         case 'subform_save':     nu_handle_subform_save();    break;
         case 'subform_delete':   nu_handle_subform_delete();  break;
-        default: nu_json(['success' => false, 'error' => 'Invalid action'], 400);
+        default:
+            nu_log('Unknown action: ' . $action, 'router');
+            nu_json(['success' => false, 'error' => 'Invalid action'], 400);
     }
 } catch (Throwable $e) {
+    nu_log('Unhandled exception in action=' . ($_GET['action'] ?? '') . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), 'router');
     nu_json(['success' => false, 'error' => $e->getMessage()], 500);
 }
