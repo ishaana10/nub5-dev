@@ -311,12 +311,47 @@ function nu_field_is_fk($field)           { return !empty($field['is_fk']); }
 function nu_field_hide_in_grid($field)     { return !empty($field['hide_in_grid']); }
 function nu_field_server_readonly($field)  { return !empty($field['server_readonly']); }
 
+// ── FIX: helpers for new field flags ────────────────────────────────────────
+function nu_field_readonly($field)               { return !empty($field['readonly']); }
+function nu_field_hidden_for_normal_users($field) { return !empty($field['hidden_for_normal_users']); }
+function nu_field_no_duplicate($field)           { return !empty($field['no_duplicate']); }
+
+/**
+ * Returns true if the current user is an admin/globeadmin.
+ * Used to decide whether hidden_for_normal_users fields are shown.
+ */
+function nu_current_user_is_admin() {
+    static $result = null;
+    if ($result !== null) return $result;
+    try {
+        if (!class_exists('NuAuth')) { $result = false; return false; }
+        $auth = NuAuth::getInstance();
+        if (!$auth->checkAuth()) { $result = false; return false; }
+        $user = $auth->getCurrentUser();
+        if (!is_array($user)) { $result = false; return false; }
+        $role = strtolower((string)($user['usr_role'] ?? ($user['role'] ?? ($user['access_level'] ?? ''))));
+        $result = in_array($role, ['admin', 'globeadmin'], true);
+    } catch (Throwable $e) {
+        $result = false;
+    }
+    return $result;
+}
+
 function nu_render_field($field, $value = '', $record = []) {
     $type  = nu_field_type($field);
     $name  = nu_field_name($field);
     $label = nu_field_label($field);
 
     if ($name === '' && !in_array($type, ['html','content','button','fieldset'], true)) return '';
+
+    // ── FIX: hidden_for_normal_users — skip rendering for non-admins ────────
+    if (nu_field_hidden_for_normal_users($field) && !nu_current_user_is_admin()) {
+        // Emit a hidden input so the value is preserved on save, but show nothing
+        if ($name !== '') {
+            return '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">';
+        }
+        return '';
+    }
 
     if (nu_field_is_fk($field)) {
         return '<input type="hidden"'
@@ -339,17 +374,24 @@ function nu_render_field($field, $value = '', $record = []) {
         ? '<div style="font-size:11px;color:#999;margin-top:3px;">' . nu_html($helpText) . '</div>'
         : '';
 
+    // ── FIX: apply readonly flag to field rendering ─────────────────────────
+    $isReadonly   = nu_field_readonly($field);
+    $readonlyAttr = $isReadonly ? ' readonly' : '';
+    $readonlyStyle = $isReadonly ? 'background:var(--bg-offset,#f5f5f5);color:#888;cursor:default;' : '';
+
     $fullWidthTypes = ['subform', 'html', 'content', 'button', 'fieldset', 'checkbox'];
 
     if (in_array($type, $fullWidthTypes, true)) {
 
         if ($type === 'checkbox') {
-            $checked = !empty($value) ? ' checked' : '';
+            // readonly checkbox: disable interaction
+            $checkedAttr  = !empty($value) ? ' checked' : '';
+            $disabledAttr = $isReadonly ? ' disabled' : '';
             $control = '<div class="nu-field-wrapper" data-field="' . nu_attr($name) . '"'
                      . ' style="grid-column:span ' . $col . ';min-width:0;padding:6px 0;">'
-                     . '<label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;">'
+                     . '<label style="display:inline-flex;align-items:center;gap:8px;cursor:' . ($isReadonly ? 'default' : 'pointer') . ';">'
                      . '<input type="hidden" name="' . nu_attr($name) . '" value="0">'
-                     . '<input type="checkbox" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="1"' . $checked . ' style="width:15px;height:15px;">'
+                     . '<input type="checkbox" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="1"' . $checkedAttr . $disabledAttr . ' style="width:15px;height:15px;">'
                      . '<span style="font-weight:600;font-size:13px;">' . nu_html($label) . '</span>'
                      . '</label>'
                      . $helpHtml
@@ -411,19 +453,21 @@ function nu_render_field($field, $value = '', $record = []) {
         return '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">';
     }
 
+    // ── FIX: uuid — always build $control first, then fall through to wrapper ─
     if ($type === 'uuid') {
         if ($value !== '' && $value !== null) {
             $control = '<input type="text" class="' . nu_attr($cssClass) . '" value="' . nu_attr($value) . '" readonly style="background:var(--bg-offset,#f5f5f5);color:#888;cursor:default;width:100%;">'
                      . '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">';
         } else {
-            return '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="">';
+            // New record — emit hidden only; fall through to wrapper so label is shown
+            $control = '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="">';
         }
     } else {
         switch ($type) {
 
             case 'textarea':
                 $rows    = (int)($field['rows'] ?? 3);
-                $control = '<textarea class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $placeholder . $required . ' rows="' . $rows . '" style="width:100%;resize:vertical;">'
+                $control = '<textarea class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $placeholder . $required . $readonlyAttr . ' rows="' . $rows . '" style="width:100%;resize:vertical;' . $readonlyStyle . '">'
                          . nu_html($value) . '</textarea>';
                 break;
 
@@ -432,17 +476,19 @@ function nu_render_field($field, $value = '', $record = []) {
                 $allowClear  = isset($field['allow_clear']) ? (bool)$field['allow_clear'] : true;
                 $selectMode  = $isMultiple ? 'multiple' : 'single';
                 $multipleAttr = $isMultiple ? ' multiple' : '';
+                $disabledAttr = $isReadonly ? ' disabled' : '';
                 $control  = '<select'
                           . ' class="' . nu_attr(trim($cssClass . ' nu-select2')) . '"'
                           . ' data-field="'       . nu_attr($name)         . '"'
                           . ' name="'             . nu_attr($name)         . '"'
                           . $required
                           . $multipleAttr
+                          . $disabledAttr
                           . ' data-select-type="select2"'
                           . ' data-select-mode="' . $selectMode            . '"'
                           . ' data-allow-clear="' . ($allowClear ? 'true' : 'false') . '"'
-                          . ' style="width:100%;">'
-                          . '<option value="">Select...</option>'
+                          . ' style="width:100%;">'.
+                          '<option value="">Select...</option>'
                           . nu_render_options($field, $value)
                           . '</select>';
                 break;
@@ -453,6 +499,7 @@ function nu_render_field($field, $value = '', $record = []) {
                 $allowClear  = isset($field['allow_clear']) ? (bool)$field['allow_clear'] : true;
                 $selectMode  = $isMultiple ? 'multiple' : 'single';
                 $multipleAttr = $isMultiple ? ' multiple' : '';
+                $disabledAttr = $isReadonly ? ' disabled' : '';
                 $s2Class  = $useSelect2 ? ' nu-select2' : '';
                 $s2Attrs  = $useSelect2
                     ? ' data-select-type="select2"'
@@ -465,6 +512,7 @@ function nu_render_field($field, $value = '', $record = []) {
                           . ' name="'       . nu_attr($name) . '"'
                           . $required
                           . $multipleAttr
+                          . $disabledAttr
                           . $s2Attrs
                           . ' style="width:100%;">'
                           . '<option value="">Select...</option>'
@@ -493,52 +541,54 @@ function nu_render_field($field, $value = '', $record = []) {
                 }
                 $inputType   = ($type === 'radio') ? 'radio' : 'checkbox';
                 $currentVals = is_array($value) ? array_map('strval', $value) : array_map('trim', explode(',', (string)$value));
+                $disabledAttr = $isReadonly ? ' disabled' : '';
                 $control = '<div style="display:flex;flex-wrap:wrap;gap:8px 16px;padding-top:4px;">';
                 foreach ($options as $opt) {
                     $optValue = (string)($opt['value'] ?? '');
                     $optLabel = (string)($opt['label'] ?? $optValue);
                     $checked  = in_array($optValue, $currentVals, true) ? ' checked' : '';
                     $iname    = ($type === 'radio') ? $name : $name . '[]';
-                    $control .= '<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">'
-                              . '<input type="' . $inputType . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($iname) . '" value="' . nu_attr($optValue) . '"' . $checked . '>'
+                    $control .= '<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;cursor:' . ($isReadonly ? 'default' : 'pointer') . ';">'
+                              . '<input type="' . $inputType . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($iname) . '" value="' . nu_attr($optValue) . '"' . $checked . $disabledAttr . '>'
                               . nu_html($optLabel) . '</label>';
                 }
                 $control .= '</div>';
                 break;
 
             case 'date':
-                $control = '<input type="date" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $required . ' style="width:100%;">';
+                $control = '<input type="date" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $required . $readonlyAttr . ' style="width:100%;' . $readonlyStyle . '">';
                 break;
 
             case 'time':
-                $control = '<input type="time" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $required . ' style="width:100%;">';
+                $control = '<input type="time" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $required . $readonlyAttr . ' style="width:100%;' . $readonlyStyle . '">';
                 break;
 
             case 'datetime':
                 $v       = $value ? str_replace(' ', 'T', substr((string)$value, 0, 16)) : '';
-                $control = '<input type="datetime-local" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($v) . '"' . $required . ' style="width:100%;">';
+                $control = '<input type="datetime-local" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($v) . '"' . $required . $readonlyAttr . ' style="width:100%;' . $readonlyStyle . '">';
                 break;
 
             case 'number':
                 $min  = isset($field['min'])  && $field['min']  !== '' ? ' min="'  . nu_attr($field['min'])  . '"' : '';
                 $max  = isset($field['max'])  && $field['max']  !== '' ? ' max="'  . nu_attr($field['max'])  . '"' : '';
                 $step = isset($field['step']) && $field['step'] !== '' ? ' step="' . nu_attr($field['step']) . '"' : '';
-                $control = '<input type="number" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . $min . $max . $step . ' style="width:100%;">';
+                $control = '<input type="number" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . $min . $max . $step . $readonlyAttr . ' style="width:100%;' . $readonlyStyle . '">';
                 break;
 
             case 'email':
-                $control = '<input type="email" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . ' style="width:100%;">';
+                $control = '<input type="email" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . $readonlyAttr . ' style="width:100%;' . $readonlyStyle . '">';
                 break;
 
             case 'password':
-                $control = '<input type="password" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '"' . $placeholder . $required . ' style="width:100%;">';
+                $control = '<input type="password" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '"' . $placeholder . $required . $readonlyAttr . ' style="width:100%;' . $readonlyStyle . '">';
                 break;
 
             case 'file':
             case 'image':
                 $accept   = !empty($field['accept'])          ? ' accept="' . nu_attr($field['accept']) . '"' : ($type === 'image' ? ' accept="image/*"' : '');
                 $multiple = !empty($field['multiple_upload']) ? ' multiple' : '';
-                $control  = '<input type="file" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $accept . $multiple . ' style="width:100%;">';
+                $disabledAttr = $isReadonly ? ' disabled' : '';
+                $control  = '<input type="file" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '"' . $accept . $multiple . $disabledAttr . ' style="width:100%;">';
                 if (!empty($value)) $control .= '<div style="margin-top:4px;font-size:11px;color:#888;">Current: ' . nu_html($value) . '</div>';
                 break;
 
@@ -550,14 +600,21 @@ function nu_render_field($field, $value = '', $record = []) {
                 $lFilter     = $lookup['filter'] ?? '';
                 $lExtra      = $lookup['extra']  ?? '';
                 $displayVal  = nu_render_lookup_display($field, $value);
-                $control = '<div style="display:flex;gap:6px;align-items:center;">'
-                    . '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">'
-                    . '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '_display" value="' . nu_attr($displayVal) . '" readonly style="flex:1;">'
-                    . '<button type="button" class="nu-btn nu-btn-ghost" style="white-space:nowrap;" onclick="openLookupModal('
-                    . '\'' . addslashes($name) . '\',\'' . addslashes($lTable) . '\',\'' . addslashes($lIdCol) . '\',\'' . addslashes($lDisplayCol) . '\',\'' . addslashes($lFilter) . '\',\'' . addslashes($lExtra) . '\''
-                    . ')">&#x1F50D;</button>'
-                    . '<button type="button" class="nu-btn nu-btn-ghost" onclick="clearLookup(\'' . addslashes($name) . '\')">&#x2715;</button>'
-                    . '</div>';
+                if ($isReadonly) {
+                    $control = '<div style="display:flex;gap:6px;align-items:center;">'
+                        . '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">'
+                        . '<input type="text" class="' . nu_attr($cssClass) . '" value="' . nu_attr($displayVal) . '" readonly style="flex:1;background:var(--bg-offset,#f5f5f5);color:#888;cursor:default;">'
+                        . '</div>';
+                } else {
+                    $control = '<div style="display:flex;gap:6px;align-items:center;">'
+                        . '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">'
+                        . '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '_display" value="' . nu_attr($displayVal) . '" readonly style="flex:1;">'
+                        . '<button type="button" class="nu-btn nu-btn-ghost" style="white-space:nowrap;" onclick="openLookupModal('
+                        . '\'' . addslashes($name) . '\',\'' . addslashes($lTable) . '\',\'' . addslashes($lIdCol) . '\',\'' . addslashes($lDisplayCol) . '\',\'' . addslashes($lFilter) . '\',\'' . addslashes($lExtra) . '\''
+                        . ')">&#x1F50D;</button>'
+                        . '<button type="button" class="nu-btn nu-btn-ghost" onclick="clearLookup(\'' . addslashes($name) . '\')">&#x2715;</button>'
+                        . '</div>';
+                }
                 break;
 
             case 'calculated':
@@ -566,7 +623,7 @@ function nu_render_field($field, $value = '', $record = []) {
                 break;
 
             default:
-                $control = '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . ' style="width:100%;">';
+                $control = '<input type="text" class="' . nu_attr($cssClass) . '" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '"' . $placeholder . $required . $readonlyAttr . ' style="width:100%;' . $readonlyStyle . '">';
                 break;
         }
     }
@@ -1160,7 +1217,11 @@ function nu_handle_subform_save() {
             continue;
         }
 
-        if (nu_field_server_readonly($field) || nu_field_is_fk($field)) continue;
+        // ── FIX: skip readonly fields on save (both server_readonly and readonly flags) ──
+        if (nu_field_server_readonly($field) || nu_field_is_fk($field) || nu_field_readonly($field)) continue;
+
+        // ── FIX: skip no_duplicate fields on INSERT ──────────────────────────────────────
+        if (!$id && nu_field_no_duplicate($field)) continue;
 
         if ($type === 'lookup') {
             $dbCol = nu_resolve_lookup_store_col($field);
@@ -1246,12 +1307,15 @@ function nu_handle_fields() {
     $out    = [];
     foreach ($fields as $field) {
         $out[] = [
-            'fieldname'       => nu_field_name($field),
-            'fieldlabel'      => nu_field_label($field),
-            'fieldtype'       => nu_field_type($field),
-            'is_fk'           => nu_field_is_fk($field),
-            'hide_in_grid'    => nu_field_hide_in_grid($field),
-            'server_readonly' => nu_field_server_readonly($field),
+            'fieldname'               => nu_field_name($field),
+            'fieldlabel'              => nu_field_label($field),
+            'fieldtype'               => nu_field_type($field),
+            'is_fk'                   => nu_field_is_fk($field),
+            'hide_in_grid'            => nu_field_hide_in_grid($field),
+            'server_readonly'         => nu_field_server_readonly($field),
+            'readonly'                => nu_field_readonly($field),
+            'hidden_for_normal_users' => nu_field_hidden_for_normal_users($field),
+            'no_duplicate'            => nu_field_no_duplicate($field),
         ];
     }
     nu_json(['success' => true, 'data' => $out]);
@@ -1435,7 +1499,13 @@ function nu_handle_save() {
             continue;
         }
 
+        // ── FIX: skip readonly and hidden_for_normal_users (non-admin) on save ──
         if (nu_field_server_readonly($field)) continue;
+        if (nu_field_readonly($field)) continue;
+        if (nu_field_hidden_for_normal_users($field) && !nu_current_user_is_admin()) continue;
+
+        // ── FIX: skip no_duplicate fields on INSERT ───────────────────────────
+        if (!$id && nu_field_no_duplicate($field)) continue;
 
         if ($type === 'lookup') {
             $dbCol = nu_resolve_lookup_store_col($field);
