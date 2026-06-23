@@ -1339,6 +1339,9 @@ if (!window._nbFormsModuleInit) {
       return 'text';
     };
 
+    // Named helper: convert snake_case column name → Title Case label
+    const makeLabel = name => name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
     // System/meta columns to skip
     const skip = new Set(['id','created_at','updated_at','created_by','updated_by','deleted_at']);
 
@@ -1349,14 +1352,13 @@ if (!window._nbFormsModuleInit) {
       nbFormBuilder.clearCanvas();
     }
 
+    // addField(type, extraData) — type is a string, extraData is an options object
     userCols.forEach(col => {
       if (typeof nbFormBuilder.addField === 'function') {
-        nbFormBuilder.addField({
-          name:  col.Field,
-          label: col.Field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-          type:  mapType(col.Type),
-          span:  6,
-        });
+        nbFormBuilder.addField(
+          mapType(col.Type),
+          { name: col.Field, label: makeLabel(col.Field), col: 6 }
+        );
       }
     });
 
