@@ -1061,10 +1061,20 @@ function nu_handle_subform_fields() {
 
     $c      = nu_form_columns();
     $table  = nu_safe_ident($form[$c['table']] ?? '');
-    $fields = nu_flatten_layout(nu_decode_layout($form));
+    $layout = nu_decode_layout($form);
     $pk     = $table !== '' ? nu_get_pk($table) : 'id';
 
-    nu_json(['success' => true, 'data' => ['layout' => $fields, 'pk' => $pk]]);
+    // Return both grid-filtered layout and unfiltered all_fields so the
+    // Add Row modal can correctly render FK fields as hidden inputs,
+    // mirroring what nu_handle_subform_list() returns.
+    $allFields  = nu_flatten_layout($layout);
+    $gridFields = nu_flatten_layout_for_grid($layout);
+
+    nu_json(['success' => true, 'data' => [
+        'layout'     => $gridFields,
+        'all_fields' => $allFields,
+        'pk'         => $pk,
+    ]]);
 }
 
 function nu_handle_subform_list() {
