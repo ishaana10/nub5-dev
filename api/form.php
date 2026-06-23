@@ -311,26 +311,37 @@ function nu_field_is_fk($field)           { return !empty($field['is_fk']); }
 function nu_field_hide_in_grid($field)     { return !empty($field['hide_in_grid']); }
 function nu_field_server_readonly($field)  { return !empty($field['server_readonly']); }
 
-// ── FIX: helpers for new field flags ────────────────────────────────────────
+// ── helpers for field flags ────────────────────────────────────────────────
 function nu_field_readonly($field)               { return !empty($field['readonly']); }
+function nu_field_hidden($field)                 { return !empty($field['hidden']); }
 function nu_field_hidden_for_normal_users($field) { return !empty($field['hidden_for_normal_users']); }
 function nu_field_no_duplicate($field)           { return !empty($field['no_duplicate']); }
 
 /**
  * Returns true if the current user is an admin/globeadmin.
- * Used to decide whether hidden_for_normal_users fields are shown.
+ * Tries NuAuth first, then falls back to $_SESSION directly.
  */
 function nu_current_user_is_admin() {
     static $result = null;
     if ($result !== null) return $result;
     try {
-        if (!class_exists('NuAuth')) { $result = false; return false; }
-        $auth = NuAuth::getInstance();
-        if (!$auth->checkAuth()) { $result = false; return false; }
-        $user = $auth->getCurrentUser();
-        if (!is_array($user)) { $result = false; return false; }
-        $role = strtolower((string)($user['usr_role'] ?? ($user['role'] ?? ($user['access_level'] ?? ''))));
-        $result = in_array($role, ['admin', 'globeadmin'], true);
+        // 1. Try NuAuth
+        if (class_exists('NuAuth')) {
+            $auth = NuAuth::getInstance();
+            if ($auth->checkAuth()) {
+                $user = $auth->getCurrentUser();
+                if (is_array($user)) {
+                    $role = strtolower((string)($user['usr_role'] ?? ($user['role'] ?? ($user['access_level'] ?? ''))));
+                    $result = in_array($role, ['admin', 'globeadmin'], true);
+                    return $result;
+                }
+            }
+        }
+        // 2. Fallback: check $_SESSION directly
+        $sessionRole = strtolower((string)(
+            $_SESSION['usr_role'] ?? $_SESSION['role'] ?? $_SESSION['access_level'] ?? ''
+        ));
+        $result = in_array($sessionRole, ['admin', 'globeadmin'], true);
     } catch (Throwable $e) {
         $result = false;
     }
@@ -344,9 +355,16 @@ function nu_render_field($field, $value = '', $record = []) {
 
     if ($name === '' && !in_array($type, ['html','content','button','fieldset'], true)) return '';
 
-    // ── FIX: hidden_for_normal_users — skip rendering for non-admins ────────
+    // ── hidden_for_normal_users — skip rendering for non-admins ────────────
     if (nu_field_hidden_for_normal_users($field) && !nu_current_user_is_admin()) {
-        // Emit a hidden input so the value is preserved on save, but show nothing
+        if ($name !== '') {
+            return '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">';
+        }
+        return '';
+    }
+
+    // ── hidden flag — render as hidden input, show nothing ─────────────────
+    if (nu_field_hidden($field)) {
         if ($name !== '') {
             return '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">';
         }
@@ -374,7 +392,7 @@ function nu_render_field($field, $value = '', $record = []) {
         ? '<div style="font-size:11px;color:#999;margin-top:3px;">' . nu_html($helpText) . '</div>'
         : '';
 
-    // ── FIX: apply readonly flag to field rendering ─────────────────────────
+    // ── apply readonly flag to field rendering ──────────────────────────────
     $isReadonly   = nu_field_readonly($field);
     $readonlyAttr = $isReadonly ? ' readonly' : '';
     $readonlyStyle = $isReadonly ? 'background:var(--bg-offset,#f5f5f5);color:#888;cursor:default;' : '';
@@ -453,7 +471,7 @@ function nu_render_field($field, $value = '', $record = []) {
         return '<input type="hidden" data-field="' . nu_attr($name) . '" name="' . nu_attr($name) . '" value="' . nu_attr($value) . '">';
     }
 
-    // ── FIX: uuid — always build $control first, then fall through to wrapper ─
+    // ── uuid — always build $control first, then fall through to wrapper ────
     if ($type === 'uuid') {
         if ($value !== '' && $value !== null) {
             $control = '<input type="text" class="' . nu_attr($cssClass) . '" value="' . nu_attr($value) . '" readonly style="background:var(--bg-offset,#f5f5f5);color:#888;cursor:default;width:100%;">'
@@ -1121,9 +1139,6 @@ function nu_handle_subform_fields() {
     $layout = nu_decode_layout($form);
     $pk     = $table !== '' ? nu_get_pk($table) : 'id';
 
-    // Return both grid-filtered layout and unfiltered all_fields so the
-    // Add Row modal can correctly render FK fields as hidden inputs,
-    // mirroring what nu_handle_subform_list() returns.
     $allFields  = nu_flatten_layout($layout);
     $gridFields = nu_flatten_layout_for_grid($layout);
 
@@ -1217,10 +1232,10 @@ function nu_handle_subform_save() {
             continue;
         }
 
-        // ── FIX: skip readonly fields on save (both server_readonly and readonly flags) ──
+        // skip readonly fields on save (both server_readonly and readonly flags)
         if (nu_field_server_readonly($field) || nu_field_is_fk($field) || nu_field_readonly($field)) continue;
 
-        // ── FIX: skip no_duplicate fields on INSERT ──────────────────────────────────────
+        // skip no_duplicate fields on INSERT
         if (!$id && nu_field_no_duplicate($field)) continue;
 
         if ($type === 'lookup') {
@@ -1314,6 +1329,7 @@ function nu_handle_fields() {
             'hide_in_grid'            => nu_field_hide_in_grid($field),
             'server_readonly'         => nu_field_server_readonly($field),
             'readonly'                => nu_field_readonly($field),
+            'hidden'                  => nu_field_hidden($field),
             'hidden_for_normal_users' => nu_field_hidden_for_normal_users($field),
             'no_duplicate'            => nu_field_no_duplicate($field),
         ];
@@ -1327,16 +1343,6 @@ function nu_handle_events() {
 
 /**
  * nu_handle_list — browse query with optional role-based browse_php override.
- *
- * browse_php is a PHP snippet stored on the form that can set $nuSql to
- * override the default SELECT, and $nuParams for bound parameters.
- *
- * Available variables inside browse_php:
- *   $nuHash   — array from nu_get_hash() (USER_ID, ACCESS_LEVEL_CODE, station …)
- *   $nuSql    — set this to override the query entirely
- *   $nuParams — array of PDO bound values matching $nuSql placeholders
- *   $nuWhere  — set this to append a WHERE clause to the default query
- *   $nuOrder  — set this to override ORDER BY
  */
 function nu_handle_list() {
     $code = $_GET['code'] ?? '';
@@ -1364,33 +1370,28 @@ function nu_handle_list() {
     $sortSql    = trim((string)($form[$c['browse_default_sort']] ?? ''));
     $defaultOrder = $sortSql !== '' ? $sortSql : "`{$pk}` DESC";
 
-    // ── browse_php: let form developer override the query ─────────────────
     $browsePhp = trim((string)($form[$c['browse_php']] ?? ''));
     $nuHash    = nu_get_hash();
-    $nuSql     = null;   // full SQL override
-    $nuParams  = [];     // bound params for $nuSql
-    $nuWhere   = '';     // extra WHERE clause appended to default query
-    $nuOrder   = '';     // ORDER BY override
+    $nuSql     = null;
+    $nuParams  = [];
+    $nuWhere   = '';
+    $nuOrder   = '';
 
     if ($browsePhp !== '') {
         try {
             eval($browsePhp);
         } catch (Throwable $e) {
             nu_log('browse_php error in form ' . $code . ': ' . $e->getMessage(), 'list');
-            // Fall through to default query on error
         }
     }
 
-    // ── Build query ──────────────────────────────────────────────────────
     $searchEnabled = (int)($form[$c['browse_search_enabled']] ?? 0);
     $searchFields  = trim((string)($form[$c['browse_search_fields']] ?? ''));
 
     if ($nuSql !== null) {
-        // Full override — developer controls everything
         $baseSql    = $nuSql;
         $baseParams = $nuParams;
 
-        // Apply search filter on top of the custom query by wrapping it
         if ($searchEnabled && $q !== '') {
             $fields = array_filter(array_map('trim', explode(',', $searchFields)));
             if (!$fields) {
@@ -1420,7 +1421,6 @@ function nu_handle_list() {
                        ->fetchAll(PDO::FETCH_ASSOC);
 
     } else {
-        // Default: SELECT * FROM table [WHERE …]
         $where = []; $params = [];
 
         if ($nuWhere !== '') {
@@ -1499,12 +1499,12 @@ function nu_handle_save() {
             continue;
         }
 
-        // ── FIX: skip readonly and hidden_for_normal_users (non-admin) on save ──
+        // skip readonly and hidden_for_normal_users (non-admin) on save
         if (nu_field_server_readonly($field)) continue;
         if (nu_field_readonly($field)) continue;
         if (nu_field_hidden_for_normal_users($field) && !nu_current_user_is_admin()) continue;
 
-        // ── FIX: skip no_duplicate fields on INSERT ───────────────────────────
+        // skip no_duplicate fields on INSERT
         if (!$id && nu_field_no_duplicate($field)) continue;
 
         if ($type === 'lookup') {
