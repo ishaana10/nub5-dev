@@ -12,20 +12,19 @@ class NuAudit {
     /**
      * Record an audit event.
      *
-     * $recordId and $userId accept string|int to support both UUID and
-     * auto_increment primary key modes. Never cast these to (int) before
-     * passing — doing so will silently zero any UUID string.
+     * $recordId accepts string, int, or null to support UUID and auto_increment PKs.
+     * Never cast to (int) before passing — doing so will silently zero a UUID string.
      *
      * @param string           $action   e.g. 'login', 'create', 'update', 'delete'
      * @param string           $table    e.g. 'nu_users'
-     * @param string|int|null  $recordId PK of the affected row
+     * @param mixed            $recordId PK of the affected row (string|int|null)
      * @param array|null       $oldData  Snapshot before change
      * @param array|null       $newData  Snapshot after change
      */
     public function log(
         string $action,
         string $table,
-        string|int|null $recordId = null,
+        $recordId = null,
         ?array $oldData = null,
         ?array $newData = null
     ): void {
@@ -70,22 +69,28 @@ class NuAudit {
      *
      * Do NOT cast filters['user_id'] to int before calling — in UUID mode
      * the value is a VARCHAR(36) string and an int cast will produce 0.
+     *
+     * LIMIT/OFFSET are interpolated directly (after int cast) rather than
+     * bound as named params — PDO with EMULATE_PREPARES sends named params as
+     * quoted strings, causing MySQL "LIMIT '25'" syntax errors.
      */
     public function getLogs(array $filters = [], int $limit = 100, int $offset = 0): array {
         $where  = ['1=1'];
         $params = [];
 
-        if (!empty($filters['action']))  { $where[] = 'audit_action = :action';       $params[':action']  = $filters['action']; }
-        if (!empty($filters['table']))   { $where[] = 'audit_table = :table';         $params[':table']   = $filters['table'];  }
-        if (!empty($filters['user_id'])) { $where[] = 'audit_user_id = :user_id';     $params[':user_id'] = $filters['user_id']; } // string|int — no cast
-        if (!empty($filters['from']))    { $where[] = 'audit_timestamp >= :from';     $params[':from']    = $filters['from'];   }
-        if (!empty($filters['to']))      { $where[] = 'audit_timestamp <= :to';       $params[':to']      = $filters['to'];     }
+        if (!empty($filters['action']))  { $where[] = 'audit_action = :action';   $params[':action']  = $filters['action']; }
+        if (!empty($filters['table']))   { $where[] = 'audit_table = :table';     $params[':table']   = $filters['table'];  }
+        if (!empty($filters['user_id'])) { $where[] = 'audit_user_id = :user_id'; $params[':user_id'] = $filters['user_id']; }
+        if (!empty($filters['from']))    { $where[] = 'audit_timestamp >= :from'; $params[':from']    = $filters['from'];   }
+        if (!empty($filters['to']))      { $where[] = 'audit_timestamp <= :to';   $params[':to']      = $filters['to'];     }
+
+        // Cast to int and interpolate — avoids LIMIT/OFFSET named-param binding issues
+        $safeLimit  = (int) $limit;
+        $safeOffset = (int) $offset;
 
         $sql = 'SELECT * FROM nu_audit_log WHERE ' . implode(' AND ', $where)
-             . ' ORDER BY audit_timestamp DESC LIMIT :limit OFFSET :offset';
-
-        $params[':limit']  = $limit;   // already typed int by signature
-        $params[':offset'] = $offset;
+             . ' ORDER BY audit_timestamp DESC'
+             . ' LIMIT ' . $safeLimit . ' OFFSET ' . $safeOffset;
 
         return $this->db->fetchAll($sql, $params);
     }
@@ -100,7 +105,7 @@ class NuAudit {
 
         if (!empty($filters['action']))  { $where[] = 'audit_action = :action';   $params[':action']  = $filters['action']; }
         if (!empty($filters['table']))   { $where[] = 'audit_table = :table';     $params[':table']   = $filters['table'];  }
-        if (!empty($filters['user_id'])) { $where[] = 'audit_user_id = :user_id'; $params[':user_id'] = $filters['user_id']; } // string|int — no cast
+        if (!empty($filters['user_id'])) { $where[] = 'audit_user_id = :user_id'; $params[':user_id'] = $filters['user_id']; }
 
         $sql    = 'SELECT COUNT(*) as count FROM nu_audit_log WHERE ' . implode(' AND ', $where);
         $result = $this->db->fetchOne($sql, $params);

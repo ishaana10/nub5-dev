@@ -273,17 +273,19 @@ class NuAuth {
         $_SESSION['nu_last_activity'] = time();
         $_SESSION['nu_csrf']          = bin2hex(random_bytes(32));
 
-        // Pass usr_id without casting — loadGlobalMeta accepts string|int.
+        // Pass usr_id without casting — loadGlobalMeta accepts string or int.
         // A (int) cast here would silently zero any UUID string.
         $_SESSION['nu_user_meta'] = $this->loadGlobalMeta($user['usr_id']);
     }
 
     /**
      * Load all 'global' meta values for a user from nu_user_meta.
-     * Accepts string|int $userId to support both UUID and auto_increment modes.
+     * Accepts string or int $userId to support both UUID and auto_increment modes.
      * Returns an associative array: ['station' => 'North', ...]
+     *
+     * @param mixed $userId  string (UUID) or int
      */
-    private function loadGlobalMeta(string|int $userId): array {
+    private function loadGlobalMeta($userId): array {
         $configFile = NU_ROOT . '/config.user_fields.php';
         if (!file_exists($configFile)) return [];
 
