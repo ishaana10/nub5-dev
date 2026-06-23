@@ -22,6 +22,10 @@
      SECTION 1 — _nbSfData  (was nb-sf-data.js)
      Centralised read/write of data-sf-* attributes on canvas cards.
      Tracks subform_view (grid|form) and help_text.
+     NOTE: is_fk / hide_in_grid / server_readonly are FK-field flags
+     that belong to the *child* FK field, not the subform widget itself.
+     They are stored inside the `subform` sub-object in the layout JSON
+     and kept in data-sf-* only for the builder UI panel to pre-fill.
   ═══════════════════════════════════════════════════════════════════ */
   (function () {
     function _sfRead(card) {
@@ -44,14 +48,15 @@
           var sf  = (obj.subform && typeof obj.subform === 'object') ? obj.subform : {};
           var fc2 = sf.form_code || sf.formcode || '';
           if (fc2) {
+            // FK flags live inside sf (subform sub-object), not on obj directly
             _sfWrite(card, {
               form_code:       fc2,
               fk_field:        sf.fk_field || sf.fkfield || '',
               subform_view:    obj.subform_view || sf.subform_view || 'grid',
               help_text:       obj.help_text || obj.field_help_text || '',
-              is_fk:           !!obj.is_fk,
-              hide_in_grid:    !!obj.hide_in_grid,
-              server_readonly: !!obj.server_readonly
+              is_fk:           !!sf.is_fk,
+              hide_in_grid:    !!sf.hide_in_grid,
+              server_readonly: !!sf.server_readonly
             });
             return _sfRead(card);
           }
@@ -509,15 +514,16 @@
       }
 
       if (canvasType === 'subform') {
-        var sf          = (extra.subform && typeof extra.subform === 'object') ? extra.subform : {};
+        var sf     = (extra.subform && typeof extra.subform === 'object') ? extra.subform : {};
         var sfData = {
           form_code:       sf.form_code    || sf.formcode  || extra.sf_form_code    || '',
           fk_field:        sf.fk_field     || sf.fkfield   || extra.sf_fk_field     || '',
           subform_view:    extra.subform_view                                        || 'grid',
           help_text:       extra.help_text  || extra.field_help_text                || '',
-          is_fk:           !!extra.is_fk,
-          hide_in_grid:    !!extra.hide_in_grid,
-          server_readonly: !!extra.server_readonly
+          // FK flags live inside sf (the child FK field descriptor), not on extra
+          is_fk:           !!sf.is_fk,
+          hide_in_grid:    !!sf.hide_in_grid,
+          server_readonly: !!sf.server_readonly
         };
         extraBody += _subformPanelHTML(sfData);
       }
@@ -1039,6 +1045,7 @@
           NuApp.toast('Field "' + fkName + '" already exists in ' + formCode, 'error');
           return null;
         }
+        // FK flags go directly on this child field object (not inside a subform sub-object)
         layout.push({ name: fkName, label: fkName, type: 'hidden', is_fk: true, hide_in_grid: true, server_readonly: true });
         return fetch(
           'api/forms.php?action=patch_layout&id=' + encodeURIComponent(form.form_id || form.id || ''),
@@ -1101,9 +1108,19 @@
       if (cfg.fk_field)     fieldObj.subform.fk_field  = cfg.fk_field;
       fieldObj.subform_view = cfg.subform_view || 'grid';
       if (cfg.help_text)    fieldObj.help_text = cfg.help_text;
-      if (cfg.is_fk)           fieldObj.is_fk           = true; else delete fieldObj.is_fk;
-      if (cfg.hide_in_grid)    fieldObj.hide_in_grid    = true; else delete fieldObj.hide_in_grid;
-      if (cfg.server_readonly) fieldObj.server_readonly = true; else delete fieldObj.server_readonly;
+
+      // ── FK flags belong inside fieldObj.subform, NOT on fieldObj itself ──
+      // Placing them on fieldObj causes nusubform.js to treat the subform
+      // *widget* as an FK field, hiding the entire subform or corrupting
+      // the grid column filter. They describe the child FK field only.
+      if (cfg.is_fk)           fieldObj.subform.is_fk           = true; else delete fieldObj.subform.is_fk;
+      if (cfg.hide_in_grid)    fieldObj.subform.hide_in_grid    = true; else delete fieldObj.subform.hide_in_grid;
+      if (cfg.server_readonly) fieldObj.subform.server_readonly = true; else delete fieldObj.subform.server_readonly;
+
+      // Ensure these flags are NOT present on fieldObj itself
+      delete fieldObj.is_fk;
+      delete fieldObj.hide_in_grid;
+      delete fieldObj.server_readonly;
     });
     return layout;
   }
