@@ -552,7 +552,6 @@ window.NuApp = {
   },
 
   addRecord(code, formLabel, displayMode) {
-    // Always open new-record form inline so breadcrumb + save-back works
     return this._openFormInline(code, formLabel, null, false);
   },
 
@@ -588,10 +587,10 @@ window.NuApp = {
 
     container.innerHTML = '';
 
-    // ── Search bar row (always shown when search is enabled, plus Add New) ──
+    // ── Search bar row (shown when search is enabled or user can add) ──
     if (searchEnabled || _canAdd) {
       const searchWrap = document.createElement('div');
-      searchWrap.style.cssText = 'margin-bottom:16px;display:flex;gap:8px;align-items:center;';
+      searchWrap.style.cssText = 'margin-bottom:16px;display:flex;gap:8px;align-items:stretch;';
 
       if (searchEnabled) {
         const searchInput = document.createElement('input');
@@ -611,7 +610,6 @@ window.NuApp = {
         searchWrap.appendChild(searchBtn);
         searchWrap.appendChild(clearBtn);
       } else {
-        // No search — push Add New to the right
         const spacer = document.createElement('div');
         spacer.style.flex = '1';
         searchWrap.appendChild(spacer);
@@ -619,7 +617,7 @@ window.NuApp = {
 
       if (_canAdd) {
         const addBtn = document.createElement('button');
-        addBtn.className = 'nu-btn nu-btn-primary nu-btn-sm';
+        addBtn.className = 'nu-btn nu-btn-primary';
         addBtn.textContent = '+ Add New Record';
         addBtn.onclick = () => this.addRecord(code, label, displayMode);
         searchWrap.appendChild(addBtn);
@@ -975,7 +973,6 @@ window.submitNuForm = async function (formElement) {
     }
     const overlay = formElement.closest('.nu-form-overlay');
     if (overlay) overlay.remove();
-    // After save, always return to the browse view inline
     if (typeof NuApp.browseForm === 'function' && formCode) {
       NuApp.browseForm(formCode, 1, '', fromBrowse || null, 'inline');
     } else {
