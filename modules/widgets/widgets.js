@@ -58,13 +58,44 @@
   ];
   var _faFiltered = FA_ICONS.slice();
 
-  function initCharts() {
+  // ── Chart.js loader ────────────────────────────────────────────────────────
+  // When widgets.php is injected via NuApp._execModuleScripts(), both the
+  // Chart.js <script src> and widgets.js are cloned and appended to <head> in
+  // sequence, but external scripts load asynchronously. This means Chart may
+  // not be defined yet when initCharts() runs. We therefore:
+  //   1. If Chart is already defined → run immediately.
+  //   2. If a <script src="chart.js"> tag is already in the DOM (injected but
+  //      still loading) → wait for its load event.
+  //   3. Otherwise → inject Chart.js ourselves and wait for it to load.
+  var CHARTJS_CDN = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js';
+
+  function _runInitCharts() {
     document.querySelectorAll('[data-chartjs]').forEach(function (canvas) {
       var id = canvas.id;
-      if (chartInstances[id]) chartInstances[id].destroy();
+      if (chartInstances[id]) { try { chartInstances[id].destroy(); } catch (e) {} }
       try { chartInstances[id] = new Chart(canvas, JSON.parse(canvas.dataset.chartjs)); }
       catch (e) { console.warn('[nuDash chart]', e); }
     });
+  }
+
+  function initCharts() {
+    // Already loaded — run immediately.
+    if (typeof Chart !== 'undefined') { _runInitCharts(); return; }
+
+    // Find an existing Chart.js script tag that is still loading.
+    var existing = document.querySelector('script[src*="chart.js"], script[src*="chart.umd"]');
+    if (existing) {
+      existing.addEventListener('load',  _runInitCharts);
+      existing.addEventListener('error', function () { console.warn('[nuDash] Chart.js failed to load'); });
+      return;
+    }
+
+    // Inject Chart.js ourselves and wait.
+    var s = document.createElement('script');
+    s.src = CHARTJS_CDN;
+    s.addEventListener('load',  _runInitCharts);
+    s.addEventListener('error', function () { console.warn('[nuDash] Chart.js failed to load'); });
+    document.head.appendChild(s);
   }
 
   function getCollapsedSet() {
