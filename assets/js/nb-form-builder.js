@@ -103,6 +103,33 @@
       .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  /* ── Shared visibility/access flags block (appended to every field) ── */
+  function _visibilityFlagsHTML(extra) {
+    extra = extra || {};
+    var isReadonly   = extra.readonly              ? ' checked' : '';
+    var isHidden     = extra.hidden                ? ' checked' : '';
+    var isHiddenNorm = extra.hidden_for_normal_users ? ' checked' : '';
+    var isNoDup      = extra.no_duplicate          ? ' checked' : '';
+    return '<div class="nb-fp nb-fp-full nb-vis-flags" style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:10px 18px;padding:8px 10px;background:var(--bg-offset,#f5f7ff);border:1px solid var(--border,#e0e4ef);border-radius:7px;margin-top:4px;">'
+      + '<label style="font-size:11px;font-weight:700;color:var(--text-muted,#888);text-transform:uppercase;letter-spacing:.5px;flex-basis:100%;margin-bottom:2px;">Field Options</label>'
+      + '<label class="nb-fp-check" style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;">'
+        + '<input type="checkbox" class="nu-field-required"' + (extra.required ? ' checked' : '') + '> Required'
+      + '</label>'
+      + '<label class="nb-fp-check" style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;">'
+        + '<input type="checkbox" class="nu-field-no-duplicate"' + isNoDup + '> No Duplicate'
+      + '</label>'
+      + '<label class="nb-fp-check" style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;">'
+        + '<input type="checkbox" class="nu-field-readonly"' + isReadonly + '> Readonly'
+      + '</label>'
+      + '<label class="nb-fp-check" style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;">'
+        + '<input type="checkbox" class="nu-field-hidden"' + isHidden + '> Hidden'
+      + '</label>'
+      + '<label class="nb-fp-check" style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px;">'
+        + '<input type="checkbox" class="nu-field-hidden-normal"' + isHiddenNorm + '> Hidden for normal users'
+      + '</label>'
+    + '</div>';
+  }
+
   window.nbFormBuilder = {
 
     open: function () {
@@ -262,12 +289,11 @@
     // ── _makeFieldCard ─────────────────────────────────────
     _makeFieldCard: function (type, label, name, required, extra) {
       extra = extra || {};
+      // Merge required into extra so _visibilityFlagsHTML can read it
+      extra = Object.assign({}, extra, { required: required || !!extra.required });
       var col = parseInt(extra.col || extra.colspan, 10) || 12;
 
       // ── Normalise incoming type for the builder canvas ──────────
-      // The form layout stores the real runtime type (select2, multiselect).
-      // The builder canvas separates 'select' and 'select2' as distinct
-      // card types with their own config panels — no shared checkbox.
       var canvasType = type;
 
       // Coerce legacy 'multiselect' → select2 + multiple flag
@@ -553,11 +579,11 @@
           + '<div class="nb-fp-grid">'
             + '<div class="nb-fp"><label>Label</label><input type="text" class="nu-input nu-field-label" value="' + _esc(label) + '"></div>'
             + '<div class="nb-fp"><label>Field Name</label><input type="text" class="nu-input nu-field-name" value="' + _esc(name) + '"></div>'
-            + '<div class="nb-fp"><label class="nb-fp-check"><input type="checkbox" class="nu-field-required"' + (required ? ' checked' : '') + '> Required</label></div>'
             + (canvasType !== 'subform' ? '<div class="nb-fp"><label>Placeholder</label><input type="text" class="nu-input nu-field-placeholder" value="' + _esc(extra.placeholder || '') + '"></div>' : '')
             + (canvasType !== 'subform' ? '<div class="nb-fp"><label>Default Value</label><input type="text" class="nu-input nu-field-default" value="' + _esc(extra.default_value || extra.defaultvalue || '') + '"></div>' : '')
             + '<div class="nb-fp nb-fp-full"><label>Help Text</label><input type="text" class="nu-input nu-field-help" value="' + _esc(extra.help_text || extra.field_help_text || '') + '"></div>'
             + extraBody
+            + _visibilityFlagsHTML(extra)
           + '</div>'
         + '</div>';
 
@@ -627,6 +653,10 @@
           var labelEl    = card.querySelector('.nu-field-label');
           var nameEl     = card.querySelector('.nu-field-name');
           var reqEl      = card.querySelector('.nu-field-required');
+          var noDupEl    = card.querySelector('.nu-field-no-duplicate');
+          var readonlyEl = card.querySelector('.nu-field-readonly');
+          var hiddenEl   = card.querySelector('.nu-field-hidden');
+          var hidNormEl  = card.querySelector('.nu-field-hidden-normal');
           var phEl       = card.querySelector('.nu-field-placeholder');
           var defEl      = card.querySelector('.nu-field-default');
           var optsEl     = card.querySelector('.nu-field-options');
@@ -640,8 +670,6 @@
           var lkExtraEl  = card.querySelector('.nu-lookup-extra');
 
           // ── Resolve serialised type ────────────────────────────────────
-          // canvasType is now either 'select' or 'select2' — they are
-          // separate card types with separate panels, no shared checkbox.
           var runtimeType = canvasType;
           var isMultiSel  = false;
           var selModeEl   = card.querySelector('.nu-field-select-mode');
@@ -651,15 +679,19 @@
           }
 
           var field = {
-            type:          runtimeType,  // 'select' or 'select2'
-            label:         labelEl ? labelEl.value  : '',
-            name:          nameEl  ? nameEl.value   : '',
-            required:      reqEl   ? reqEl.checked  : false,
-            placeholder:   phEl    ? phEl.value     : '',
-            default_value: defEl   ? defEl.value    : '',
-            help_text:     helpEl  ? helpEl.value   : '',
-            col:           parseInt(card.dataset.col, 10) || 12,
-            row_index:     rowIndex
+            type:                    runtimeType,
+            label:                   labelEl    ? labelEl.value    : '',
+            name:                    nameEl     ? nameEl.value     : '',
+            required:                reqEl      ? reqEl.checked    : false,
+            no_duplicate:            noDupEl    ? noDupEl.checked  : false,
+            readonly:                readonlyEl ? readonlyEl.checked : false,
+            hidden:                  hiddenEl   ? hiddenEl.checked : false,
+            hidden_for_normal_users: hidNormEl  ? hidNormEl.checked : false,
+            placeholder:             phEl       ? phEl.value       : '',
+            default_value:           defEl      ? defEl.value      : '',
+            help_text:               helpEl     ? helpEl.value     : '',
+            col:                     parseInt(card.dataset.col, 10) || 12,
+            row_index:               rowIndex
           };
 
           if (canvasType === 'select') {
@@ -1110,9 +1142,6 @@
       if (cfg.help_text)    fieldObj.help_text = cfg.help_text;
 
       // ── FK flags belong inside fieldObj.subform, NOT on fieldObj itself ──
-      // Placing them on fieldObj causes nusubform.js to treat the subform
-      // *widget* as an FK field, hiding the entire subform or corrupting
-      // the grid column filter. They describe the child FK field only.
       if (cfg.is_fk)           fieldObj.subform.is_fk           = true; else delete fieldObj.subform.is_fk;
       if (cfg.hide_in_grid)    fieldObj.subform.hide_in_grid    = true; else delete fieldObj.subform.hide_in_grid;
       if (cfg.server_readonly) fieldObj.subform.server_readonly = true; else delete fieldObj.subform.server_readonly;
@@ -1242,9 +1271,6 @@
       var rowBody = row ? row.querySelector('.nb-row-body') : null;
 
       groups[ri].forEach(function (f) {
-        // Resolve the canvas type from saved data:
-        // select2:true or type==='select2' → canvas type 'select2'
-        // otherwise → type as-is
         var type = f.type || f.fieldtype || 'text';
         var card = window.nbFormBuilder._makeFieldCard(
           type,
@@ -1282,6 +1308,18 @@
             selModeEl.value = isMulti ? 'multi' : 'single';
           }
         }
+
+        // Restore visibility / access flags
+        var reqEl     = card.querySelector('.nu-field-required');
+        var noDupEl   = card.querySelector('.nu-field-no-duplicate');
+        var rdEl      = card.querySelector('.nu-field-readonly');
+        var hidEl     = card.querySelector('.nu-field-hidden');
+        var hidNEl    = card.querySelector('.nu-field-hidden-normal');
+        if (reqEl)   reqEl.checked   = !!f.required;
+        if (noDupEl) noDupEl.checked = !!f.no_duplicate;
+        if (rdEl)    rdEl.checked    = !!f.readonly;
+        if (hidEl)   hidEl.checked   = !!f.hidden;
+        if (hidNEl)  hidNEl.checked  = !!f.hidden_for_normal_users;
       });
     });
 
