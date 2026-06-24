@@ -518,6 +518,45 @@ foreach ($forms as $f) {
 }
 /* Hidden textarea synced on save */
 .nb-ace-hidden { display:none !important; }
+
+/* ── GROUP container field ── */
+.nb-cfield-group-body {
+  padding:8px; border-top:1px solid var(--border-color);
+  background:color-mix(in oklch,var(--color-primary) 3%,var(--bg-surface));
+  min-height:52px; border-radius:0 0 7px 7px;
+}
+.nb-cfield-group-body.drag-col-over {
+  outline:2px dashed var(--color-primary);
+  background:color-mix(in oklch,var(--color-primary) 6%,var(--bg-surface));
+}
+
+/* ── TAB container field ── */
+.nb-cfield-tab-nav {
+  display:flex; gap:0; border-bottom:1px solid var(--border-color);
+  padding:6px 8px 0; flex-wrap:wrap; align-items:flex-end;
+}
+.nb-cfield-tab-nav-item {
+  padding:4px 12px; font-size:11px; font-weight:600; cursor:pointer;
+  border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0;
+  color:var(--text-secondary); background:none; transition:all .15s;
+  position:relative; top:1px;
+}
+.nb-cfield-tab-nav-item.active {
+  color:var(--color-primary); background:var(--bg-surface);
+  border-color:var(--border-color); border-bottom-color:var(--bg-surface);
+}
+.nb-cfield-tab-panel { display:none; padding:8px; min-height:52px; }
+.nb-cfield-tab-panel.active { display:block; }
+.nb-cfield-tab-panel.drag-col-over {
+  outline:2px dashed var(--color-primary);
+  background:color-mix(in oklch,var(--color-primary) 4%,var(--bg-surface));
+}
+.nb-cfield-tab-add-btn {
+  font-size:11px; padding:3px 8px; border-radius:5px; cursor:pointer;
+  border:1px dashed var(--border-color); background:none;
+  color:var(--text-tertiary); transition:all .15s; margin-left:auto; align-self:center;
+}
+.nb-cfield-tab-add-btn:hover { border-color:var(--color-primary); color:var(--color-primary); }
 </style>
 
 <div class="nu-forms">
@@ -794,19 +833,15 @@ foreach ($forms as $f) {
           </div>
           <div class="nb-tools-group">
             <div class="nb-tools-group-label">Choice</div>
-            <!-- Select: drag drops as 'select', default single select -->
             <div class="nb-tool" data-type="select" draggable="true">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>Select
             </div>
-            <!-- Select2: drag drops as 'select2' (searchable, single by default) -->
             <div class="nb-tool" data-type="select2" draggable="true">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>Select2
             </div>
-            <!-- Radio: single-choice radio button group -->
             <div class="nb-tool" data-type="radio" draggable="true">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>Radio
             </div>
-            <!-- Checkbox Group: multi-choice checkbox group -->
             <div class="nb-tool" data-type="checkbox_group" draggable="true">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>Checkbox Group
             </div>
@@ -824,6 +859,8 @@ foreach ($forms as $f) {
             <div class="nb-tool" data-type="html"    draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l-5-6 5-6M15 6l5 6-5 6"/></svg>HTML</div>
             <div class="nb-tool" data-type="divider" draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>Divider</div>
             <div class="nb-tool" data-type="button"  draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2"/></svg>Button</div>
+            <div class="nb-tool" data-type="group"   draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/></svg>Group</div>
+            <div class="nb-tool" data-type="tab"     draggable="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M9 5v4M15 5v4"/></svg>Tab</div>
           </div>
         </div>
 
@@ -1290,7 +1327,6 @@ if (!window._nbFormsModuleInit) {
 
   // ── Load columns from an existing table and populate the canvas ───
   nbFormBuilder.onExistingTableChange = async function(tableName) {
-    // Always sync the hidden table name input
     const tableInput = document.getElementById('builderFormTable');
     if (tableInput) tableInput.value = tableName;
 
@@ -1300,7 +1336,6 @@ if (!window._nbFormsModuleInit) {
       return;
     }
 
-    // Show loading indicator
     if (statusEl) {
       statusEl.style.display = 'block';
       statusEl.style.background = 'color-mix(in oklch,var(--color-primary) 8%,var(--bg-surface))';
@@ -1314,7 +1349,7 @@ if (!window._nbFormsModuleInit) {
       const res  = await fetch('api/inspector.php?action=columns&table=' + encodeURIComponent(tableName));
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Unknown error');
-      cols = data.columns; // [{Field, Type, Null, Key, Default, Extra}]
+      cols = data.columns;
     } catch (err) {
       console.error('[nub5] Failed to fetch columns:', err);
       if (statusEl) {
@@ -1326,7 +1361,6 @@ if (!window._nbFormsModuleInit) {
       return;
     }
 
-    // Map DB column types → builder field types
     const mapType = t => {
       t = (t || '').toLowerCase();
       if (/tinyint\(1\)/.test(t))                          return 'checkbox';
@@ -1339,20 +1373,14 @@ if (!window._nbFormsModuleInit) {
       return 'text';
     };
 
-    // Named helper: convert snake_case column name → Title Case label
     const makeLabel = name => name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-
-    // System/meta columns to skip
     const skip = new Set(['id','created_at','updated_at','created_by','updated_by','deleted_at']);
-
     const userCols = cols.filter(c => !skip.has(c.Field));
 
-    // Clear current canvas fields and rebuild from table columns
     if (typeof nbFormBuilder.clearCanvas === 'function') {
       nbFormBuilder.clearCanvas();
     }
 
-    // addField(type, extraData) — type is a string, extraData is an options object
     userCols.forEach(col => {
       if (typeof nbFormBuilder.addField === 'function') {
         nbFormBuilder.addField(
@@ -1362,7 +1390,6 @@ if (!window._nbFormsModuleInit) {
       }
     });
 
-    // Show success status
     if (statusEl) {
       statusEl.style.background = 'color-mix(in oklch,#22c55e 8%,var(--bg-surface))';
       statusEl.style.color = '#15803d';
@@ -1370,10 +1397,115 @@ if (!window._nbFormsModuleInit) {
       statusEl.textContent = '✓ Loaded ' + userCols.length + ' field' + (userCols.length !== 1 ? 's' : '') + ' from ' + tableName;
     }
 
-    // Switch to Fields tab so user sees the populated canvas
     const fieldsTab = document.querySelector('.nb-tab[data-panel="panelFields"]');
     if (fieldsTab) fieldsTab.click();
   };
+
+  // ── Group + Tab canvas rendering helpers ─────────────────────────
+  if (!nbFormBuilder._groupTabPatched) {
+    nbFormBuilder._groupTabPatched = true;
+
+    var _origMakeFieldCard = nbFormBuilder._makeFieldCard;
+    nbFormBuilder._makeFieldCard = function(field) {
+      var card = typeof _origMakeFieldCard === 'function'
+        ? _origMakeFieldCard.call(nbFormBuilder, field) : null;
+      if (!card) return card;
+
+      if (field.type === 'group') {
+        var groupBody = document.createElement('div');
+        groupBody.className = 'nb-cfield-group-body';
+        groupBody.dataset.groupId = field.id;
+        var children = field.children || [];
+        if (!children.length) {
+          groupBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:11px;text-align:center;padding:10px;">Drop fields here</div>';
+        } else {
+          children.forEach(function(child) { var cc = nbFormBuilder._makeFieldCard(child); if (cc) groupBody.appendChild(cc); });
+        }
+        groupBody.addEventListener('dragover', function(e) { e.preventDefault(); e.stopPropagation(); groupBody.classList.add('drag-col-over'); });
+        groupBody.addEventListener('dragleave', function(e) { if (!groupBody.contains(e.relatedTarget)) groupBody.classList.remove('drag-col-over'); });
+        groupBody.addEventListener('drop', function(e) {
+          e.preventDefault(); e.stopPropagation();
+          groupBody.classList.remove('drag-col-over');
+          var type = e.dataTransfer.getData('nb-field-type');
+          if (!type || type === 'group' || type === 'tab') return;
+          if (!field.children) field.children = [];
+          field.children.push(nbFormBuilder._makeDefaultField(type));
+          groupBody.innerHTML = '';
+          field.children.forEach(function(child) { var cc = nbFormBuilder._makeFieldCard(child); if (cc) groupBody.appendChild(cc); });
+        });
+        card.appendChild(groupBody);
+      }
+
+      if (field.type === 'tab') {
+        if (!field.tabs || !field.tabs.length) field.tabs = [{ label: 'Tab 1', children: [] }];
+        var tabNav   = document.createElement('div');
+        tabNav.className = 'nb-cfield-tab-nav';
+        var tabPanes = document.createElement('div');
+
+        field.tabs.forEach(function(tab, idx) {
+          var navBtn = document.createElement('button');
+          navBtn.type = 'button';
+          navBtn.className = 'nb-cfield-tab-nav-item' + (idx === 0 ? ' active' : '');
+          navBtn.textContent = tab.label || ('Tab ' + (idx + 1));
+          navBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            tabNav.querySelectorAll('.nb-cfield-tab-nav-item').forEach(function(b){ b.classList.remove('active'); });
+            tabPanes.querySelectorAll('.nb-cfield-tab-panel').forEach(function(p){ p.classList.remove('active'); });
+            navBtn.classList.add('active');
+            tabPanes.querySelectorAll('.nb-cfield-tab-panel')[idx].classList.add('active');
+          });
+          tabNav.appendChild(navBtn);
+
+          var panel = document.createElement('div');
+          panel.className = 'nb-cfield-tab-panel' + (idx === 0 ? ' active' : '');
+          var tabChildren = tab.children || [];
+          if (!tabChildren.length) {
+            panel.innerHTML = '<div style="color:var(--text-tertiary);font-size:11px;text-align:center;padding:10px;">Drop fields here</div>';
+          } else {
+            tabChildren.forEach(function(child) { var cc = nbFormBuilder._makeFieldCard(child); if (cc) panel.appendChild(cc); });
+          }
+          (function(panelEl, tabIdx) {
+            panelEl.addEventListener('dragover', function(e) { e.preventDefault(); e.stopPropagation(); panelEl.classList.add('drag-col-over'); });
+            panelEl.addEventListener('dragleave', function(e) { if (!panelEl.contains(e.relatedTarget)) panelEl.classList.remove('drag-col-over'); });
+            panelEl.addEventListener('drop', function(e) {
+              e.preventDefault(); e.stopPropagation();
+              panelEl.classList.remove('drag-col-over');
+              var type = e.dataTransfer.getData('nb-field-type');
+              if (!type || type === 'group' || type === 'tab') return;
+              if (!field.tabs[tabIdx].children) field.tabs[tabIdx].children = [];
+              field.tabs[tabIdx].children.push(nbFormBuilder._makeDefaultField(type));
+              panelEl.innerHTML = '';
+              field.tabs[tabIdx].children.forEach(function(child) { var cc = nbFormBuilder._makeFieldCard(child); if (cc) panelEl.appendChild(cc); });
+            });
+          })(panel, idx);
+          tabPanes.appendChild(panel);
+        });
+
+        var addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'nb-cfield-tab-add-btn';
+        addBtn.textContent = '+ Tab';
+        addBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          field.tabs.push({ label: 'Tab ' + (field.tabs.length + 1), children: [] });
+          var parent = card.parentElement;
+          var next   = card.nextSibling;
+          if (parent) { parent.removeChild(card); var nc = nbFormBuilder._makeFieldCard(field); if (nc) parent.insertBefore(nc, next); }
+        });
+        tabNav.appendChild(addBtn);
+        card.appendChild(tabNav);
+        card.appendChild(tabPanes);
+      }
+
+      return card;
+    };
+
+    nbFormBuilder._makeDefaultField = function(type) {
+      return { id: 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), type: type,
+               label: type.charAt(0).toUpperCase() + type.slice(1),
+               name:  type + '_' + Math.random().toString(36).slice(2,6), col: 6 };
+    };
+  }
 
 } // end _nbFormsModuleInit guard
 
