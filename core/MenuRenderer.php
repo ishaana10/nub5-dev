@@ -43,6 +43,37 @@ class NuMenuRenderer
     // Types that support open-mode
     private static array $openModeTypes = ['form', 'report', 'query'];
 
+    /**
+     * Check whether a menu row is accessible by the given role.
+     * Reads from menu_role_access (JSON array or comma-separated string) and also
+     * falls back to the legacy menu_roles column if present.
+     */
+    private static function isAccessible(array $item, string $userRole, bool $isAdmin): bool
+    {
+        if ($isAdmin) return true;
+
+        // Prefer menu_role_access (new column, JSON array stored as string).
+        // Fall back to menu_roles (old plain-text column).
+        $raw = $item['menu_role_access'] ?? $item['menu_roles'] ?? '';
+        $raw = trim((string)$raw);
+
+        // Empty = visible to all
+        if ($raw === '' || $raw === '[]' || $raw === 'null') return true;
+
+        // JSON array format  e.g. ["admin","globeadmin"]
+        if ($raw[0] === '[') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $allowed = array_map('strtolower', array_map('trim', $decoded));
+                return in_array($userRole, $allowed, true);
+            }
+        }
+
+        // Legacy comma-separated  e.g. "admin,globeadmin"
+        $allowed = array_map('strtolower', array_map('trim', explode(',', $raw)));
+        return in_array($userRole, $allowed, true);
+    }
+
     public static function render(?array $currentUser): string
     {
         $userRole = strtolower((string)($currentUser['usr_role'] ?? ''));
@@ -51,13 +82,13 @@ class NuMenuRenderer
         $rows = [];
         try {
             $db   = NuDatabase::getInstance();
-            // menu_target is the only target column — menu_code does not exist.
-            // Three open-mode columns are selected with COALESCE fallbacks for
-            // installs that have not yet run the phase-8 migration.
+            // Fetch both role columns so isAccessible() always has what it needs.
             $rows = $db->fetchAll(
                 "SELECT menu_id, menu_label, menu_type,
                         COALESCE(menu_target, '') AS menu_target,
-                        menu_parent_id, menu_order, menu_roles,
+                        menu_parent_id, menu_order,
+                        COALESCE(menu_role_access, '') AS menu_role_access,
+                        COALESCE(menu_roles, '')       AS menu_roles,
                         menu_active, menu_icon,
                         COALESCE(menu_browse_mode,  'inline') AS menu_browse_mode,
                         COALESCE(menu_preview_mode, 'inline') AS menu_preview_mode,
@@ -73,7 +104,9 @@ class NuMenuRenderer
                 $raw = $db->fetchAll(
                     "SELECT menu_id, menu_label, menu_type,
                             COALESCE(menu_target, '') AS menu_target,
-                            menu_parent_id, menu_order, menu_roles,
+                            menu_parent_id, menu_order,
+                            COALESCE(menu_role_access, '') AS menu_role_access,
+                            COALESCE(menu_roles, '')       AS menu_roles,
                             menu_active, menu_icon,
                             COALESCE(menu_open_mode, 'inline') AS menu_open_mode
                      FROM   nu_menus
@@ -90,13 +123,15 @@ class NuMenuRenderer
                     return $r;
                 }, $raw);
             } catch (Throwable $e2) {
-                // Last resort: bare minimum columns only (no open-mode at all)
+                // Last resort: bare minimum columns only
                 try {
                     $db  = NuDatabase::getInstance();
                     $raw = $db->fetchAll(
                         "SELECT menu_id, menu_label, menu_type,
                                 COALESCE(menu_target, '') AS menu_target,
-                                menu_parent_id, menu_order, menu_roles,
+                                menu_parent_id, menu_order,
+                                COALESCE(menu_role_access, '') AS menu_role_access,
+                                COALESCE(menu_roles, '')       AS menu_roles,
                                 menu_active, menu_icon
                          FROM   nu_menus
                          WHERE  menu_active = 1
@@ -117,13 +152,25 @@ class NuMenuRenderer
 
         if (empty($rows)) return '';
 
-        // ── Role filtering ────────────────────────────────────────────────────
-        $visible = array_filter($rows, static function (array $item) use ($userRole, $isAdmin): bool {
-            $roles = trim($item['menu_roles'] ?? '');
-            if ($roles === '' || $isAdmin) return true;
-            $allowed = array_map('trim', explode(',', strtolower($roles)));
-            return in_array($userRole, $allowed, true);
-        });
+        // ── Role filtering (applied to ALL rows — parent AND children) ────────
+        // Index ALL rows by id first so we can look up parents.
+        $byId = [];
+        foreach ($rows as $row) {
+            $byId[(int)$row['menu_id']] = $row;
+        }
+
+        $visible = [];
+        foreach ($rows as $item) {
+            if (!self::isAccessible($item, $userRole, $isAdmin)) continue;
+
+            // If the item is a child, also verify the parent is accessible.
+            $pid = (int)$item['menu_parent_id'];
+            if ($pid > 0 && isset($byId[$pid])) {
+                if (!self::isAccessible($byId[$pid], $userRole, $isAdmin)) continue;
+            }
+
+            $visible[] = $item;
+        }
 
         // ── Build tree ────────────────────────────────────────────────────────
         $topLevel = [];
