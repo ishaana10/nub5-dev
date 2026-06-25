@@ -2,8 +2,21 @@
 // nuBuilder Next — Runtime Form Renderer
 // Supports layout field types:
 //   group  — collapsible section wrapping child fields
-//   tab    — tab container; its 'tabs' array holds tab panels, each with a 'fields' array
+//   tab    — tab container; its 'tabs' array holds tab panels
 //   All other types are rendered as individual fields.
+//
+// Builder JSON shape for a tab container:
+// {
+//   "type": "tab",
+//   "tabs": [
+//     {
+//       "name": "Tab 1",          // builder saves 'name' (NOT 'label')
+//       "rows": [                 // builder saves 'rows' (NOT 'fields')
+//         { "fields": [ ... ] }  // each row has a 'fields' array
+//       ]
+//     }
+//   ]
+// }
 
 class NuFormRenderer {
     private $db;
@@ -101,30 +114,32 @@ class NuFormRenderer {
 
     // =========================================================================
     // PRIVATE: renderTabContainer()
-    // Layout JSON shape:
-    // {
-    //   "type": "tab",
-    //   "tabs": [
-    //     { "id": "tab_general", "label": "General", "fields": [ ... ] },
-    //     { "id": "tab_details", "label": "Details", "fields": [ ... ] }
-    //   ]
-    // }
+    //
+    // Builder saves tabs as:
+    //   { "type": "tab", "tabs": [ { "name": "Tab 1", "rows": [ { "fields": [...] } ] } ] }
+    //
+    // Keys supported (with fallbacks for both old and new builder output):
+    //   tab label  → tab['name']  ?? tab['label'] ?? 'Tab N'
+    //   tab id     → tab['id']    ?? 'tab_N'
+    //   tab fields → collected from tab['rows'][*]['fields']  OR  tab['fields'] (legacy flat)
     // =========================================================================
     private function renderTabContainer(array $item, $record, bool $readonly, string $formCode): string
     {
-        $tabs      = $item['tabs'] ?? [];
+        $tabs = $item['tabs'] ?? [];
         if (empty($tabs)) return '';
 
         $containerId = 'nu-tabs-' . $formCode . '-' . substr(md5(serialize($item)), 0, 6);
 
         // ── Tab bar ──────────────────────────────────────────────────────────
-        $html = '<div class="nu-tabs" id="' . $containerId . '">';
+        $html  = '<div class="nu-tabs" id="' . $containerId . '">';
         $html .= '<div class="nu-tab-bar" role="tablist">';
 
         foreach ($tabs as $i => $tab) {
-            $tabId    = htmlspecialchars($tab['id']    ?? ('tab_' . $i));
-            $tabLabel = htmlspecialchars($tab['label'] ?? 'Tab ' . ($i + 1));
+            // Builder uses 'name'; legacy renderer used 'label' — support both
+            $tabLabel = htmlspecialchars($tab['name'] ?? $tab['label'] ?? 'Tab ' . ($i + 1));
+            $tabId    = htmlspecialchars($tab['id']   ?? ('tab_' . $i));
             $active   = $i === 0 ? ' nu-tab-active' : '';
+
             $html .= '<button type="button"';
             $html .= ' class="nu-tab-btn' . $active . '"';
             $html .= ' role="tab"';
@@ -140,7 +155,6 @@ class NuFormRenderer {
         // ── Tab panels ───────────────────────────────────────────────────────
         foreach ($tabs as $i => $tab) {
             $tabId  = htmlspecialchars($tab['id'] ?? ('tab_' . $i));
-            $fields = $tab['fields'] ?? [];
             $hidden = $i === 0 ? '' : ' nu-tab-panel-hidden';
 
             $html .= '<div';
@@ -150,8 +164,11 @@ class NuFormRenderer {
             $html .= ' data-tab="' . $tabId . '"';
             $html .= '>';
 
-            // Each tab panel can itself contain groups or plain fields
-            foreach ($fields as $panelItem) {
+            // Collect fields: builder stores them in rows[*].fields; fall back
+            // to a flat 'fields' array for backwards compatibility.
+            $panelItems = $this->collectTabFields($tab);
+
+            foreach ($panelItems as $panelItem) {
                 $fieldType = $panelItem['type'] ?? 'text';
                 if ($fieldType === 'group') {
                     $html .= $this->renderGroup($panelItem, $record, $readonly);
@@ -167,6 +184,33 @@ class NuFormRenderer {
 
         $html .= '</div>'; // .nu-tabs
         return $html;
+    }
+
+    /**
+     * Flatten fields out of a tab definition regardless of whether the builder
+     * stored them under 'rows[*].fields' (current builder) or 'fields' (legacy).
+     */
+    private function collectTabFields(array $tab): array
+    {
+        // Current builder shape: tab.rows = [ { fields: [...] }, ... ]
+        if (!empty($tab['rows']) && is_array($tab['rows'])) {
+            $fields = [];
+            foreach ($tab['rows'] as $row) {
+                if (!empty($row['fields']) && is_array($row['fields'])) {
+                    foreach ($row['fields'] as $f) {
+                        $fields[] = $f;
+                    }
+                }
+            }
+            return $fields;
+        }
+
+        // Legacy / hand-crafted shape: tab.fields = [ ... ]
+        if (!empty($tab['fields']) && is_array($tab['fields'])) {
+            return $tab['fields'];
+        }
+
+        return [];
     }
 
     // =========================================================================
@@ -493,7 +537,7 @@ class NuFormRenderer {
 
     /**
      * Recursively collect all field 'name' values from a layout array,
-     * including fields nested inside groups and tab panels.
+     * including fields nested inside groups and tab panels (rows).
      */
     private function collectFieldNames(array $layout): array {
         $names = [];
@@ -501,7 +545,9 @@ class NuFormRenderer {
             $type = $item['type'] ?? 'text';
             if ($type === 'tab') {
                 foreach ($item['tabs'] ?? [] as $tab) {
-                    $names = array_merge($names, $this->collectFieldNames($tab['fields'] ?? []));
+                    // Support both builder shape (rows) and legacy shape (fields)
+                    $tabFields = $this->collectTabFields($tab);
+                    $names = array_merge($names, $this->collectFieldNames($tabFields));
                 }
             } elseif ($type === 'group') {
                 $names = array_merge($names, $this->collectFieldNames($item['fields'] ?? []));
