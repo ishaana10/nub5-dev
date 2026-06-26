@@ -1,17 +1,15 @@
 /**
- * nb-form-builder.js  — PATCHED v4
+ * nb-form-builder.js  — PATCHED v5
  *
- * v4 Fixes:
- *   FIX-E  Canvas dragover/drop now intercepts text/nb-type so dragging a
- *          Group or Tab tool from the toolbar lands directly on the canvas
- *          (no row needed).  Regular field drops still go to a row-body.
- *          Row lives only inside group/tab — canvas rows are still supported
- *          for backward compat but group/tab are the primary containers.
- * (v3 fixes retained below)
+ * v5 Fixes:
+ *   FIX-F  Row header no longer leaks onclick JS as visible text (escaping bug)
+ *   FIX-G  Tab panels now have a "+ Group" button so groups can nest inside tabs
+ * (v3/v4 fixes retained)
+ *   FIX-E  Canvas dragover/drop intercepts text/nb-type for group/tab directly
  *   FIX-A  Tab/Group added directly to canvas (no row needed)
  *   FIX-B  Field body always opens when card is first created (new + restore)
- *   FIX-C  saveForm passes create_table flag; getLayout row_index is stable
- *   FIX-D  Label in header updates live as user types in the label input
+ *   FIX-C  saveForm passes create_table flag
+ *   FIX-D  Label in header updates live as user types
  */
 (function (window) {
   'use strict';
@@ -45,9 +43,7 @@
       '.nb-row.drag-row-over,.nb-container.drag-row-over{outline:2px dashed var(--color-primary,#4f6bed);outline-offset:2px;}',
       '.nb-row.drag-row-source,.nb-container.drag-row-source{opacity:.45;}',
       '.nb-row-drop-hint{color:var(--text-muted,#aaa);font-size:12px;text-align:center;padding:10px 0;grid-column:1/-1;}',
-      /* FIX-B: field body hidden by default, .open shows it */
       '.nb-cfield-body{display:none;}.nb-cfield-body.open{display:block;}',
-      /* FIX-E: canvas drag-over highlight when a tool (group/tab/field) is dragged */
       '#formCanvas.nb-canvas-tool-over{outline:2px dashed var(--color-primary,#4f6bed);outline-offset:3px;}'
     ].join('');
     (document.head || document.documentElement).appendChild(s);
@@ -160,7 +156,7 @@
     });
   }
 
-  /* ── FIX-E: _attachCanvasRowDrop now ALSO handles text/nb-type for group/tab ── */
+  /* ── Canvas drop (handles row reorder + tool drops for group/tab) ── */
   function _attachCanvasRowDrop(canvas) {
     if (canvas._nbCanvasRowDropWired) return;
     canvas._nbCanvasRowDropWired = true;
@@ -173,13 +169,10 @@
       var hasPlain  = Array.prototype.indexOf.call(types, 'text/plain')      !== -1;
 
       if (hasNbType || hasPlain) {
-        /* Only allow direct canvas drop for group/tab — regular fields must go to a row-body */
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
         canvas.classList.add('nb-canvas-tool-over');
         return;
       }
-
       if (!hasRowId) return;
       e.preventDefault(); e.stopPropagation();
       canvas.classList.remove('nb-canvas-tool-over');
@@ -201,7 +194,6 @@
       canvas.classList.remove('nb-canvas-tool-over');
       document.querySelectorAll('.drag-row-over').forEach(function (el) { el.classList.remove('drag-row-over'); });
 
-      /* ── FIX-E: toolbar tool drop (text/nb-type) → group/tab go to canvas ── */
       var dtype = e.dataTransfer.getData('text/nb-type') || '';
       if (!dtype) dtype = e.dataTransfer.getData('text/plain') || '';
       if (dtype) {
@@ -210,7 +202,6 @@
           window.nbFormBuilder.addField(dtype, {});
           return;
         }
-        /* Regular field dropped directly on canvas — create a row for it */
         e.preventDefault(); e.stopPropagation();
         var row = window.nbFormBuilder.addRow();
         var rb  = row ? row.querySelector('.nb-row-body') : null;
@@ -230,7 +221,6 @@
         return;
       }
 
-      /* ── Row reorder (text/nb-row-id) ── */
       var rowId = e.dataTransfer.getData('text/nb-row-id');
       if (!rowId) return;
       e.preventDefault(); e.stopPropagation();
@@ -256,25 +246,64 @@
     wrap.className = 'nb-container nb-container-group';
     wrap.id = id;
     wrap.dataset.containerType = 'group';
-    wrap.innerHTML =
-      '<div class="nb-container-header">'
-        + '<span class="nb-row-drag" title="Drag group">⠇</span>'
-        + '<span class="nb-container-type-badge">GROUP</span>'
-        + '<input type="text" class="nb-container-label-input nu-input" value="' + _esc(label) + '" placeholder="Group label">'
-        + '<button type="button" class="nb-row-btn" onclick="window.nbFormBuilder._addRowToContainer(this.closest(\'.nb-container\'))" title="Add row">+ Row</button>'
-        + '<button type="button" class="nb-row-btn del" onclick="this.closest(\'.nb-container\').remove();window.nbFormBuilder._updateEmptyState();">✕</button>'
-      + '</div>'
-      + '<div class="nb-container-body nb-container-group-body">'
-        + '<div class="nb-row-drop-hint">Click "+ Row" to add a row, then drop fields in</div>'
-      + '</div>';
+
+    /* FIX-F: build header using DOM, NOT innerHTML with escaped onclick strings */
+    var header = document.createElement('div');
+    header.className = 'nb-container-header';
+
+    var dragHandle = document.createElement('span');
+    dragHandle.className = 'nb-row-drag';
+    dragHandle.title = 'Drag group';
+    dragHandle.textContent = '⠇';
+
+    var badge = document.createElement('span');
+    badge.className = 'nb-container-type-badge';
+    badge.textContent = 'GROUP';
+
+    var labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.className = 'nb-container-label-input nu-input';
+    labelInput.value = label;
+    labelInput.placeholder = 'Group label';
+
+    var addRowBtn = document.createElement('button');
+    addRowBtn.type = 'button';
+    addRowBtn.className = 'nb-row-btn';
+    addRowBtn.title = 'Add row';
+    addRowBtn.textContent = '+ Row';
+    addRowBtn.addEventListener('click', function () {
+      _addRowToContainer(wrap, [], false);
+    });
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'nb-row-btn del';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', function () {
+      wrap.remove();
+      window.nbFormBuilder._updateEmptyState();
+    });
+
+    header.appendChild(dragHandle);
+    header.appendChild(badge);
+    header.appendChild(labelInput);
+    header.appendChild(addRowBtn);
+    header.appendChild(delBtn);
+
+    var body = document.createElement('div');
+    body.className = 'nb-container-body nb-container-group-body';
+    var hint = document.createElement('div');
+    hint.className = 'nb-row-drop-hint';
+    hint.textContent = 'Click "+ Row" to add a row, then drop fields in';
+    body.appendChild(hint);
+
+    wrap.appendChild(header);
+    wrap.appendChild(body);
 
     if (extra.rows && extra.rows.length) {
-      var body = wrap.querySelector('.nb-container-group-body');
-      if (body) {
-        var hint = body.querySelector('.nb-row-drop-hint');
-        if (hint) hint.remove();
-        extra.rows.forEach(function (rowDef) { _addRowToContainer(body, rowDef.fields || [], true); });
-      }
+      var existingHint = body.querySelector('.nb-row-drop-hint');
+      if (existingHint) existingHint.remove();
+      extra.rows.forEach(function (rowDef) { _addRowToContainer(body, rowDef.fields || [], true); });
     }
     _wireRowDrag(wrap);
     return wrap;
@@ -292,54 +321,98 @@
     wrap.className = 'nb-container nb-container-tab';
     wrap.id = id;
     wrap.dataset.containerType = 'tab';
-    wrap.innerHTML =
-      '<div class="nb-container-header">'
-        + '<span class="nb-row-drag" title="Drag tab container">⠇</span>'
-        + '<span class="nb-container-type-badge nb-container-type-badge-tab">TAB</span>'
-        + '<span style="font-size:11px;color:rgba(255,255,255,.8);flex:1;">Tab Container</span>'
-        + '<button type="button" class="nb-row-btn del" onclick="this.closest(\'.nb-container\').remove();window.nbFormBuilder._updateEmptyState();">✕</button>'
-      + '</div>'
-      + '<div class="nb-cfield-tab-nav" id="' + id + '-nav"></div>'
-      + '<div class="nb-container-tab-panels" id="' + id + '-panels"></div>';
 
-    /* Temporarily attach to DOM so getElementById works inside _addTabPanel */
+    /* FIX-F: build header using DOM */
+    var header = document.createElement('div');
+    header.className = 'nb-container-header';
+
+    var dragHandle = document.createElement('span');
+    dragHandle.className = 'nb-row-drag';
+    dragHandle.title = 'Drag tab container';
+    dragHandle.textContent = '⠇';
+
+    var badge = document.createElement('span');
+    badge.className = 'nb-container-type-badge nb-container-type-badge-tab';
+    badge.textContent = 'TAB';
+
+    var titleSpan = document.createElement('span');
+    titleSpan.style.cssText = 'font-size:11px;color:rgba(255,255,255,.8);flex:1;';
+    titleSpan.textContent = 'Tab Container';
+
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'nb-row-btn del';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', function () {
+      wrap.remove();
+      window.nbFormBuilder._updateEmptyState();
+    });
+
+    header.appendChild(dragHandle);
+    header.appendChild(badge);
+    header.appendChild(titleSpan);
+    header.appendChild(delBtn);
+
+    var nav    = document.createElement('div');
+    nav.className = 'nb-cfield-tab-nav';
+    nav.id = id + '-nav';
+
+    var panels = document.createElement('div');
+    panels.className = 'nb-container-tab-panels';
+    panels.id = id + '-panels';
+
+    wrap.appendChild(header);
+    wrap.appendChild(nav);
+    wrap.appendChild(panels);
+
+    /* Temporarily attach to DOM so getElementById works */
     document.body.appendChild(wrap);
-    var nav    = document.getElementById(id + '-nav');
-    var panels = document.getElementById(id + '-panels');
 
     tabs.forEach(function (tab, i) {
       _addTabPanel(wrap, nav, panels, tab.name || ('Tab ' + (i+1)), i === 0, tab.rows || []);
     });
 
-    var addBtn = document.createElement('button');
-    addBtn.type = 'button';
-    addBtn.className = 'nb-cfield-tab-add-btn';
-    addBtn.textContent = '+ Tab';
-    addBtn.addEventListener('click', function () {
+    var addTabBtn = document.createElement('button');
+    addTabBtn.type = 'button';
+    addTabBtn.className = 'nb-cfield-tab-add-btn';
+    addTabBtn.textContent = '+ Tab';
+    addTabBtn.addEventListener('click', function () {
       var idx = nav.querySelectorAll('.nb-cfield-tab-nav-item').length;
       _addTabPanel(wrap, nav, panels, 'Tab ' + (idx + 1), false, []);
     });
-    nav.appendChild(addBtn);
+    nav.appendChild(addTabBtn);
 
     document.body.removeChild(wrap);
     _wireRowDrag(wrap);
     return wrap;
   }
 
+  /* FIX-G: Tab panel now has both "+ Row" and "+ Group" buttons */
   function _addTabPanel(container, nav, panels, tabName, isActive, rows) {
     var panelId = 'nb-tabpanel-' + Date.now() + '-' + Math.random().toString(36).slice(2,5);
 
     var navItem = document.createElement('div');
     navItem.className = 'nb-cfield-tab-nav-item' + (isActive ? ' active' : '');
     navItem.dataset.panelTarget = panelId;
-    navItem.innerHTML =
-      '<input type="text" class="nb-tab-name-input" value="' + _esc(tabName) + '" '
-        + 'style="background:none;border:none;outline:none;font:inherit;cursor:pointer;width:' + Math.max(50, tabName.length * 8) + 'px;min-width:40px;" '
-        + 'onclick="event.stopPropagation()">'
-      + '<span class="nb-tab-nav-del" style="font-size:10px;cursor:pointer;color:rgba(0,0,0,.4);margin-left:2px;" title="Remove tab">×</span>';
+
+    var nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'nb-tab-name-input';
+    nameInput.value = tabName;
+    nameInput.style.cssText = 'background:none;border:none;outline:none;font:inherit;cursor:pointer;width:' + Math.max(50, tabName.length * 8) + 'px;min-width:40px;';
+    nameInput.addEventListener('click', function (e) { e.stopPropagation(); });
+
+    var delSpan = document.createElement('span');
+    delSpan.className = 'nb-tab-nav-del';
+    delSpan.style.cssText = 'font-size:10px;cursor:pointer;color:rgba(0,0,0,.4);margin-left:2px;';
+    delSpan.title = 'Remove tab';
+    delSpan.textContent = '×';
+
+    navItem.appendChild(nameInput);
+    navItem.appendChild(delSpan);
 
     navItem.addEventListener('click', function (e) {
-      if (e.target.classList.contains('nb-tab-nav-del')) {
+      if (e.target === delSpan) {
         var panel = document.getElementById(panelId);
         if (panel) panel.remove();
         navItem.remove();
@@ -362,28 +435,70 @@
     if (addBtn) nav.insertBefore(navItem, addBtn);
     else nav.appendChild(navItem);
 
+    /* Panel */
     var panel = document.createElement('div');
     panel.className = 'nb-cfield-tab-panel' + (isActive ? ' active' : '');
     panel.id = panelId;
-    panel.innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:flex-end;padding:4px 8px 2px;border-bottom:1px solid var(--border,#e0e4ef);">'
-        + '<button type="button" class="nb-row-btn" onclick="window.nbFormBuilder._addRowToContainer(this.closest(\'.nb-cfield-tab-panel\'))">+ Row</button>'
-      + '</div>'
-      + '<div class="nb-tab-panel-rows"></div>';
+
+    /* FIX-F + FIX-G: toolbar bar built with DOM, has both + Row and + Group */
+    var toolbar = document.createElement('div');
+    toolbar.style.cssText = 'display:flex;align-items:center;gap:6px;justify-content:flex-end;padding:4px 8px 2px;border-bottom:1px solid var(--border,#e0e4ef);';
+
+    var addRowBtn = document.createElement('button');
+    addRowBtn.type = 'button';
+    addRowBtn.className = 'nb-row-btn';
+    addRowBtn.textContent = '+ Row';
+
+    /* FIX-G: + Group button inside tab panel */
+    var addGrpBtn = document.createElement('button');
+    addGrpBtn.type = 'button';
+    addGrpBtn.className = 'nb-row-btn';
+    addGrpBtn.textContent = '+ Group';
+
+    toolbar.appendChild(addRowBtn);
+    toolbar.appendChild(addGrpBtn);
+
+    var rowsBody = document.createElement('div');
+    rowsBody.className = 'nb-tab-panel-rows';
+
+    panel.appendChild(toolbar);
+    panel.appendChild(rowsBody);
     panels.appendChild(panel);
 
-    var rowsBody = panel.querySelector('.nb-tab-panel-rows');
+    /* Wire buttons AFTER panel is in DOM */
+    addRowBtn.addEventListener('click', function () {
+      _addRowToContainer(rowsBody, [], false);
+    });
+    addGrpBtn.addEventListener('click', function () {
+      var grp = _makeGroupContainer({});
+      var hint = rowsBody.querySelector(':scope > .nb-row-drop-hint');
+      if (hint) hint.remove();
+      rowsBody.appendChild(grp);
+    });
+
     if (rows && rows.length) {
-      rows.forEach(function (rowDef) { _addRowToContainer(rowsBody, rowDef.fields || [], true); });
+      rows.forEach(function (rowDef) {
+        /* Support nested groups inside tab rows */
+        if (rowDef.type === 'group') {
+          var hint2 = rowsBody.querySelector(':scope > .nb-row-drop-hint');
+          if (hint2) hint2.remove();
+          rowsBody.appendChild(_makeGroupContainer(rowDef));
+        } else {
+          _addRowToContainer(rowsBody, rowDef.fields || [], true);
+        }
+      });
     } else {
-      rowsBody.innerHTML = '<div class="nb-row-drop-hint">Click "+ Row" to add a row, then drop fields in</div>';
+      var emptyHint = document.createElement('div');
+      emptyHint.className = 'nb-row-drop-hint';
+      emptyHint.textContent = 'Click "+ Row" or "+ Group" to add content';
+      rowsBody.appendChild(emptyHint);
     }
+
     return panel;
   }
 
   /* ── _addRowToContainer ─────────────────────────────────────────── */
   function _addRowToContainer(target, fields, isRestore) {
-    /* Resolve the correct rows wrapper */
     var rowsWrap = target;
     if (target) {
       if (target.classList.contains('nb-cfield-tab-panel')) {
@@ -401,27 +516,56 @@
     var row = document.createElement('div');
     row.className = 'nb-row nb-inner-row';
     row.id = rowId;
-    row.innerHTML =
-      '<div class="nb-row-header">'
-        + '<span class="nb-row-drag" title="Drag row">⠇</span>'
-        + '<span class="nb-row-label">Row</span>'
-        + '<span class="nb-row-actions">'
-          + '<button class="nb-row-btn del" onclick="'
-            + 'var r=this.closest(\'.nb-row\');'
-            + 'var p=r.parentNode;'
-            + 'r.remove();'
-            + 'if(!p.querySelector(\'.nb-row\')){p.innerHTML=\'<div class=\\\"nb-row-drop-hint\\\">Click &quot;+ Row&quot; to add a row, then drop fields in</div>\';}' 
-            + 'window.nbFormBuilder._updateEmptyState();">✕</button>'
-        + '</span>'
-      + '</div>'
-      + '<div class="nb-row-body">'
-        + '<div class="nb-row-drop-hint">Drop fields here</div>'
-      + '</div>';
+
+    /* FIX-F: build row entirely with DOM — no innerHTML with escaped onclick */
+    var rowHeader = document.createElement('div');
+    rowHeader.className = 'nb-row-header';
+
+    var rowDrag = document.createElement('span');
+    rowDrag.className = 'nb-row-drag';
+    rowDrag.title = 'Drag row';
+    rowDrag.textContent = '⠇';
+
+    var rowLabel = document.createElement('span');
+    rowLabel.className = 'nb-row-label';
+    rowLabel.textContent = 'Row';
+
+    var rowActions = document.createElement('span');
+    rowActions.className = 'nb-row-actions';
+
+    var rowDelBtn = document.createElement('button');
+    rowDelBtn.className = 'nb-row-btn del';
+    rowDelBtn.type = 'button';
+    rowDelBtn.textContent = '✕';
+    rowDelBtn.addEventListener('click', function () {
+      var parent = row.parentNode;
+      row.remove();
+      if (parent && !parent.querySelector('.nb-row')) {
+        var h = document.createElement('div');
+        h.className = 'nb-row-drop-hint';
+        h.textContent = 'Click "+ Row" to add a row, then drop fields in';
+        parent.appendChild(h);
+      }
+      window.nbFormBuilder._updateEmptyState();
+    });
+
+    rowActions.appendChild(rowDelBtn);
+    rowHeader.appendChild(rowDrag);
+    rowHeader.appendChild(rowLabel);
+    rowHeader.appendChild(rowActions);
+
+    var rowBody = document.createElement('div');
+    rowBody.className = 'nb-row-body';
+    var dropHint = document.createElement('div');
+    dropHint.className = 'nb-row-drop-hint';
+    dropHint.textContent = 'Drop fields here';
+    rowBody.appendChild(dropHint);
+
+    row.appendChild(rowHeader);
+    row.appendChild(rowBody);
     rowsWrap.appendChild(row);
     _wireRowDrag(row);
-
-    var body = row.querySelector('.nb-row-body');
-    if (body) _attachRowBodyDrop(body);
+    _attachRowBodyDrop(rowBody);
 
     if (fields && fields.length) {
       fields.forEach(function (f) {
@@ -429,13 +573,12 @@
           f.type || 'text', f.label || '', f.name || '', !!f.required, f
         );
         if (!card) return;
-        var dropHint = body.querySelector('.nb-row-drop-hint');
-        if (dropHint) dropHint.remove();
+        var dh = rowBody.querySelector('.nb-row-drop-hint');
+        if (dh) dh.remove();
         _prepCard(card);
-        body.appendChild(card);
+        rowBody.appendChild(card);
         window.nbFormBuilder._applyColSpan(card, parseInt(f.col, 10) || 12);
         _restoreFieldState(card, f);
-        /* FIX-B: always open body on restore */
         var cb = card.querySelector('.nb-cfield-body');
         if (cb) cb.classList.add('open');
       });
@@ -519,9 +662,9 @@
       var canvas = document.getElementById('formCanvas');
       if (canvas) canvas.querySelectorAll('.nb-row,.nb-container').forEach(function (r) { r.remove(); });
       this._updateEmptyState();
-      this.selectFormType('main',         document.querySelector('input[name="formType"][value="main"]')         ? document.querySelector('input[name="formType"][value="main"]').closest('.nb-ftype-card')         : null);
-      this.selectTableMode('new',         document.querySelector('input[name="formTableMode"][value="new"]')     ? document.querySelector('input[name="formTableMode"][value="new"]').closest('.nb-tmode-card')     : null);
-      this.selectPkType('autoincrement',  document.querySelector('input[name="formPkType"][value="autoincrement"]') ? document.querySelector('input[name="formPkType"][value="autoincrement"]').closest('.nb-pk-card') : null);
+      this.selectFormType('main',        document.querySelector('input[name="formType"][value="main"]')          ? document.querySelector('input[name="formType"][value="main"]').closest('.nb-ftype-card')          : null);
+      this.selectTableMode('new',        document.querySelector('input[name="formTableMode"][value="new"]')      ? document.querySelector('input[name="formTableMode"][value="new"]').closest('.nb-tmode-card')      : null);
+      this.selectPkType('autoincrement', document.querySelector('input[name="formPkType"][value="autoincrement"]') ? document.querySelector('input[name="formPkType"][value="autoincrement"]').closest('.nb-pk-card') : null);
       this.selectDisplayMode('inline');
     },
 
@@ -577,7 +720,6 @@
       empty.style.display = hasContent ? 'none' : 'block';
     },
 
-    /* ── addRow (top-level canvas row) ────────────────────────────── */
     addRow: function () {
       var canvas = document.getElementById('formCanvas');
       if (!canvas) return null;
@@ -589,43 +731,58 @@
       var row = document.createElement('div');
       row.className = 'nb-row';
       row.id = rowId;
-      row.innerHTML =
-        '<div class="nb-row-header">'
-          + '<span class="nb-row-drag" title="Drag row">⠇</span>'
-          + '<span class="nb-row-label">Row</span>'
-          + '<span class="nb-row-actions">'
-            + '<button class="nb-row-btn del" onclick="this.closest(\'.nb-row\').remove();window.nbFormBuilder._updateEmptyState();">✕</button>'
-          + '</span>'
-        + '</div>'
-        + '<div class="nb-row-body">'
-          + '<div class="nb-row-drop-hint">Drop fields here</div>'
-        + '</div>';
+
+      /* FIX-F: DOM construction, no innerHTML onclick */
+      var rh = document.createElement('div');
+      rh.className = 'nb-row-header';
+
+      var rd = document.createElement('span');
+      rd.className = 'nb-row-drag'; rd.title = 'Drag row'; rd.textContent = '⠇';
+
+      var rl = document.createElement('span');
+      rl.className = 'nb-row-label'; rl.textContent = 'Row';
+
+      var ra = document.createElement('span');
+      ra.className = 'nb-row-actions';
+
+      var db = document.createElement('button');
+      db.className = 'nb-row-btn del'; db.type = 'button'; db.textContent = '✕';
+      db.addEventListener('click', function () {
+        row.remove();
+        window.nbFormBuilder._updateEmptyState();
+      });
+      ra.appendChild(db);
+      rh.appendChild(rd); rh.appendChild(rl); rh.appendChild(ra);
+
+      var rb = document.createElement('div');
+      rb.className = 'nb-row-body';
+      var dh = document.createElement('div');
+      dh.className = 'nb-row-drop-hint'; dh.textContent = 'Drop fields here';
+      rb.appendChild(dh);
+
+      row.appendChild(rh);
+      row.appendChild(rb);
       canvas.appendChild(row);
       _wireRowDrag(row);
-      var body = row.querySelector('.nb-row-body');
-      if (body) _attachRowBodyDrop(body);
+      _attachRowBodyDrop(rb);
       return row;
     },
 
-    /* Public wrapper so onclick="window.nbFormBuilder._addRowToContainer(...)" works */
     _addRowToContainer: function (target) {
       return _addRowToContainer(target, [], false);
     },
 
-    /* ── addField routes group/tab DIRECTLY to canvas ──────── */
     addField: function (type, extraData) {
       var canvas = document.getElementById('formCanvas');
       if (!canvas) return null;
       var extra = extraData || {};
       _attachCanvasRowDrop(canvas);
 
-      /* ── Group/Tab go directly onto canvas — NO row needed ── */
       if (type === 'group') {
         var grp = _makeGroupContainer(extra);
         canvas.appendChild(grp);
         var emptyG = document.getElementById('canvasEmpty');
         if (emptyG) emptyG.style.display = 'none';
-        _wireRowDrag(grp);
         return grp;
       }
       if (type === 'tab') {
@@ -633,11 +790,9 @@
         canvas.appendChild(tab);
         var emptyT = document.getElementById('canvasEmpty');
         if (emptyT) emptyT.style.display = 'none';
-        _wireRowDrag(tab);
         return tab;
       }
 
-      /* ── Regular field — find or create the last canvas row ── */
       var label = extra.label || extra.fieldlabel || (type.charAt(0).toUpperCase() + type.slice(1) + ' Field');
       var name  = extra.name  || extra.fieldname  || (type + '_' + (++_fieldCounter));
       var col   = parseInt(extra.col || extra.colspan, 10) || 12;
@@ -645,7 +800,6 @@
       var card = this._makeFieldCard(type, label, name, !!extra.required, extra);
       if (!card) return null;
 
-      /* Find last top-level canvas row (not containers) */
       var canvasRows = canvas.querySelectorAll(':scope > .nb-row');
       var targetBody = canvasRows.length ? canvasRows[canvasRows.length - 1].querySelector('.nb-row-body') : null;
       if (!targetBody) {
@@ -656,15 +810,11 @@
 
       var hint = targetBody.querySelector('.nb-row-drop-hint');
       if (hint) hint.remove();
-
       _prepCard(card);
       targetBody.appendChild(card);
       this._applyColSpan(card, col);
-
-      /* FIX-B: open body immediately so label/name are visible */
       var cb = card.querySelector('.nb-cfield-body');
       if (cb) cb.classList.add('open');
-
       return card;
     },
 
@@ -685,7 +835,6 @@
 
       var extraBody = '';
 
-      /* SELECT */
       if (canvasType === 'select') {
         var selIsMulti  = extra.multiple === true || extra.multiple === 'true' || extra.multiple === 1 || extra.select_type === 'multiselect';
         var optSource   = extra.options_source || 'manual';
@@ -700,7 +849,6 @@
           + _optionsSourceHTML(name, isFromTable, opts, extra);
       }
 
-      /* SELECT2 */
       if (canvasType === 'select2') {
         var s2IsMulti     = extra.multiple === true || extra.multiple === 'true' || extra.multiple === 1 || extra.select_type === 'multiselect';
         var allowClearChk = (extra.allow_clear === false || extra.allow_clear === 'false') ? '' : 'checked';
@@ -723,19 +871,16 @@
           + _optionsSourceHTML(name, s2IsFromTable, s2Opts, extra);
       }
 
-      /* RADIO / CHECKBOX */
       if (canvasType === 'radio' || canvasType === 'checkbox_group') {
         var rcIsFromTable = (extra.options_source === 'table');
         var rcOpts = (extra.options || []).map(function (o) { return typeof o === 'object' ? (o.value + '|' + o.label) : o; }).join('\n');
         extraBody += _optionsSourceHTML(name, rcIsFromTable, rcOpts, extra);
       }
 
-      /* CALCULATED */
       if (canvasType === 'calculated') {
         extraBody += '<div class="nb-fp nb-fp-full"><label>Formula</label><textarea class="nu-input nu-field-formula" rows="2" placeholder="{qty} * {price}">' + _esc(extra.formula || extra.calc_formula || '') + '</textarea></div>';
       }
 
-      /* LOOKUP */
       if (canvasType === 'lookup') {
         var lk = (extra.lookup && typeof extra.lookup === 'object') ? extra.lookup : {};
         extraBody +=
@@ -753,7 +898,6 @@
           + '</div>';
       }
 
-      /* SUBFORM */
       var sfData;
       if (canvasType === 'subform') {
         var sf = (extra.subform && typeof extra.subform === 'object') ? extra.subform : {};
@@ -788,7 +932,7 @@
           + spanBtns
           + '<span class="nb-span-preview">' + col + '/12 cols</span>'
         + '</div>'
-               + '<div class="nb-cfield-body">'   /* FIX-B: starts hidden, JS adds .open */
+        + '<div class="nb-cfield-body">'
           + '<div class="nb-fp-grid">'
             + '<div class="nb-fp"><label>Label</label><input type="text" class="nu-input nu-field-label" value="' + _esc(label) + '"></div>'
             + '<div class="nb-fp"><label>Field Name</label><input type="text" class="nu-input nu-field-name" value="' + _esc(name) + '"></div>'
@@ -800,21 +944,18 @@
           + '</div>'
         + '</div>';
 
-      /* Toggle body on header click */
       var header = card.querySelector('.nb-cfield-header');
       var body   = card.querySelector('.nb-cfield-body');
       if (header && body) {
         header.addEventListener('click', function (e) {
           if (e.target.closest('.nb-cfield-actions')) return;
           body.classList.toggle('open');
-          /* FIX-D: sync header label from input when opening or closing */
           var lbl = card.querySelector('.nu-field-label');
           var hdr = card.querySelector('.nb-cfield-label');
           if (lbl && hdr && lbl.value) hdr.textContent = lbl.value;
         });
       }
 
-      /* FIX-D: live update header label as user types */
       var labelInput = card.querySelector('.nu-field-label');
       if (labelInput) {
         labelInput.addEventListener('input', function () {
@@ -879,11 +1020,10 @@
         } else if (el.classList.contains('nb-container')) {
           var ctype = el.dataset.containerType;
           if (ctype === 'group') {
-            var labelInput = el.querySelector('.nb-container-label-input');
-            var groupLabel = labelInput ? labelInput.value : '';
+            var li = el.querySelector('.nb-container-label-input');
             layout.push({
               type: 'group',
-              label: groupLabel,
+              label: li ? li.value : '',
               name: 'group_' + Date.now(),
               rows: _collectContainerRows(el.querySelector('.nb-container-group-body')),
               col: 12,
@@ -895,11 +1035,10 @@
             var tabPanels = el.querySelector('[id$="-panels"]');
             if (tabNav && tabPanels) {
               tabNav.querySelectorAll('.nb-cfield-tab-nav-item').forEach(function (navItem) {
-                var nameInput = navItem.querySelector('.nb-tab-name-input');
-                var tabName   = nameInput ? nameInput.value : 'Tab';
-                var panelEl   = document.getElementById(navItem.dataset.panelTarget);
-                var panelRows = panelEl ? _collectContainerRows(panelEl.querySelector('.nb-tab-panel-rows')) : [];
-                tabsData.push({ name: tabName, rows: panelRows });
+                var ni = navItem.querySelector('.nb-tab-name-input');
+                var panelEl = document.getElementById(navItem.dataset.panelTarget);
+                var panelRows = panelEl ? _collectTabPanelContent(panelEl.querySelector('.nb-tab-panel-rows')) : [];
+                tabsData.push({ name: ni ? ni.value : 'Tab', rows: panelRows });
               });
             }
             layout.push({ type: 'tab', name: 'tab_' + Date.now(), tabs: tabsData, col: 12, row_index: -1 });
@@ -940,7 +1079,6 @@
         form_table_mode:           tableMode,
         form_pk_type:              _r('formPkType') || 'autoincrement',
         form_layout:               JSON.stringify(layout),
-        /* FIX-C: tell backend to CREATE the table when mode=new */
         create_table:              (tableMode === 'new' && !editId) ? 1 : 0,
         browse_display_mode:       (function () { var e = document.getElementById('browseDisplayMode'); return e ? e.value : 'inline'; }()),
         browse_sql:                _v('formBrowseSql'),
@@ -1003,7 +1141,7 @@
   function _collectContainerRows(bodyEl) {
     if (!bodyEl) return [];
     var rows = [];
-    bodyEl.querySelectorAll('.nb-inner-row').forEach(function (rowEl, ri) {
+    bodyEl.querySelectorAll(':scope > .nb-inner-row').forEach(function (rowEl, ri) {
       var rowFields = [];
       rowEl.querySelectorAll(':scope > .nb-row-body > .nb-cfield').forEach(function (card) {
         var f = _readFieldCard(card, ri);
@@ -1012,6 +1150,32 @@
       rows.push({ fields: rowFields });
     });
     return rows;
+  }
+
+  /* Collects rows AND nested groups from a tab panel rows wrapper */
+  function _collectTabPanelContent(bodyEl) {
+    if (!bodyEl) return [];
+    var result = [];
+    Array.prototype.forEach.call(bodyEl.children, function (child, ri) {
+      if (child.classList.contains('nb-inner-row')) {
+        var rowFields = [];
+        child.querySelectorAll(':scope > .nb-row-body > .nb-cfield').forEach(function (card) {
+          var f = _readFieldCard(card, ri);
+          if (f) rowFields.push(f);
+        });
+        result.push({ fields: rowFields });
+      } else if (child.classList.contains('nb-container-group')) {
+        var li = child.querySelector('.nb-container-label-input');
+        result.push({
+          type: 'group',
+          label: li ? li.value : '',
+          name: 'group_' + Date.now(),
+          rows: _collectContainerRows(child.querySelector('.nb-container-group-body')),
+          col: 12
+        });
+      }
+    });
+    return result;
   }
 
   function _readFieldCard(card, rowIndex) {
@@ -1116,7 +1280,7 @@
 
 
   /* ════════════════════════════════════════════════════════════════════
-     Row/span drop patches
+     Drop / drag wiring
   ═══════════════════════════════════════════════════════════════════ */
   if (!window.nuToggleContainer) {
     window.nuToggleContainer = function (btn) {
@@ -1185,7 +1349,6 @@
           if (hint) hint.remove();
           rowBody.appendChild(newCard);
           window.nbFormBuilder._applyColSpan(newCard, 6);
-          /* FIX-B: open body on drop */
           var cb = newCard.querySelector('.nb-cfield-body');
           if (cb) cb.classList.add('open');
         }
@@ -1539,7 +1702,6 @@
         }
         window.nbFormBuilder._applyColSpan(card, parseInt(f.col, 10) || 12);
         _restoreFieldState(card, f);
-        /* FIX-B: open body so label/name are visible */
         var cb = card.querySelector('.nb-cfield-body');
         if (cb) cb.classList.add('open');
       });
