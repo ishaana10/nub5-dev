@@ -1131,7 +1131,7 @@
   }
   function _populateFormDropdown(panel, selectedCode, cb) {
     var sel = panel.querySelector('.nb-sf-form-code'); if (!sel) { if (cb) cb(); return; }
-    fetch('api/forms.php?action=list', { credentials:'same-origin' }).
+    fetch('api/forms.php?action=list', { credentials:'same-origin' })
     
           .then(function (r) { return r.json(); })
       .then(function (res) {
