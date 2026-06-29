@@ -1095,6 +1095,56 @@ function nu_flatten_fields(array $layout): array {
     return $out;
 }
 
+
+/**
+ * Flattens a nested form layout (groups, tabs, rows) into a single
+ * flat array of field definitions, used when rendering/saving a form.
+ *
+ * @param  array $layout  The parsed form_layout JSON array
+ * @return array          Flat list of field definition arrays
+ */
+function nu_flatten_layout(array $layout): array {
+    $fields = [];
+
+    foreach ($layout as $item) {
+        $type = $item['type'] ?? 'text';
+
+        if ($type === 'group') {
+            // Group contains rows → rows contain fields
+            foreach (($item['rows'] ?? []) as $row) {
+                foreach (($row['fields'] ?? []) as $field) {
+                    $fields[] = $field;
+                }
+            }
+
+        } elseif ($type === 'tab') {
+            // Tab contains tabs → each tab contains rows → rows contain fields
+            foreach (($item['tabs'] ?? []) as $tab) {
+                foreach (($tab['rows'] ?? []) as $row) {
+                    if (($row['type'] ?? '') === 'group') {
+                        // Nested group inside a tab
+                        foreach (($row['rows'] ?? []) as $innerRow) {
+                            foreach (($innerRow['fields'] ?? []) as $field) {
+                                $fields[] = $field;
+                            }
+                        }
+                    } else {
+                        foreach (($row['fields'] ?? []) as $field) {
+                            $fields[] = $field;
+                        }
+                    }
+                }
+            }
+
+        } else {
+            // Plain field (row_index-based flat item)
+            $fields[] = $item;
+        }
+    }
+
+    return $fields;
+}
+
 function nu_flatten_layout_for_grid($layout) {
     return array_values(array_filter(
         nu_flatten_layout($layout),
