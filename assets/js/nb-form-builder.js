@@ -200,21 +200,24 @@
     grid.appendChild(spanBar);
 
  var _dsOrDom = function (dsKey, cls) {
-  // Use dataset if key exists and is non-empty
-  if (card.dataset[dsKey] !== undefined && card.dataset[dsKey] !== '') {
-    return card.dataset[dsKey];
-  }
+  var dsVal = card.dataset[dsKey];
+  if (dsVal !== undefined && dsVal !== '') return dsVal;
   var el = card.querySelector(cls);
-  if (!el) return '';
-  // getAttribute('value') reads the HTML attribute (reliable even when hidden)
-  // .value reads the DOM property (may be stale on hidden inputs)
-  return el.getAttribute('value') || el.value || '';
+  if (!el) {
+    console.error('[nb-props] _dsOrDom: no element for', cls, 'dsKey=', dsKey, 'dataset=', JSON.stringify(card.dataset));
+    return '';
+  }
+  var attrVal = el.getAttribute('value');
+  var propVal = el.value;
+  console.log('[nb-props] _dsOrDom fallback:', cls, '| dsVal=', dsVal, '| attr=', attrVal, '| prop=', propVal);
+  return attrVal || propVal || '';
 };
 var labelVal = _dsOrDom('fieldLabel',   '.nu-field-label');
 var nameVal  = _dsOrDom('fieldName',    '.nu-field-name');
 var phVal    = _dsOrDom('fieldPh',      '.nu-field-placeholder');
 var defVal   = _dsOrDom('fieldDefault', '.nu-field-default');
 var helpVal  = _dsOrDom('fieldHelp',    '.nu-field-help');
+console.log('[nb-props] panel opening for card:', card.id, '| dataset:', JSON.stringify(card.dataset), '| labelVal:', labelVal, '| nameVal:', nameVal);
   
     function _fp(labelText, inputEl, full) {
       var wrap = document.createElement('div');
@@ -836,11 +839,7 @@ var card = window.nbFormBuilder._makeFieldCard(f.type || 'text', fLabel, fName, 
       card.className = 'nb-cfield'; card.dataset.type = canvasType; card.dataset.runtimeType = type;
       card.style.flex = '0 0 auto'; card.dataset.col = String(col);
       
-      card.dataset.fieldLabel    = label   || '';
-card.dataset.fieldName     = name    || '';
-card.dataset.fieldPh       = extra.placeholder    || '';
-card.dataset.fieldDefault  = extra.default_value  || extra.defaultvalue || '';
-card.dataset.fieldHelp     = extra.help_text       || extra.field_help_text || '';
+     
       card.innerHTML =
         '<div class="nb-cfield-header">'
           + '<span class="nb-cfield-drag">⠇</span>'
@@ -860,6 +859,12 @@ card.dataset.fieldHelp     = extra.help_text       || extra.field_help_text || '
             + _visibilityFlagsHTML(extra)
           + '</div>'
         + '</div>';
+
+ card.dataset.fieldLabel    = label   || '';
+card.dataset.fieldName     = name    || '';
+card.dataset.fieldPh       = extra.placeholder    || '';
+card.dataset.fieldDefault  = extra.default_value  || extra.defaultvalue || '';
+card.dataset.fieldHelp     = extra.help_text       || extra.field_help_text || '';
 
       var labelInput = card.querySelector('.nu-field-label');
       if (labelInput) {
@@ -1062,25 +1067,29 @@ var card = me._makeFieldCard(f.type || 'text', fLabel, fName, !!f.required, f);
   }
   function _readFieldCard(card, rowIndex) {
     var t = card.dataset.type || 'text';
-  var _val = function (sel) {
- var dsMap = {
-  '.nu-field-label':       'fieldLabel',
-  '.nu-field-name':        'fieldName',
-  '.nu-field-placeholder': 'fieldPh',
-  '.nu-field-default':     'fieldDefault',
-  '.nu-field-help':        'fieldHelp'
-};
-var dsKey = dsMap[sel];
-if (dsKey && card.dataset[dsKey] !== undefined && card.dataset[dsKey] !== '') {
-  return card.dataset[dsKey];
-} {
-// getAttribute is reliable on hidden inputs; .value may be stale
-return e.getAttribute('value') || e.value || '';
-}
+var _val = function (sel) {
+  var dsMap = {
+    '.nu-field-label':       'fieldLabel',
+    '.nu-field-name':        'fieldName',
+    '.nu-field-placeholder': 'fieldPh',
+    '.nu-field-default':     'fieldDefault',
+    '.nu-field-help':        'fieldHelp'
+  };
+  var dsKey = dsMap[sel];
+  if (dsKey && card.dataset[dsKey] !== undefined && card.dataset[dsKey] !== '') {
+    return card.dataset[dsKey];
+  }
   var e = card.querySelector(sel);
-  if (!e) return '';
-  // getAttribute('value') is the original HTML attribute — more reliable than .value on hidden inputs
-  return e.getAttribute('value') || e.value || '';
+  if (!e) {
+    console.error('[nb-read] _val: no element for', sel, 'card.id=', card.id);
+    return '';
+  }
+  var attrVal = e.getAttribute('value');
+  var propVal = e.value;
+  if (!attrVal && !propVal) {
+    console.error('[nb-read] _val: both attr and prop empty for', sel, '| dsKey=', dsKey, '| dsVal=', card.dataset[dsKey], '| card.id=', card.id);
+  }
+  return attrVal || propVal || '';
 };
     var _chk = function (sel) { var e = card.querySelector(sel); return !!(e && e.checked); };
     var sm = card.querySelector('.nu-field-select-mode'); var isMs = (t === 'select' || t === 'select2') && sm && sm.value === 'multi';
