@@ -199,11 +199,19 @@
     grid.className = 'nb-fp-grid';
     grid.appendChild(spanBar);
 
-    var labelVal = card.querySelector('.nu-field-label')       ? card.querySelector('.nu-field-label').value       : '';
-    var nameVal  = card.querySelector('.nu-field-name')        ? card.querySelector('.nu-field-name').value        : '';
-    var phVal    = card.querySelector('.nu-field-placeholder') ? card.querySelector('.nu-field-placeholder').value : '';
-    var defVal   = card.querySelector('.nu-field-default')     ? card.querySelector('.nu-field-default').value     : '';
-    var helpVal  = card.querySelector('.nu-field-help')        ? card.querySelector('.nu-field-help').value        : '';
+ // WITH these (reads attribute first, then .value):
+function _readInput(card, sel) {
+    var el = card.querySelector(sel);
+    if (!el) return '';
+    // .getAttribute('value') is the original HTML attribute (set by innerHTML)
+    // .value may have been updated by user interaction
+    return el.value !== '' ? el.value : (el.getAttribute('value') || '');
+}
+var labelVal = card.dataset.fieldLabel   || (card.querySelector('.nu-field-label')       ? card.querySelector('.nu-field-label').getAttribute('value')       || card.querySelector('.nu-field-label').value       : '');
+var nameVal  = card.dataset.fieldName    || (card.querySelector('.nu-field-name')        ? card.querySelector('.nu-field-name').getAttribute('value')        || card.querySelector('.nu-field-name').value        : '');
+var phVal    = card.dataset.fieldPh      || (card.querySelector('.nu-field-placeholder') ? card.querySelector('.nu-field-placeholder').getAttribute('value') || card.querySelector('.nu-field-placeholder').value : '');
+var defVal   = card.dataset.fieldDefault || (card.querySelector('.nu-field-default')     ? card.querySelector('.nu-field-default').getAttribute('value')     || card.querySelector('.nu-field-default').value     : '');
+var helpVal  = card.dataset.fieldHelp    || (card.querySelector('.nu-field-help')        ? card.querySelector('.nu-field-help').getAttribute('value')        || card.querySelector('.nu-field-help').value        : '');
 
     function _fp(labelText, inputEl, full) {
       var wrap = document.createElement('div');
@@ -219,15 +227,17 @@
       return i;
     }
 
-    var labelInput = _inp('nu-field-label', labelVal, 'Field label');
-    labelInput.addEventListener('input', function () {
-      var orig = card.querySelector('.nu-field-label'); if (orig) orig.value = labelInput.value;
-      var hdr  = card.querySelector('.nb-cfield-label'); if (hdr) hdr.textContent = labelInput.value || '(no label)';
-      document.getElementById('nb-props-title').textContent = labelInput.value || 'Properties';
-    });
-    var nameInput = _inp('nu-field-name', nameVal, 'field_name');
-    nameInput.addEventListener('input', function () { var o = card.querySelector('.nu-field-name'); if (o) o.value = nameInput.value; });
-
+   labelInput.addEventListener('input', function () {
+    var orig = card.querySelector('.nu-field-label'); if (orig) orig.value = labelInput.value;
+    var hdr  = card.querySelector('.nb-cfield-label'); if (hdr) hdr.textContent = labelInput.value || '(no label)';
+    document.getElementById('nb-props-title').textContent = labelInput.value || 'Properties';
+    card.dataset.fieldLabel = labelInput.value;  // ← ADD
+});
+var nameInput = _inp('nu-field-name', nameVal, 'field_name');
+nameInput.addEventListener('input', function () {
+    var o = card.querySelector('.nu-field-name'); if (o) o.value = nameInput.value;
+    card.dataset.fieldName = nameInput.value;    // ← ADD
+});
     grid.appendChild(_fp('Label', labelInput));
     grid.appendChild(_fp('Field Name', nameInput));
 
@@ -807,6 +817,12 @@
       var card = document.createElement('div');
       card.className = 'nb-cfield'; card.dataset.type = canvasType; card.dataset.runtimeType = type;
       card.style.flex = '0 0 auto'; card.dataset.col = String(col);
+      
+      card.dataset.fieldLabel    = label   || '';
+card.dataset.fieldName     = name    || '';
+card.dataset.fieldPh       = extra.placeholder    || '';
+card.dataset.fieldDefault  = extra.default_value  || extra.defaultvalue || '';
+card.dataset.fieldHelp     = extra.help_text       || extra.field_help_text || '';
       card.innerHTML =
         '<div class="nb-cfield-header">'
           + '<span class="nb-cfield-drag">⠇</span>'
