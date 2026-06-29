@@ -144,45 +144,7 @@
     return p;
   }
 
-function _openPropsPanel(card) {
-  var panel = _ensurePropsPanel();
-  if (_activeCard && _activeCard !== card) _activeCard.classList.remove('nb-cfield-selected');
-  _activeCard = card;
-  card.classList.add('nb-cfield-selected');
-  var type = card.dataset.type || 'field';
-  document.getElementById('nb-props-type-badge').textContent = type.toUpperCase();
-  var labelEl = card.querySelector('.nb-cfield-label');
-  document.getElementById('nb-props-title').textContent = labelEl ? (labelEl.textContent || 'Properties') : 'Properties';
-  var body = document.getElementById('nb-props-panel-body');
-  body.innerHTML = '';
 
-  /* ── DEBUG FIX-L ── */
-  console.group('[nb-props-panel] _openPropsPanel DEBUG');
-  console.log('card.dataset.fieldLabel   =', JSON.stringify(card.dataset.fieldLabel));
-  console.log('card.dataset.fieldName    =', JSON.stringify(card.dataset.fieldName));
-  console.log('card.dataset.fieldPh      =', JSON.stringify(card.dataset.fieldPh));
-  console.log('card.dataset.fieldDefault =', JSON.stringify(card.dataset.fieldDefault));
-  console.log('card.dataset.fieldHelp    =', JSON.stringify(card.dataset.fieldHelp));
-  var bodyEl = card.querySelector('.nb-cfield-body');
-  if (bodyEl) {
-    var lbl = bodyEl.querySelector('.nu-field-label');
-    var nm  = bodyEl.querySelector('.nu-field-name');
-    console.log('body .nu-field-label  .value         =', JSON.stringify(lbl ? lbl.value : 'NOT FOUND'));
-    console.log('body .nu-field-label  getAttribute   =', JSON.stringify(lbl ? lbl.getAttribute('value') : 'NOT FOUND'));
-    console.log('body .nu-field-name   .value         =', JSON.stringify(nm  ? nm.value  : 'NOT FOUND'));
-    console.log('body .nu-field-name   getAttribute   =', JSON.stringify(nm  ? nm.getAttribute('value') : 'NOT FOUND'));
-  } else {
-    console.warn('nb-cfield-body NOT FOUND on card');
-  }
-  console.log('card.innerHTML (first 400 chars):', card.innerHTML.substring(0, 400));
-  console.groupEnd();
-  /* ── END DEBUG ── */
-
-  _renderPropsInPanel(card, body);
-  panel.classList.add('open');
-  var canvas = document.getElementById('formCanvas');
-  if (canvas) canvas.style.marginRight = '328px';
-}
 
  function _closePropsPanel() {
   var panel = document.getElementById('nb-props-panel');
