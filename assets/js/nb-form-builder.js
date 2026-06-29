@@ -174,6 +174,40 @@
   var type = card.dataset.type || 'text';
   var col  = parseInt(card.dataset.col, 10) || 6;
 
+  /* ── helpers ── */
+  function _fp(labelText, inputEl, full) {
+    var wrap = document.createElement('div');
+    wrap.className = 'nb-fp' + (full ? ' nb-fp-full' : '');
+    var lbl = document.createElement('label');
+    lbl.textContent = labelText;
+    wrap.appendChild(lbl);
+    wrap.appendChild(inputEl);
+    return wrap;
+  }
+  function _inp(val, ph) {
+    var i = document.createElement('input');
+    i.type = 'text';
+    i.className = 'nu-input';
+    i.placeholder = ph || '';
+    /* Set value via both property AND attribute to guarantee display */
+    i.setAttribute('value', val || '');
+    i.value = val || '';
+    return i;
+  }
+  function _fromCard(dsKey, bodySelector) {
+    /* Read from dataset first (always populated by _makeFieldCard) */
+    var v = card.dataset[dsKey];
+    if (v !== undefined && v !== null && v !== '') return v;
+    /* Fallback: read directly from hidden body input */
+    var el = card.querySelector('.nb-cfield-body ' + bodySelector);
+    if (el) {
+      v = el.value || el.getAttribute('value') || '';
+      if (v) card.dataset[dsKey] = v; /* backfill */
+      return v;
+    }
+    return '';
+  }
+
   /* ── Width bar ── */
   var spanBar = document.createElement('div');
   spanBar.className = 'nb-span-bar';
@@ -181,7 +215,7 @@
   spanLabel.className = 'nb-span-bar-label';
   spanLabel.textContent = 'Width (cols)';
   spanBar.appendChild(spanLabel);
-  [3,4,6,8,12].forEach(function (n) {
+  [3, 4, 6, 8, 12].forEach(function (n) {
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'nb-span-btn' + (n === col ? ' active' : '');
@@ -200,167 +234,116 @@
   grid.className = 'nb-fp-grid';
   grid.appendChild(spanBar);
 
-  /* ── FIX-L: robust value reader ──────────────────────────────────
-     Priority: 1) dataset (if non-empty)
-               2) hidden body input .value (live property)
-               3) hidden body input getAttribute('value') (HTML attr)
-     KEY FIX: scope querySelector to '.nb-cfield-body' so we NEVER
-     accidentally read back the panel's own inputs which share the
-     same class names (nu-field-label etc).
-     Also: do NOT bail out on empty-string dataset — fall through to
-     read the hidden input so first-open always shows the real value.
-  ─────────────────────────────────────────────────────────────────── */
-  function _readVal(dsKey, cls) {
-    /* 1. dataset — only trust it if genuinely non-empty */
-    var ds = card.dataset[dsKey];
-    if (ds !== undefined && ds !== null && ds !== '') return ds;
+  /* ── Base fields — read straight from card.dataset ── */
+  var labelVal = _fromCard('fieldLabel',   '.nu-field-label');
+  var nameVal  = _fromCard('fieldName',    '.nu-field-name');
+  var phVal    = _fromCard('fieldPh',      '.nu-field-placeholder');
+  var defVal   = _fromCard('fieldDefault', '.nu-field-default');
+  var helpVal  = _fromCard('fieldHelp',    '.nu-field-help');
 
-    /* 2 & 3. Hidden body input — scoped to .nb-cfield-body only */
-    var bodyEl = card.querySelector('.nb-cfield-body');
-    var el = bodyEl ? bodyEl.querySelector(cls) : null;
-    if (el) {
-      /* .value reflects the current live value */
-      var liveVal = el.value;
-      if (liveVal !== undefined && liveVal !== null && liveVal !== '') {
-        card.dataset[dsKey] = liveVal; /* back-fill dataset */
-        return liveVal;
-      }
-      /* getAttribute catches value set via innerHTML at card creation */
-      var attrVal = el.getAttribute('value');
-      if (attrVal !== undefined && attrVal !== null && attrVal !== '') {
-        card.dataset[dsKey] = attrVal;
-        return attrVal;
-      }
-    }
-    return '';
-  }
-
-  var labelVal = _readVal('fieldLabel',   '.nu-field-label');
-  var nameVal  = _readVal('fieldName',    '.nu-field-name');
-  var phVal    = _readVal('fieldPh',      '.nu-field-placeholder');
-  var defVal   = _readVal('fieldDefault', '.nu-field-default');
-  var helpVal  = _readVal('fieldHelp',    '.nu-field-help');
-
-  function _fp(labelText, inputEl, full) {
-    var wrap = document.createElement('div');
-    wrap.className = 'nb-fp' + (full ? ' nb-fp-full' : '');
-    var lbl = document.createElement('label'); lbl.textContent = labelText;
-    wrap.appendChild(lbl); wrap.appendChild(inputEl);
-    return wrap;
-  }
-  function _inp(cls, val, ph) {
-    var i = document.createElement('input');
-    i.type = 'text'; i.className = 'nu-input ' + cls;
-    i.value = val || ''; if (ph) i.placeholder = ph;
-    return i;
-  }
-
-  var labelInput = _inp('nu-field-label', labelVal, 'Field label');
+  var labelInput = _inp(labelVal, 'Field label');
   labelInput.addEventListener('input', function () {
+    card.dataset.fieldLabel = labelInput.value;
     var orig = card.querySelector('.nb-cfield-body .nu-field-label');
     if (orig) orig.value = labelInput.value;
     var hdr = card.querySelector('.nb-cfield-label');
     if (hdr) hdr.textContent = labelInput.value || '(no label)';
-    document.getElementById('nb-props-title').textContent = labelInput.value || 'Properties';
-    card.dataset.fieldLabel = labelInput.value;
+    var titleEl = document.getElementById('nb-props-title');
+    if (titleEl) titleEl.textContent = labelInput.value || 'Properties';
   });
 
-  var nameInput = _inp('nu-field-name', nameVal, 'field_name');
+  var nameInput = _inp(nameVal, 'field_name');
   nameInput.addEventListener('input', function () {
+    card.dataset.fieldName = nameInput.value;
     var orig = card.querySelector('.nb-cfield-body .nu-field-name');
     if (orig) orig.value = nameInput.value;
-    card.dataset.fieldName = nameInput.value;
   });
 
   grid.appendChild(_fp('Label', labelInput));
   grid.appendChild(_fp('Field Name', nameInput));
 
   if (type !== 'subform') {
-    var phInput = _inp('nu-field-placeholder', phVal, 'Placeholder text');
+    var phInput = _inp(phVal, 'Placeholder text');
     phInput.addEventListener('input', function () {
+      card.dataset.fieldPh = phInput.value;
       var orig = card.querySelector('.nb-cfield-body .nu-field-placeholder');
       if (orig) orig.value = phInput.value;
-      card.dataset.fieldPh = phInput.value;
     });
 
-    var defInput = _inp('nu-field-default', defVal, 'Default value');
+    var defInput = _inp(defVal, 'Default value');
     defInput.addEventListener('input', function () {
+      card.dataset.fieldDefault = defInput.value;
       var orig = card.querySelector('.nb-cfield-body .nu-field-default');
       if (orig) orig.value = defInput.value;
-      card.dataset.fieldDefault = defInput.value;
     });
 
     grid.appendChild(_fp('Placeholder', phInput));
     grid.appendChild(_fp('Default', defInput));
   }
 
-  var helpInput = _inp('nu-field-help', helpVal, 'Help text shown to user');
+  var helpInput = _inp(helpVal, 'Help text shown to user');
   helpInput.addEventListener('input', function () {
+    card.dataset.fieldHelp = helpInput.value;
     var orig = card.querySelector('.nb-cfield-body .nu-field-help');
     if (orig) orig.value = helpInput.value;
-    card.dataset.fieldHelp = helpInput.value;
   });
   grid.appendChild(_fp('Help Text', helpInput, true));
 
-  /* ── Type-specific extras cloned from hidden body ── */
+  /* ── Type-specific extras: wire directly from live body inputs ── */
   var cardBody = card.querySelector('.nb-cfield-body');
   if (cardBody) {
-    var clone = cardBody.cloneNode(true);
-    /* Sync live .value into the clone BEFORE we use it, so values aren't lost */
-    cardBody.querySelectorAll('input,select,textarea').forEach(function (origEl, i) {
-      var cloneEls = clone.querySelectorAll('input,select,textarea');
-      var cloneEl = cloneEls[i];
-      if (!cloneEl) return;
-      if (origEl.type === 'checkbox' || origEl.type === 'radio') {
-        cloneEl.checked = origEl.checked;
-      } else {
-        cloneEl.value = origEl.value;
-      }
-    });
-    clone.querySelectorAll('input,select,textarea').forEach(function (cloneEl) {
-      var cls = cloneEl.className;
-      cloneEl.addEventListener('change', function () {
-        var orig = cardBody.querySelector('.' + cls.trim().split(/\s+/).join('.'));
-        if (orig) {
-          if (orig.type === 'checkbox' || orig.type === 'radio') orig.checked = cloneEl.checked;
-          else orig.value = cloneEl.value;
-        }
-      });
-      cloneEl.addEventListener('input', function () {
-        var orig = cardBody.querySelector('.' + cls.trim().split(/\s+/).join('.'));
-        if (orig && orig.type !== 'checkbox' && orig.type !== 'radio') orig.value = cloneEl.value;
-      });
-    });
-    var extras = clone.querySelector('.nb-fp-grid');
-    if (extras) {
-      Array.prototype.forEach.call(extras.children, function (child) {
-        /* skip the base fields already rendered above */
+    var bodyGrid = cardBody.querySelector('.nb-fp-grid');
+    if (bodyGrid) {
+      Array.prototype.forEach.call(bodyGrid.children, function (child) {
+        /* Skip the base fields — already rendered above */
         if (child.querySelector('.nu-field-label')       ||
             child.querySelector('.nu-field-name')        ||
             child.querySelector('.nu-field-placeholder') ||
             child.querySelector('.nu-field-default')     ||
-            child.querySelector('.nu-field-help')) return;
-        grid.appendChild(child.cloneNode(true));
+            child.querySelector('.nu-field-help')        ||
+            child.classList.contains('nb-vis-flags')) return;
+
+        /* Clone the child and sync live values before appending */
+        var clone = child.cloneNode(true);
+        child.querySelectorAll('input, select, textarea').forEach(function (origEl, idx) {
+          var cloneEl = clone.querySelectorAll('input, select, textarea')[idx];
+          if (!cloneEl) return;
+          if (origEl.type === 'checkbox' || origEl.type === 'radio') {
+            cloneEl.checked = origEl.checked;
+          } else {
+            cloneEl.setAttribute('value', origEl.value);
+            cloneEl.value = origEl.value;
+          }
+          /* Wire clone → original */
+          (function (o, c) {
+            c.addEventListener('input',  function () { if (o.type !== 'checkbox' && o.type !== 'radio') o.value = c.value; });
+            c.addEventListener('change', function () {
+              if (o.type === 'checkbox' || o.type === 'radio') o.checked = c.checked;
+              else o.value = c.value;
+            });
+          }(origEl, cloneEl));
+        });
+        grid.appendChild(clone);
       });
     }
   }
 
-  /* ── Visibility flags ── */
+  /* ── Visibility / field options flags ── */
   var visWrap = document.createElement('div');
   visWrap.className = 'nb-vis-flags nb-fp-full';
-  var visLbl = document.createElement('label');
-  visLbl.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-muted,#888);text-transform:uppercase;letter-spacing:.5px;flex-basis:100%;margin-bottom:2px;';
-  visLbl.textContent = 'Field Options';
-  visWrap.appendChild(visLbl);
+  var visTitle = document.createElement('label');
+  visTitle.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-muted,#888);text-transform:uppercase;letter-spacing:.5px;flex-basis:100%;margin-bottom:2px;';
+  visTitle.textContent = 'Field Options';
+  visWrap.appendChild(visTitle);
 
   [
-    { cls:'nu-field-required',      label:'Required' },
-    { cls:'nu-field-no-duplicate',  label:'No Duplicate' },
-    { cls:'nu-field-readonly',      label:'Readonly' },
-    { cls:'nu-field-hidden',        label:'Hidden' },
-    { cls:'nu-field-hidden-normal', label:'Hidden for normal users' }
+    { cls: 'nu-field-required',      label: 'Required' },
+    { cls: 'nu-field-no-duplicate',  label: 'No Duplicate' },
+    { cls: 'nu-field-readonly',      label: 'Readonly' },
+    { cls: 'nu-field-hidden',        label: 'Hidden' },
+    { cls: 'nu-field-hidden-normal', label: 'Hidden for normal users' }
   ].forEach(function (flag) {
-    var origChk = card.querySelector('.nb-cfield-body .' + flag.cls); /* FIX: scope to body */
+    var origChk = card.querySelector('.nb-cfield-body .' + flag.cls);
     var lbl = document.createElement('label');
     var chk = document.createElement('input');
     chk.type = 'checkbox';
@@ -376,7 +359,6 @@
   grid.appendChild(visWrap);
   body.appendChild(grid);
 }
-
 
 
   /* ════════════════════════════════════════════════════════════════════
