@@ -1,15 +1,15 @@
-# nuBuilder Next v5.0.0
+# nuvis
 
 A modern, responsive rebuild of the nuBuilder Forte low-code platform — PHP/MySQL, fully self-hosted.
 
-> **Live:** [ict-fj.com/nbv5/](http://ict-fj.com/nbv5/) · **Host:** A2Hosting (cPanel) · **Stack:** PHP 7.4, MySQL 5.7+, Apache
+> **Live:** [ict-fj.com/nuvis/](http://ict-fj.com/nuvis/) · **Host:** A2Hosting (cPanel) · **Stack:** PHP 7.4, MySQL 5.7+, Apache
 
 ---
 
 ## Architecture
 
 ```
-nub5-dev/
+nuvis/
 ├── config.php                    # Global configuration
 ├── config.local.php.example      # Local override template
 ├── config.user_fields.php.example
@@ -256,18 +256,6 @@ cp config.local.php.example config.local.php
 
 ---
 
-## Migration from nuBuilder Forte 4.9
-
-Run `migrate.php` after installing nuBuilder Next. It maps:
-
-| Old Table | New Table |
-|-----------|-----------|
-| `zzzzsys_user` | `nu_users` |
-| `zzzzsys_form` | `nu_forms` |
-| `zzzzsys_report` | `nu_reports` |
-| `zzzzsys_browse` | `nu_queries` |
-
----
 
 ## Development Roadmap
 
