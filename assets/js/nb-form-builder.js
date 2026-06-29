@@ -195,18 +195,17 @@
     return i;
   }
   function _fromCard(dsKey, bodySelector) {
-    /* Read from dataset first (always populated by _makeFieldCard) */
-    var v = card.dataset[dsKey];
-    if (v !== undefined && v !== null && v !== '') return v;
-    /* Fallback: read directly from hidden body input */
-    var el = card.querySelector('.nb-cfield-body ' + bodySelector);
-    if (el) {
-      v = el.value || el.getAttribute('value') || '';
-      if (v) card.dataset[dsKey] = v; /* backfill */
-      return v;
-    }
-    return '';
+  var v = card.dataset[dsKey];
+  if (v !== undefined && v !== null && v !== '') return v;
+  /* Fallback: use getAttribute (works on display:none inputs), NOT .value */
+  var el = card.querySelector('.nb-cfield-body ' + bodySelector);
+  if (el) {
+    v = el.getAttribute('value') || '';
+    if (v) card.dataset[dsKey] = v;
+    return v;
   }
+  return '';
+}
 
   /* ── Width bar ── */
   var spanBar = document.createElement('div');
@@ -836,90 +835,89 @@ var card = window.nbFormBuilder._makeFieldCard(f.type || 'text', fLabel, fName, 
     },
 
     _makeFieldCard: function (type, label, name, required, extra) {
-      extra = extra || {};
-      extra = Object.assign({}, extra, { required: required || !!extra.required });
-      var col = parseInt(extra.col || extra.colspan, 10) || 6;
-      var canvasType = type;
-      if (type === 'multiselect') { canvasType = 'select2'; if (!extra.multiple) extra = Object.assign({}, extra, { multiple: true }); }
-      if (type === 'select' && (extra.select2 === true || extra.select2 === 'true' || extra.select2 === 1)) canvasType = 'select2';
-      if (type === 'group' || type === 'tab') return null;
+  extra = extra || {};
+  extra = Object.assign({}, extra, { required: required || !!extra.required });
+  var col = parseInt(extra.col || extra.colspan, 10) || 6;
+  var canvasType = type;
+  if (type === 'multiselect') { canvasType = 'select2'; if (!extra.multiple) extra = Object.assign({}, extra, { multiple: true }); }
+  if (type === 'select' && (extra.select2 === true || extra.select2 === 'true' || extra.select2 === 1)) canvasType = 'select2';
+  if (type === 'group' || type === 'tab') return null;
 
-      var extraBody = '';
-      if (canvasType === 'select') {
-        var selIsMulti = extra.multiple === true || extra.multiple === 'true' || extra.multiple === 1 || extra.select_type === 'multiselect';
-        var opts = (extra.options || []).map(function (o) { return typeof o === 'object' ? (o.value + '|' + o.label) : o; }).join('\n');
-        extraBody += '<div class="nb-fp"><label style="font-size:11px;font-weight:600;">Select Mode</label><select class="nu-input nu-field-select-mode" style="font-size:12px;"><option value="single"' + (!selIsMulti ? ' selected' : '') + '>Single</option><option value="multi"' + (selIsMulti ? ' selected' : '') + '>Multi-Select</option></select></div>' + _optionsSourceHTML(name, extra.options_source === 'table', opts, extra);
-      }
-      if (canvasType === 'select2') {
-        var s2Multi = extra.multiple === true || extra.multiple === 'true' || extra.multiple === 1 || extra.select_type === 'multiselect';
-        var allowClr = (extra.allow_clear === false || extra.allow_clear === 'false') ? '' : 'checked';
-        var s2Opts = (extra.options || []).map(function (o) { return typeof o === 'object' ? (o.value + '|' + o.label) : o; }).join('\n');
-        extraBody += '<div style="background:var(--bg-offset,#eef2ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;grid-column:1/-1;margin-bottom:4px;"><div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">🔍 SELECT2 CONFIG</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Mode</label><select class="nu-input nu-field-select-mode" style="font-size:12px;"><option value="single"' + (!s2Multi ? ' selected' : '') + '>Single</option><option value="multi"' + (s2Multi ? ' selected' : '') + '>Multi-Select</option></select></div><div style="display:flex;align-items:flex-end;padding-bottom:4px;"><label class="nb-fp-check" style="font-size:11px;"><input type="checkbox" class="nu-field-allow-clear"' + (allowClr ? ' checked' : '') + '> Allow Clear</label></div></div></div>' + _optionsSourceHTML(name, extra.options_source === 'table', s2Opts, extra);
-      }
-      if (canvasType === 'radio' || canvasType === 'checkbox_group') {
-        var rcOpts = (extra.options || []).map(function (o) { return typeof o === 'object' ? (o.value + '|' + o.label) : o; }).join('\n');
-        extraBody += _optionsSourceHTML(name, extra.options_source === 'table', rcOpts, extra);
-      }
-      if (canvasType === 'calculated') extraBody += '<div class="nb-fp nb-fp-full"><label>Formula</label><textarea class="nu-input nu-field-formula" rows="2" placeholder="{qty} * {price}">' + _esc(extra.formula || extra.calc_formula || '') + '</textarea></div>';
-      if (canvasType === 'lookup') {
-        var lk = (extra.lookup && typeof extra.lookup === 'object') ? extra.lookup : {};
-        extraBody += '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;margin-top:6px;grid-column:1/-1;"><div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">🔗 LOOKUP CONFIG</div><div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Lookup Table</label><input type="text" class="nu-input nu-lookup-table" value="' + _esc(lk.table || extra.lookup_form || '') + '" placeholder="e.g. customers" style="font-size:12px;width:100%;box-sizing:border-box;"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Display Col</label><input type="text" class="nu-input nu-lookup-display" value="' + _esc(lk.display_column || extra.lookup_display || '') + '" placeholder="full_name" style="font-size:12px;"></div><div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Store Col</label><input type="text" class="nu-input nu-lookup-store" value="' + _esc(lk.id_column || extra.lookup_store || '') + '" placeholder="id" style="font-size:12px;"></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Filter SQL</label><input type="text" class="nu-input nu-lookup-filter" value="' + _esc(lk.filter || extra.lookup_filter || '') + '" placeholder="active=1" style="font-size:12px;"></div><div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Extra Mapping</label><input type="text" class="nu-input nu-lookup-extra" value="' + _esc(lk.extra || extra.lookup_extra || '') + '" placeholder="code:dept_code" style="font-size:12px;"></div></div></div>';
-      }
-      var sfData;
-      if (canvasType === 'subform') {
-        var sf = (extra.subform && typeof extra.subform === 'object') ? extra.subform : {};
-        sfData = { form_code: sf.form_code || extra.sf_form_code || '', fk_field: sf.fk_field || extra.sf_fk_field || '', subform_view: extra.subform_view || 'grid', help_text: extra.help_text || extra.field_help_text || '', is_fk: !!sf.is_fk, hide_in_grid: !!sf.hide_in_grid, server_readonly: !!sf.server_readonly };
-        extraBody += _subformPanelHTML(sfData);
-      }
+  var extraBody = '';
+  if (canvasType === 'select') {
+    var selIsMulti = extra.multiple === true || extra.multiple === 'true' || extra.multiple === 1 || extra.select_type === 'multiselect';
+    var opts = (extra.options || []).map(function (o) { return typeof o === 'object' ? (o.value + '|' + o.label) : o; }).join('\n');
+    extraBody += '<div class="nb-fp"><label style="font-size:11px;font-weight:600;">Select Mode</label><select class="nu-input nu-field-select-mode" style="font-size:12px;"><option value="single"' + (!selIsMulti ? ' selected' : '') + '>Single</option><option value="multi"' + (selIsMulti ? ' selected' : '') + '>Multi-Select</option></select></div>' + _optionsSourceHTML(name, extra.options_source === 'table', opts, extra);
+  }
+  if (canvasType === 'select2') {
+    var s2Multi = extra.multiple === true || extra.multiple === 'true' || extra.multiple === 1 || extra.select_type === 'multiselect';
+    var allowClr = (extra.allow_clear === false || extra.allow_clear === 'false') ? '' : 'checked';
+    var s2Opts = (extra.options || []).map(function (o) { return typeof o === 'object' ? (o.value + '|' + o.label) : o; }).join('\n');
+    extraBody += '<div style="background:var(--bg-offset,#eef2ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;grid-column:1/-1;margin-bottom:4px;"><div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">🔍 SELECT2 CONFIG</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Mode</label><select class="nu-input nu-field-select-mode" style="font-size:12px;"><option value="single"' + (!s2Multi ? ' selected' : '') + '>Single</option><option value="multi"' + (s2Multi ? ' selected' : '') + '>Multi-Select</option></select></div><div style="display:flex;align-items:flex-end;padding-bottom:4px;"><label class="nb-fp-check" style="font-size:11px;"><input type="checkbox" class="nu-field-allow-clear"' + (allowClr ? ' checked' : '') + '> Allow Clear</label></div></div></div>' + _optionsSourceHTML(name, extra.options_source === 'table', s2Opts, extra);
+  }
+  if (canvasType === 'radio' || canvasType === 'checkbox_group') {
+    var rcOpts = (extra.options || []).map(function (o) { return typeof o === 'object' ? (o.value + '|' + o.label) : o; }).join('\n');
+    extraBody += _optionsSourceHTML(name, extra.options_source === 'table', rcOpts, extra);
+  }
+  if (canvasType === 'calculated') extraBody += '<div class="nb-fp nb-fp-full"><label>Formula</label><textarea class="nu-input nu-field-formula" rows="2" placeholder="{qty} * {price}">' + _esc(extra.formula || extra.calc_formula || '') + '</textarea></div>';
+  if (canvasType === 'lookup') {
+    var lk = (extra.lookup && typeof extra.lookup === 'object') ? extra.lookup : {};
+    extraBody += '<div style="background:var(--bg-offset,#f0f4ff);border:1.5px solid var(--color-primary,#4f6bed);border-radius:8px;padding:12px 14px;margin-top:6px;grid-column:1/-1;"><div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--color-primary,#4f6bed);margin-bottom:10px;">🔗 LOOKUP CONFIG</div><div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Lookup Table</label><input type="text" class="nu-input nu-lookup-table" value="' + _esc(lk.table || extra.lookup_form || '') + '" placeholder="e.g. customers" style="font-size:12px;width:100%;box-sizing:border-box;"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Display Col</label><input type="text" class="nu-input nu-lookup-display" value="' + _esc(lk.display_column || extra.lookup_display || '') + '" placeholder="full_name" style="font-size:12px;"></div><div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Store Col</label><input type="text" class="nu-input nu-lookup-store" value="' + _esc(lk.id_column || extra.lookup_store || '') + '" placeholder="id" style="font-size:12px;"></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Filter SQL</label><input type="text" class="nu-input nu-lookup-filter" value="' + _esc(lk.filter || extra.lookup_filter || '') + '" placeholder="active=1" style="font-size:12px;"></div><div><label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px;">Extra Mapping</label><input type="text" class="nu-input nu-lookup-extra" value="' + _esc(lk.extra || extra.lookup_extra || '') + '" placeholder="code:dept_code" style="font-size:12px;"></div></div></div>';
+  }
+  var sfData;
+  if (canvasType === 'subform') {
+    var sf = (extra.subform && typeof extra.subform === 'object') ? extra.subform : {};
+    sfData = { form_code: sf.form_code || extra.sf_form_code || '', fk_field: sf.fk_field || extra.sf_fk_field || '', subform_view: extra.subform_view || 'grid', help_text: extra.help_text || extra.field_help_text || '', is_fk: !!sf.is_fk, hide_in_grid: !!sf.hide_in_grid, server_readonly: !!sf.server_readonly };
+    extraBody += _subformPanelHTML(sfData);
+  }
 
-      var card = document.createElement('div');
-      card.className = 'nb-cfield'; card.dataset.type = canvasType; card.dataset.runtimeType = type;
-      card.style.flex = '0 0 auto'; card.dataset.col = String(col);
-      
-     
-      card.innerHTML =
-        '<div class="nb-cfield-header">'
-          + '<span class="nb-cfield-drag">⠇</span>'
-          + '<span class="nb-cfield-type-badge">' + _esc(canvasType) + '</span>'
-          + '<span class="nb-cfield-label">' + _esc(label) + '</span>'
-          + '<span class="nb-cfield-span-badge" style="font-size:10px;color:var(--text-muted,#aaa);margin-left:auto;">' + col + '/12</span>'
-          + '<span class="nb-cfield-actions"><button class="nb-cfield-btn del" type="button" title="Remove">✕</button></span>'
-        + '</div>'
-        + '<div class="nb-cfield-body" style="display:none;">'
-          + '<div class="nb-fp-grid">'
-            + '<div class="nb-fp"><label>Label</label><input type="text" class="nu-input nu-field-label" value="' + _esc(label) + '"></div>'
-            + '<div class="nb-fp"><label>Field Name</label><input type="text" class="nu-input nu-field-name" value="' + _esc(name) + '"></div>'
-            + (canvasType !== 'subform' ? '<div class="nb-fp"><label>Placeholder</label><input type="text" class="nu-input nu-field-placeholder" value="' + _esc(extra.placeholder || '') + '"></div>' : '')
-            + (canvasType !== 'subform' ? '<div class="nb-fp"><label>Default Value</label><input type="text" class="nu-input nu-field-default" value="' + _esc(extra.default_value || extra.defaultvalue || '') + '"></div>' : '')
-            + '<div class="nb-fp nb-fp-full"><label>Help Text</label><input type="text" class="nu-input nu-field-help" value="' + _esc(extra.help_text || extra.field_help_text || '') + '"></div>'
-            + extraBody
-            + _visibilityFlagsHTML(extra)
-          + '</div>'
-        + '</div>';
+  var card = document.createElement('div');
+  card.className = 'nb-cfield'; card.dataset.type = canvasType; card.dataset.runtimeType = type;
+  card.style.flex = '0 0 auto'; card.dataset.col = String(col);
 
- card.dataset.fieldLabel    = label   || '';
-card.dataset.fieldName     = name    || '';
-card.dataset.fieldPh       = extra.placeholder    || '';
-card.dataset.fieldDefault  = extra.default_value  || extra.defaultvalue || '';
-card.dataset.fieldHelp     = extra.help_text       || extra.field_help_text || '';
+  /* ── FIX-L: set dataset BEFORE innerHTML so they are never wiped ── */
+  card.dataset.fieldLabel   = label || '';
+  card.dataset.fieldName    = name  || '';
+  card.dataset.fieldPh      = extra.placeholder   || '';
+  card.dataset.fieldDefault = extra.default_value || extra.defaultvalue || '';
+  card.dataset.fieldHelp    = extra.help_text      || extra.field_help_text || '';
 
-      var labelInput = card.querySelector('.nu-field-label');
-      if (labelInput) {
-        labelInput.addEventListener('input', function () { var hdr = card.querySelector('.nb-cfield-label'); if (hdr) hdr.textContent = labelInput.value || '(no label)'; });
-      }
-      var delBtn = card.querySelector('.nb-cfield-btn.del');
-      if (delBtn) {
-        delBtn.addEventListener('click', function (e) {
-          e.stopPropagation();
-          if (_activeCard === card) _closePropsPanel();
-          card.remove(); window.nbFormBuilder._updateEmptyState();
-        });
-      }
-      if (['select','select2','radio','checkbox_group'].indexOf(canvasType) !== -1) _attachSelectOptionsToggle(card);
-      if (canvasType === 'subform') _attachSubformPanelEvents(card, sfData);
-      return card;
-    },
+  card.innerHTML =
+    '<div class="nb-cfield-header">'
+      + '<span class="nb-cfield-drag">⠇</span>'
+      + '<span class="nb-cfield-type-badge">' + _esc(canvasType) + '</span>'
+      + '<span class="nb-cfield-label">' + _esc(label) + '</span>'
+      + '<span class="nb-cfield-span-badge" style="font-size:10px;color:var(--text-muted,#aaa);margin-left:auto;">' + col + '/12</span>'
+      + '<span class="nb-cfield-actions"><button class="nb-cfield-btn del" type="button" title="Remove">✕</button></span>'
+    + '</div>'
+    + '<div class="nb-cfield-body" style="display:none;">'
+      + '<div class="nb-fp-grid">'
+        + '<div class="nb-fp"><label>Label</label><input type="text" class="nu-input nu-field-label" value="' + _esc(label) + '"></div>'
+        + '<div class="nb-fp"><label>Field Name</label><input type="text" class="nu-input nu-field-name" value="' + _esc(name) + '"></div>'
+        + (canvasType !== 'subform' ? '<div class="nb-fp"><label>Placeholder</label><input type="text" class="nu-input nu-field-placeholder" value="' + _esc(extra.placeholder || '') + '"></div>' : '')
+        + (canvasType !== 'subform' ? '<div class="nb-fp"><label>Default Value</label><input type="text" class="nu-input nu-field-default" value="' + _esc(extra.default_value || extra.defaultvalue || '') + '"></div>' : '')
+        + '<div class="nb-fp nb-fp-full"><label>Help Text</label><input type="text" class="nu-input nu-field-help" value="' + _esc(extra.help_text || extra.field_help_text || '') + '"></div>'
+        + extraBody
+        + _visibilityFlagsHTML(extra)
+      + '</div>'
+    + '</div>';
 
+  var labelInput = card.querySelector('.nu-field-label');
+  if (labelInput) {
+    labelInput.addEventListener('input', function () { var hdr = card.querySelector('.nb-cfield-label'); if (hdr) hdr.textContent = labelInput.value || '(no label)'; });
+  }
+  var delBtn = card.querySelector('.nb-cfield-btn.del');
+  if (delBtn) {
+    delBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (_activeCard === card) _closePropsPanel();
+      card.remove(); window.nbFormBuilder._updateEmptyState();
+    });
+  }
+  if (['select','select2','radio','checkbox_group'].indexOf(canvasType) !== -1) _attachSelectOptionsToggle(card);
+  if (canvasType === 'subform') _attachSubformPanelEvents(card, sfData);
+  return card;
+},
     _applyColSpan: function (card, col) {
       var c = Math.min(12, Math.max(1, parseInt(col, 10) || 6));
       var parent = card.parentNode;
