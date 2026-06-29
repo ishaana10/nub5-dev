@@ -170,7 +170,7 @@
     if (canvas) canvas.style.marginRight = '';
   }
 
- function _renderPropsInPanel(card, body) {
+  function _renderPropsInPanel(card, body) {
     var type = card.dataset.type || 'text';
     var col  = parseInt(card.dataset.col, 10) || 6;
 
@@ -199,23 +199,27 @@
     grid.className = 'nb-fp-grid';
     grid.appendChild(spanBar);
 
-    // Read values from dataset (set at card creation time) with fallback to hidden body inputs
-    var labelVal = card.dataset.fieldLabel !== undefined
-      ? card.dataset.fieldLabel
-      : (function () { var el = card.querySelector('.nu-field-label'); return el ? (el.value || el.getAttribute('value') || '') : ''; }());
-    var nameVal = card.dataset.fieldName !== undefined
-      ? card.dataset.fieldName
-      : (function () { var el = card.querySelector('.nu-field-name'); return el ? (el.value || el.getAttribute('value') || '') : ''; }());
-    var phVal = card.dataset.fieldPh !== undefined
-      ? card.dataset.fieldPh
-      : (function () { var el = card.querySelector('.nu-field-placeholder'); return el ? (el.value || el.getAttribute('value') || '') : ''; }());
-    var defVal = card.dataset.fieldDefault !== undefined
-      ? card.dataset.fieldDefault
-      : (function () { var el = card.querySelector('.nu-field-default'); return el ? (el.value || el.getAttribute('value') || '') : ''; }());
-    var helpVal = card.dataset.fieldHelp !== undefined
-      ? card.dataset.fieldHelp
-      : (function () { var el = card.querySelector('.nu-field-help'); return el ? (el.value || el.getAttribute('value') || '') : ''; }());
+    // REPLACE the whole labelVal/nameVal/phVal/defVal/helpVal block with:
+var labelVal = (card.dataset.fieldLabel !== undefined && card.dataset.fieldLabel !== '')
+  ? card.dataset.fieldLabel
+  : (function () { var el = card.querySelector('.nu-field-label'); return el ? (el.value || el.getAttribute('value') || '') : ''; }());
 
+var nameVal = (card.dataset.fieldName !== undefined && card.dataset.fieldName !== '')
+  ? card.dataset.fieldName
+  : (function () { var el = card.querySelector('.nu-field-name'); return el ? (el.value || el.getAttribute('value') || '') : ''; }());
+
+var phVal = (card.dataset.fieldPh !== undefined && card.dataset.fieldPh !== '')
+  ? card.dataset.fieldPh
+  : (function () { var el = card.querySelector('.nu-field-placeholder'); return el ? (el.value || el.getAttribute('value') || '') : ''; }());
+
+var defVal = (card.dataset.fieldDefault !== undefined && card.dataset.fieldDefault !== '')
+  ? card.dataset.fieldDefault
+  : (function () { var el = card.querySelector('.nu-field-default'); return el ? (el.value || el.getAttribute('value') || '') : ''; }());
+
+var helpVal = (card.dataset.fieldHelp !== undefined && card.dataset.fieldHelp !== '')
+  ? card.dataset.fieldHelp
+  : (function () { var el = card.querySelector('.nu-field-help'); return el ? (el.value || el.getAttribute('value') || '') : ''; }());
+  
     function _fp(labelText, inputEl, full) {
       var wrap = document.createElement('div');
       wrap.className = 'nb-fp' + (full ? ' nb-fp-full' : '');
@@ -320,7 +324,6 @@
     grid.appendChild(visWrap);
     body.appendChild(grid);
   }
-
 
   /* ════════════════════════════════════════════════════════════════════
      _nbSfData
@@ -997,7 +1000,9 @@ card.dataset.fieldHelp     = extra.help_text       || extra.field_help_text || '
           var rb = row.querySelector('.nb-row-body'); if (!rb) return;
           var hint = rb.querySelector('.nb-row-drop-hint'); if (hint) hint.remove();
           entry.fields.forEach(function (f) {
-            var card = me._makeFieldCard(f.type || 'text', f.label || f.fieldlabel || '', f.name || f.fieldname || '', !!f.required, f);
+            var fLabel = f.label || f.fieldlabel || f.field_label || f.title || '';
+var fName  = f.name  || f.fieldname  || f.field_name  || f.column_name || '';
+var card = me._makeFieldCard(f.type || 'text', fLabel, fName, !!f.required, f);
             if (!card) return;
             _prepCard(card); rb.appendChild(card);
             me._applyColSpan(card, parseInt(f.col, 10) || 6);
