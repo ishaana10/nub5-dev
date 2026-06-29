@@ -170,10 +170,11 @@
     if (canvas) canvas.style.marginRight = '';
   }
 
-  function _renderPropsInPanel(card, body) {
+ function _renderPropsInPanel(card, body) {
     var type = card.dataset.type || 'text';
     var col  = parseInt(card.dataset.col, 10) || 6;
 
+    /* ── Width bar ── */
     var spanBar = document.createElement('div');
     spanBar.className = 'nb-span-bar';
     var spanLabel = document.createElement('span');
@@ -199,26 +200,42 @@
     grid.className = 'nb-fp-grid';
     grid.appendChild(spanBar);
 
- var _dsOrDom = function (dsKey, cls) {
-  var dsVal = card.dataset[dsKey];
-  if (dsVal !== undefined && dsVal !== '') return dsVal;
-  var el = card.querySelector(cls);
-  if (!el) {
-    console.error('[nb-props] _dsOrDom: no element for', cls, 'dsKey=', dsKey, 'dataset=', JSON.stringify(card.dataset));
-    return '';
-  }
-  var attrVal = el.getAttribute('value');
-  var propVal = el.value;
-  console.log('[nb-props] _dsOrDom fallback:', cls, '| dsVal=', dsVal, '| attr=', attrVal, '| prop=', propVal);
-  return attrVal || propVal || '';
-};
-var labelVal = _dsOrDom('fieldLabel',   '.nu-field-label');
-var nameVal  = _dsOrDom('fieldName',    '.nu-field-name');
-var phVal    = _dsOrDom('fieldPh',      '.nu-field-placeholder');
-var defVal   = _dsOrDom('fieldDefault', '.nu-field-default');
-var helpVal  = _dsOrDom('fieldHelp',    '.nu-field-help');
-console.log('[nb-props] panel opening for card:', card.id, '| dataset:', JSON.stringify(card.dataset), '| labelVal:', labelVal, '| nameVal:', nameVal);
-  
+    /* ── FIX: robust value reader ─────────────────────────────────────
+       Priority: 1) card.dataset  2) hidden-body input .value  3) ''
+       We do NOT rely on getAttribute('value') because dynamically-set
+       innerHTML inputs may not reflect programmatic .value changes back
+       to the HTML attribute after the initial parse.
+    ─────────────────────────────────────────────────────────────────── */
+    function _readVal(dsKey, cls) {
+      /* 1. dataset (fastest, always up-to-date after any edit) */
+      var ds = card.dataset[dsKey];
+      if (ds !== undefined && ds !== null && ds !== '') return ds;
+
+      /* 2. live .value property of the hidden-body input */
+      var el = card.querySelector(cls);
+      if (el) {
+        var liveVal = el.value;
+        if (liveVal !== undefined && liveVal !== null && liveVal !== '') {
+          /* back-fill dataset so next open is fast */
+          card.dataset[dsKey] = liveVal;
+          return liveVal;
+        }
+        /* 3. HTML attribute (set by innerHTML during _makeFieldCard) */
+        var attrVal = el.getAttribute('value');
+        if (attrVal !== undefined && attrVal !== null && attrVal !== '') {
+          card.dataset[dsKey] = attrVal;
+          return attrVal;
+        }
+      }
+      return '';
+    }
+
+    var labelVal = _readVal('fieldLabel',   '.nu-field-label');
+    var nameVal  = _readVal('fieldName',    '.nu-field-name');
+    var phVal    = _readVal('fieldPh',      '.nu-field-placeholder');
+    var defVal   = _readVal('fieldDefault', '.nu-field-default');
+    var helpVal  = _readVal('fieldHelp',    '.nu-field-help');
+
     function _fp(labelText, inputEl, full) {
       var wrap = document.createElement('div');
       wrap.className = 'nb-fp' + (full ? ' nb-fp-full' : '');
@@ -233,18 +250,24 @@ console.log('[nb-props] panel opening for card:', card.id, '| dataset:', JSON.st
       return i;
     }
 
-    // Create inputs FIRST, then attach listeners
     var labelInput = _inp('nu-field-label', labelVal, 'Field label');
     labelInput.addEventListener('input', function () {
-      var orig = card.querySelector('.nu-field-label'); if (orig) orig.value = labelInput.value;
-      var hdr  = card.querySelector('.nb-cfield-label'); if (hdr) hdr.textContent = labelInput.value || '(no label)';
+      /* sync back to hidden body input */
+      var orig = card.querySelector('.nb-cfield-body .nu-field-label');
+      if (orig) orig.value = labelInput.value;
+      /* sync header badge */
+      var hdr = card.querySelector('.nb-cfield-label');
+      if (hdr) hdr.textContent = labelInput.value || '(no label)';
+      /* keep panel header in sync */
       document.getElementById('nb-props-title').textContent = labelInput.value || 'Properties';
+      /* always keep dataset current */
       card.dataset.fieldLabel = labelInput.value;
     });
 
     var nameInput = _inp('nu-field-name', nameVal, 'field_name');
     nameInput.addEventListener('input', function () {
-      var o = card.querySelector('.nu-field-name'); if (o) o.value = nameInput.value;
+      var orig = card.querySelector('.nb-cfield-body .nu-field-name');
+      if (orig) orig.value = nameInput.value;
       card.dataset.fieldName = nameInput.value;
     });
 
@@ -254,26 +277,31 @@ console.log('[nb-props] panel opening for card:', card.id, '| dataset:', JSON.st
     if (type !== 'subform') {
       var phInput = _inp('nu-field-placeholder', phVal, 'Placeholder text');
       phInput.addEventListener('input', function () {
-        var o = card.querySelector('.nu-field-placeholder'); if (o) o.value = phInput.value;
+        var orig = card.querySelector('.nb-cfield-body .nu-field-placeholder');
+        if (orig) orig.value = phInput.value;
         card.dataset.fieldPh = phInput.value;
       });
+
       var defInput = _inp('nu-field-default', defVal, 'Default value');
       defInput.addEventListener('input', function () {
-        var o = card.querySelector('.nu-field-default'); if (o) o.value = defInput.value;
+        var orig = card.querySelector('.nb-cfield-body .nu-field-default');
+        if (orig) orig.value = defInput.value;
         card.dataset.fieldDefault = defInput.value;
       });
+
       grid.appendChild(_fp('Placeholder', phInput));
       grid.appendChild(_fp('Default', defInput));
     }
 
     var helpInput = _inp('nu-field-help', helpVal, 'Help text shown to user');
     helpInput.addEventListener('input', function () {
-      var o = card.querySelector('.nu-field-help'); if (o) o.value = helpInput.value;
+      var orig = card.querySelector('.nb-cfield-body .nu-field-help');
+      if (orig) orig.value = helpInput.value;
       card.dataset.fieldHelp = helpInput.value;
     });
     grid.appendChild(_fp('Help Text', helpInput, true));
 
-    /* type-specific extras */
+    /* ── Type-specific extras cloned from hidden body ── */
     var cardBody = card.querySelector('.nb-cfield-body');
     if (cardBody) {
       var clone = cardBody.cloneNode(true);
@@ -281,7 +309,10 @@ console.log('[nb-props] panel opening for card:', card.id, '| dataset:', JSON.st
         var cls = cloneEl.className;
         cloneEl.addEventListener('change', function () {
           var orig = cardBody.querySelector('.' + cls.trim().split(/\s+/).join('.'));
-          if (orig) { if (orig.type === 'checkbox' || orig.type === 'radio') orig.checked = cloneEl.checked; else orig.value = cloneEl.value; }
+          if (orig) {
+            if (orig.type === 'checkbox' || orig.type === 'radio') orig.checked = cloneEl.checked;
+            else orig.value = cloneEl.value;
+          }
         });
         cloneEl.addEventListener('input', function () {
           var orig = cardBody.querySelector('.' + cls.trim().split(/\s+/).join('.'));
@@ -291,21 +322,25 @@ console.log('[nb-props] panel opening for card:', card.id, '| dataset:', JSON.st
       var extras = clone.querySelector('.nb-fp-grid');
       if (extras) {
         Array.prototype.forEach.call(extras.children, function (child) {
-          if (child.querySelector('.nu-field-label') || child.querySelector('.nu-field-name') ||
-              child.querySelector('.nu-field-placeholder') || child.querySelector('.nu-field-default') ||
+          /* skip the base fields we already rendered above */
+          if (child.querySelector('.nu-field-label')       ||
+              child.querySelector('.nu-field-name')        ||
+              child.querySelector('.nu-field-placeholder') ||
+              child.querySelector('.nu-field-default')     ||
               child.querySelector('.nu-field-help')) return;
           grid.appendChild(child.cloneNode(true));
         });
       }
     }
 
-    /* visibility flags */
+    /* ── Visibility flags ── */
     var visWrap = document.createElement('div');
     visWrap.className = 'nb-vis-flags nb-fp-full';
     var visLbl = document.createElement('label');
     visLbl.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-muted,#888);text-transform:uppercase;letter-spacing:.5px;flex-basis:100%;margin-bottom:2px;';
     visLbl.textContent = 'Field Options';
     visWrap.appendChild(visLbl);
+
     [
       { cls:'nu-field-required',      label:'Required' },
       { cls:'nu-field-no-duplicate',  label:'No Duplicate' },
@@ -315,15 +350,20 @@ console.log('[nb-props] panel opening for card:', card.id, '| dataset:', JSON.st
     ].forEach(function (flag) {
       var origChk = card.querySelector('.' + flag.cls);
       var lbl = document.createElement('label');
-      var chk = document.createElement('input'); chk.type = 'checkbox'; chk.checked = !!(origChk && origChk.checked);
-      chk.addEventListener('change', function () { if (origChk) origChk.checked = chk.checked; });
-      lbl.appendChild(chk); lbl.appendChild(document.createTextNode(' ' + flag.label));
+      var chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.checked = !!(origChk && origChk.checked);
+      chk.addEventListener('change', function () {
+        if (origChk) origChk.checked = chk.checked;
+      });
+      lbl.appendChild(chk);
+      lbl.appendChild(document.createTextNode(' ' + flag.label));
       visWrap.appendChild(lbl);
     });
+
     grid.appendChild(visWrap);
     body.appendChild(grid);
   }
-
   /* ════════════════════════════════════════════════════════════════════
      _nbSfData
   ═══════════════════════════════════════════════════════════════════ */
