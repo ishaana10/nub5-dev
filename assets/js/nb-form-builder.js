@@ -706,23 +706,41 @@ fields.forEach(function (f) {
   var fType  = f.type  || 'text';
   var fLabel = f.label || f.fieldlabel || f.field_label || f.title || f.name || '';
   var fName  = f.name  || f.fieldname  || f.field_name  || f.column_name || '';
+  var fPh    = f.placeholder || f.field_placeholder || f.fieldplaceholder || '';
+  var fDef   = f.default_value || f.defaultvalue || f.default || '';
+  var fHelp  = f.help_text || f.field_help_text || f.helptext || '';
   var fReq   = !!f.required;
 
   var card = window.nbFormBuilder._makeFieldCard(fType, fLabel, fName, fReq, f);
-
   if (!card) return;
+
+  /* Safety: force dataset after make in case _makeFieldCard received stale/empty values */
+  if (fLabel) card.dataset.fieldLabel   = fLabel;
+  if (fName)  card.dataset.fieldName    = fName;
+  if (fPh)    card.dataset.fieldPh      = fPh;
+  if (fDef)   card.dataset.fieldDefault = fDef;
+  if (fHelp)  card.dataset.fieldHelp    = fHelp;
+
+  /* Also backfill the hidden body inputs so getAttribute() returns the right value */
+  var bodyLabel = card.querySelector('.nu-field-label');
+  var bodyName  = card.querySelector('.nu-field-name');
+  var bodyPh    = card.querySelector('.nu-field-placeholder');
+  var bodyDef   = card.querySelector('.nu-field-default');
+  var bodyHelp  = card.querySelector('.nu-field-help');
+  if (bodyLabel) { bodyLabel.value = fLabel; bodyLabel.setAttribute('value', fLabel); }
+  if (bodyName)  { bodyName.value  = fName;  bodyName.setAttribute('value', fName); }
+  if (bodyPh)    { bodyPh.value    = fPh;    bodyPh.setAttribute('value', fPh); }
+  if (bodyDef)   { bodyDef.value   = fDef;   bodyDef.setAttribute('value', fDef); }
+  if (bodyHelp)  { bodyHelp.value  = fHelp;  bodyHelp.setAttribute('value', fHelp); }
+
+  /* Update visible header label */
+  var hdr = card.querySelector('.nb-cfield-label');
+  if (hdr && fLabel) hdr.textContent = fLabel;
+
   var d = rb.querySelector('.nb-row-drop-hint'); if (d) d.remove();
   _prepCard(card); rb.appendChild(card);
   window.nbFormBuilder._applyColSpan(card, parseInt(f.col, 10) || 6);
   _restoreFieldState(card, f);
-
-  console.log('[nb-row] card dataset after make:', JSON.stringify({
-    fieldLabel:   card.dataset.fieldLabel,
-    fieldName:    card.dataset.fieldName,
-    fieldPh:      card.dataset.fieldPh,
-    fieldDefault: card.dataset.fieldDefault,
-    fieldHelp:    card.dataset.fieldHelp
-  }));
 });
     }
     return row;
