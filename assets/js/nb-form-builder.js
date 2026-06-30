@@ -703,21 +703,12 @@ function _openPropsPanel(card) {
     _wireRowDrag(row); _attachRowBodyDrop(rb);
     if (fields && fields.length) {
 fields.forEach(function (f) {
-  console.group('[nb-row] _addRowToContainer field');
-  console.log('  raw f:', JSON.stringify(f));
+  var fType  = f.type  || 'text';
+  var fLabel = f.label || f.fieldlabel || f.field_label || f.title || f.name || '';
+  var fName  = f.name  || f.fieldname  || f.field_name  || f.column_name || '';
+  var fReq   = !!f.required;
 
-  var fd = (f && typeof f.fields === 'object' && f.fields) ? f.fields : f || {};
-
-  var fType  = fd.type  || 'text';
-  var fLabel = fd.label ?? fd.fieldlabel ?? fd.field_label ?? fd.title ?? '';
-  var fName  = fd.name  ?? fd.fieldname  ?? fd.field_name  ?? fd.column_name ?? '';
-  var fReq   = !!fd.required;
-
-  console.log('  resolved fType:', fType, '| fLabel:', fLabel, '| fName:', fName);
-  console.groupEnd();
-
-  var merged = Object.assign({}, fd, { label: fLabel, name: fName, required: fReq });
-  var card = window.nbFormBuilder._makeFieldCard(fType, fLabel, fName, fReq, merged);
+  var card = window.nbFormBuilder._makeFieldCard(fType, fLabel, fName, fReq, f);
 
   if (!card) return;
   var d = rb.querySelector('.nb-row-drop-hint'); if (d) d.remove();
@@ -1121,24 +1112,15 @@ card.dataset.fieldHelp    = extra.help_text || extra.field_help_text || '';
           var row = me.addRow(); if (!row) return;
           var rb = row.querySelector('.nb-row-body'); if (!rb) return;
           var hint = rb.querySelector('.nb-row-drop-hint'); if (hint) hint.remove();
-          entry.fields.forEach(function (f) {
- /*           var fLabel = f.label || f.fieldlabel || f.field_label || f.title || '';
-var fName  = f.name  || f.fieldname  || f.field_name  || f.column_name || '';
+entry.fields.forEach(function (f) {
+  /* The API stores field data flat at top level.
+     Never unwrap f.fields — that path is for container rows only. */
+  var fType  = f.type  || 'text';
+  var fLabel = f.label || f.fieldlabel || f.field_label || f.title || f.name || '';
+  var fName  = f.name  || f.fieldname  || f.field_name  || f.column_name || '';
+  var fReq   = !!f.required;
 
-console.log('[nb-form-builder] loadForm field raw:', JSON.stringify(f));
-console.log('[nb-form-builder] loadForm resolved fLabel:', fLabel, '| fName:', fName);
-var card = me._makeFieldCard(f.type || 'text', fLabel, fName, !!f.required, f);*/
-
-var fd = (f && typeof f.fields === 'object' && f.fields) ? f.fields : f;
-
-var fType  = fd.type || f.type || 'text';
-var fLabel = fd.label || fd.fieldlabel || fd.field_label || fd.title || '';
-var fName  = fd.name || fd.fieldname || fd.field_name || fd.column_name || '';
-var fReq   = !!(fd.required || f.required);
-
-var merged = Object.assign({}, f, fd);
-
-var card = window.nbFormBuilder._makeFieldCard(fType, fLabel, fName, fReq, merged);
+  var card = window.nbFormBuilder._makeFieldCard(fType, fLabel, fName, fReq, f);
             if (!card) return;
             _prepCard(card); rb.appendChild(card);
             me._applyColSpan(card, parseInt(f.col, 10) || 6);
