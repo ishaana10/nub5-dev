@@ -159,10 +159,24 @@ function nu_sync_table_from_layout(NuDatabase $db, string $table, string $layout
         $existing[$row['Field']] = true;
     }
 
-    foreach ($desired as $col => $def) {
+        foreach ($desired as $col => $def) {
         if (isset($existing[$col])) continue;
         try {
-            nu_ddl($db, "ALTER TABLE `{$table}` ADD COLUMN `{$col}` {$def}");  // uses exec()
+            // MySQL uses AFTER, not BEFORE. Find the column just before created_at.
+            $positionClause = '';
+            if (isset($existing['created_at'])) {
+                // Get the column that comes right before created_at
+                $cols = array_keys($existing);
+                $caIdx = array_search('created_at', $cols);
+                if ($caIdx === 0) {
+                    $positionClause = ' FIRST';
+                } elseif ($caIdx !== false) {
+                    $prevCol = $cols[$caIdx - 1];
+                    $positionClause = ' AFTER `' . $prevCol . '`';
+                }
+            }
+            nu_ddl($db, "ALTER TABLE `{$table}` ADD COLUMN `{$col}` {$def}{$positionClause}");
+            $existing[$col] = true; // keep $existing in sync for next iteration
         } catch (Throwable $e) {
             // logged inside nu_ddl — continue with remaining columns
         }
