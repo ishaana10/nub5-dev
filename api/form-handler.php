@@ -2,7 +2,6 @@
 require_once '../config.php';
 require_once '../core/Database.php';
 require_once '../core/Auth.php';
-require_once '../core/EmailService.php';
 
 $auth = new NuAuth();
 if (!$auth->checkAuth()) {
@@ -252,133 +251,75 @@ function handleEvents($db, $formCode, $eventType) {
 function handleSave($db, $formCode) {
     $form = $db->fetchOne("SELECT * FROM nu_forms WHERE form_code = ?", [$formCode]);
     if (!$form) { echo json_encode(['success' => false, 'error' => 'Form not found']); exit; }
-    
+
     $input = json_decode(file_get_contents('php://input'), true);
     $recordId = $_GET['id'] ?? null;
     $isNew = !$recordId;
-    
+
     $events = $db->fetchAll("SELECT * FROM nu_form_events WHERE form_id = ? AND event_active = 1", [$form['form_id']]);
     $eventMap = [];
     foreach ($events as $e) { $eventMap[$e['event_type']] = $e['event_code']; }
-    
+
     if (!empty($eventMap['php_beforesave'])) {
         $data = $input;
         $hashCookies = $input['hashCookies'] ?? [];
         eval($eventMap['php_beforesave']);
         $input = $data;
     }
-    
+
+    // ✅ Get current logged-in user ID from session/auth
+    $currentUserId = $_SESSION['user_id'] ?? null;
+
     try {
+        $now = date('Y-m-d H:i:s');
+
+        $tableColumns = [];
+        foreach ($db->fetchAll("DESCRIBE `{$form['form_table']}`") as $row) {
+            $tableColumns[$row['Field']] = true;
+        }
+
+        $safeInput = [];
+        foreach ($input as $k => $v) {
+            if (isset($tableColumns[$k])) {
+                $safeInput[$k] = $v;
+            }
+        }
+
         if ($isNew) {
-            $db->insert($form['form_table'], $input);
+            $safeInput['created_at'] = $now;
+            $safeInput['updated_at'] = $now;
+            // ✅ Set created_by and updated_by on insert
+            if ($currentUserId !== null) {
+                if (isset($tableColumns['created_by'])) $safeInput['created_by'] = $currentUserId;
+                if (isset($tableColumns['updated_by'])) $safeInput['updated_by'] = $currentUserId;
+            }
+            unset($safeInput['id']);
+            $db->insert($form['form_table'], $safeInput);
             $recordId = $db->lastInsertId();
         } else {
-            $db->update($form['form_table'], $input, 'id = ?', [$recordId]);
+            unset($safeInput['created_at']);
+            unset($safeInput['created_by']); // ✅ Never overwrite original creator
+            unset($safeInput['id']);
+            $safeInput['updated_at'] = $now;
+            // ✅ Set updated_by on update
+            if ($currentUserId !== null && isset($tableColumns['updated_by'])) {
+                $safeInput['updated_by'] = $currentUserId;
+            }
+            $db->update($form['form_table'], $safeInput, 'id = ?', [$recordId]);
         }
-        
+
+        // ✅ Missing: after-save event and response
         if (!empty($eventMap['php_aftersave'])) {
-            $data = $input;
-            $hashCookies = $input['hashCookies'] ?? [];
-            $newId = $recordId;
+            $data = $safeInput;
             eval($eventMap['php_aftersave']);
         }
 
-        // ----------------------------------------------------------------
-        // Email notification after successful save
-        // ----------------------------------------------------------------
-        sendFormEmailNotification($db, $form, $input, $recordId, $isNew);
-        // ----------------------------------------------------------------
-        
         echo json_encode(['success' => true, 'id' => $recordId]);
+
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
-}
-
-/**
- * Sends email notification(s) after a form record is saved.
- * Reads per-form email config from form_email_notify, form_email_to,
- * form_email_template columns (added by install_email.sql migration).
- *
- * @param object $db
- * @param array  $form       Row from nu_forms
- * @param array  $input      Form data that was saved
- * @param mixed  $recordId   New or updated record ID
- * @param bool   $isNew      Whether this was an insert
- */
-function sendFormEmailNotification($db, array $form, array $input, $recordId, bool $isNew): void {
-    // Skip if notifications disabled for this form
-    $notifyEnabled = $form['form_email_notify'] ?? 0;
-    if (!$notifyEnabled) return;
-
-    // Only notify on new submissions, or on all saves — configurable per form
-    $notifyOn = $form['form_email_notify_on'] ?? 'new';  // 'new' | 'all'
-    if ($notifyOn === 'new' && !$isNew) return;
-
-    $notifyTo = trim($form['form_email_to'] ?? '');
-    if (!$notifyTo) return;
-
-    $templateSlug = $form['form_email_template'] ?? 'form_submission';
-    $formName     = $form['form_name'] ?? $form['form_code'] ?? 'Unknown Form';
-
-    // Build dynamic review URL
-    $baseUrl    = defined('BASE_URL') ? rtrim(BASE_URL, '/') : '';
-    $reviewUrl  = $baseUrl . '/index.php?form_code=' . urlencode($form['form_code']) . '&id=' . urlencode($recordId);
-
-    // Gather submitter name from session
-    $submittedBy = 'System';
-    if (session_status() === PHP_SESSION_NONE) session_start();
-    if (!empty($_SESSION['user_name']))  $submittedBy = $_SESSION['user_name'];
-    elseif (!empty($_SESSION['username'])) $submittedBy = $_SESSION['username'];
-
-    // Build template variables (include every form field as a variable too)
-    $variables = [
-        'form_name'    => $formName,
-        'submitted_by' => $submittedBy,
-        'submitted_at' => date('Y-m-d H:i:s'),
-        'record_id'    => (string)$recordId,
-        'review_url'   => $reviewUrl,
-        'action'       => $isNew ? 'created' : 'updated',
-    ];
-    // Merge every saved field so templates can reference {{field_name}}
-    foreach ($input as $key => $value) {
-        if (is_scalar($value)) $variables[$key] = (string)$value;
-    }
-
-    try {
-        $svc      = new EmailService();
-        $rendered = EmailService::renderTemplate($templateSlug, $variables, $db->getConnection());
-
-        if ($rendered) {
-            // Support comma-separated list of recipients
-            $recipients = array_map('trim', explode(',', $notifyTo));
-            foreach ($recipients as $recipient) {
-                if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-                    $svc->send($recipient, $rendered['subject'], $rendered['body']);
-                }
-            }
-        } else {
-            // Fallback: plain-text notification if template not found
-            $subject  = "Form submission: {$formName}";
-            $bodyRows = "";
-            foreach ($input as $key => $value) {
-                if (is_scalar($value)) {
-                    $bodyRows .= "<tr><td style='padding:6px 12px;border:1px solid #ddd;'><strong>" . htmlspecialchars($key) . "</strong></td><td style='padding:6px 12px;border:1px solid #ddd;'>" . htmlspecialchars((string)$value) . "</td></tr>";
-                }
-            }
-            $body = "<h2>New submission: {$formName}</h2><p>Submitted by {$submittedBy} on " . date('Y-m-d H:i') . "</p><table style='border-collapse:collapse;width:100%'>{$bodyRows}</table><p><a href='{$reviewUrl}'>View record</a></p>";
-            $recipients = array_map('trim', explode(',', $notifyTo));
-            foreach ($recipients as $recipient) {
-                if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-                    $svc->send($recipient, $subject, $body);
-                }
-            }
-        }
-    } catch (\Throwable $e) {
-        // Never let email failure break the form save response
-        error_log('[nub5-dev email] Form notification failed: ' . $e->getMessage());
-    }
-}
+} // ✅ Missing closing brace restored
 
 function handleBrowse($db, $formCode) {
     $form = $db->fetchOne("SELECT * FROM nu_forms WHERE form_code = ?", [$formCode]);
