@@ -179,25 +179,29 @@ function _renderPropsInPanel(card, body) {
     return i;
   }
 
-  /*function _fromCard(dsKey, bodySelector) {
-    var v = card.dataset[dsKey];
-    if (v !== undefined && v !== null && v !== '') return v;
+function _fromCard(dsKey, bodySelector) {
+  var dsVal   = card.dataset[dsKey];
+  var bodyEl  = card.querySelector('.nb-cfield-body ' + bodySelector);
+  var attrVal = bodyEl ? bodyEl.getAttribute('value') : null;
+  var propVal = bodyEl ? bodyEl.value : null;
 
-    var el = card.querySelector('.nb-cfield-body ' + bodySelector);
-    if (el) {
-      v = el.getAttribute('value') || '';
-      if (v) card.dataset[dsKey] = v;
-      return v;
-    }
-    return '';
-  }*/
-  
-  function _fromCard(dsKey, bodySelector) {
-  var v = card.dataset[dsKey];
-  if (v !== undefined && v !== null) return v;
+  console.group('[nb-props] _fromCard  dsKey=' + dsKey);
+  console.log('  dataset value   :', dsVal);
+  console.log('  body selector   :', bodySelector);
+  console.log('  body el found   :', !!bodyEl);
+  console.log('  getAttribute()  :', attrVal);
+  console.log('  .value          :', propVal);
+  console.log('  body display    :', bodyEl ? bodyEl.closest('.nb-cfield-body').style.display : 'N/A');
+  console.log('  card.id         :', card.id);
+  console.log('  full dataset    :', JSON.stringify(card.dataset));
+  console.groupEnd();
+
+  /* Priority: dataset → HTML attribute → .value property */
+  if (dsVal !== undefined && dsVal !== null && dsVal !== '') return dsVal;
+  if (attrVal)  { card.dataset[dsKey] = attrVal; return attrVal; }
+  if (propVal)  { card.dataset[dsKey] = propVal; return propVal; }
   return '';
 }
-
   var spanBar = document.createElement('div');
   spanBar.className = 'nb-span-bar';
 
@@ -706,59 +710,37 @@ function _openPropsPanel(card) {
     row.appendChild(rh); row.appendChild(rb); rowsWrap.appendChild(row);
     _wireRowDrag(row); _attachRowBodyDrop(rb);
     if (fields && fields.length) {
-      fields.forEach(function (f) {
-       /*var fLabel = f.label || f.fieldlabel || f.field_label || f.title || '';
-var fName  = f.name  || f.fieldname  || f.field_name  || f.column_name || '';
-var card = window.nbFormBuilder._makeFieldCard(f.type || 'text', fLabel, fName, !!f.required, f);*/
+fields.forEach(function (f) {
+  console.group('[nb-row] _addRowToContainer field');
+  console.log('  raw f:', JSON.stringify(f));
 
-/*var fd = (f && typeof f.fields === 'object' && f.fields) ? f.fields : f;
+  var fd = (f && typeof f.fields === 'object' && f.fields) ? f.fields : f || {};
 
-var fType  = fd.type || f.type || 'text';
-var fLabel = fd.label || fd.fieldlabel || fd.field_label || fd.title || '';
-var fName  = fd.name || fd.fieldname || fd.field_name || fd.column_name || '';
-var fReq   = !!(fd.required || f.required);
+  var fType  = fd.type  || 'text';
+  var fLabel = fd.label ?? fd.fieldlabel ?? fd.field_label ?? fd.title ?? '';
+  var fName  = fd.name  ?? fd.fieldname  ?? fd.field_name  ?? fd.column_name ?? '';
+  var fReq   = !!fd.required;
 
-var merged = Object.assign({}, f, fd);
+  console.log('  resolved fType:', fType, '| fLabel:', fLabel, '| fName:', fName);
+  console.groupEnd();
 
-var card = window.nbFormBuilder._makeFieldCard(fType, fLabel, fName, fReq, merged);*/
+  var merged = Object.assign({}, fd, { label: fLabel, name: fName, required: fReq });
+  var card = window.nbFormBuilder._makeFieldCard(fType, fLabel, fName, fReq, merged);
 
+  if (!card) return;
+  var d = rb.querySelector('.nb-row-drop-hint'); if (d) d.remove();
+  _prepCard(card); rb.appendChild(card);
+  window.nbFormBuilder._applyColSpan(card, parseInt(f.col, 10) || 6);
+  _restoreFieldState(card, f);
 
-var fd = (f && typeof f.fields === 'object' && f.fields) ? f.fields : f || {};
-
-var fType = fd.type || 'text';
-
-var fLabel =
-  fd.label ??
-  fd.fieldlabel ??
-  fd.field_label ??
-  fd.title ??
-  '';
-
-var fName =
-  fd.name ??
-  fd.fieldname ??
-  fd.field_name ??
-  fd.column_name ??
-  '';
-
-var fReq = !!fd.required;
-
-var merged = Object.assign({}, fd, {
-  label: fLabel,
-  name: fName,
-  required: fReq
+  console.log('[nb-row] card dataset after make:', JSON.stringify({
+    fieldLabel:   card.dataset.fieldLabel,
+    fieldName:    card.dataset.fieldName,
+    fieldPh:      card.dataset.fieldPh,
+    fieldDefault: card.dataset.fieldDefault,
+    fieldHelp:    card.dataset.fieldHelp
+  }));
 });
-
-var card = window.nbFormBuilder._makeFieldCard(fType, fLabel, fName, fReq, merged);
-
-
-
-        if (!card) return;
-        var d = rb.querySelector('.nb-row-drop-hint'); if (d) d.remove();
-        _prepCard(card); rb.appendChild(card);
-        window.nbFormBuilder._applyColSpan(card, parseInt(f.col, 10) || 6);
-        _restoreFieldState(card, f);
-      });
     }
     return row;
   }
@@ -1316,8 +1298,7 @@ var _val = function (sel) {
       }
       var dtype = e.dataTransfer.getData('text/nb-type') || e.dataTransfer.getData('text/plain');
       if (dtype && dtype !== 'group' && dtype !== 'tab') {
-          console.log('[loadForm] field args:', JSON.stringify({
-  type: fieldDef.type,
+          console.log('[loadForm] field args:', JSON.stringify(
   label: fieldDef.label,
   name: fieldDef.name,
   required: fieldDef.required,
