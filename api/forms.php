@@ -33,7 +33,10 @@ switch ($action) {
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function nu_is_structural_type(string $type): bool {
-    return in_array($type, ['html','content','button','subform','fieldset','divider','heading','section','group','row','tab'], true);
+    return in_array($type, [
+        'html','content','button','subform','fieldset',
+        'divider','heading','section','group','row','tab'
+    ], true);
 }
 
 function nu_col_def_for_type(string $type): string {
@@ -53,18 +56,24 @@ function nu_flatten_fields(array $layout): array {
     $out = [];
     foreach ($layout as $node) {
         $t = $node['type'] ?? 'field';
-        if (in_array($t, ['section', 'group', 'row'], true)) {
-            // recurse into generic children
-            foreach (nu_flatten_fields($node['children'] ?? []) as $f) $out[] = $f;
-        } elseif ($t === 'tab') {
-            // recurse into each tab's children array
+
+        if ($t === 'tab') {
+            // tab → tabs[] → rows[] → fields[]
             foreach ($node['tabs'] ?? [] as $tab) {
-                foreach (nu_flatten_fields($tab['children'] ?? []) as $f) $out[] = $f;
+                foreach ($tab['rows'] ?? [] as $row) {
+                    foreach (nu_flatten_fields($row['fields'] ?? []) as $f) $out[] = $f;
+                }
             }
-            // also handle a flat 'children' key if stored that way
+        } elseif ($t === 'group') {
+            // group → rows[] → fields[]
+            foreach ($node['rows'] ?? [] as $row) {
+                foreach (nu_flatten_fields($row['fields'] ?? []) as $f) $out[] = $f;
+            }
+        } elseif ($t === 'section' || $t === 'row') {
+            // legacy flat children[]
             foreach (nu_flatten_fields($node['children'] ?? []) as $f) $out[] = $f;
         } elseif ($t === 'subform') {
-            // subform is structural — skip entirely (no DB column needed)
+            // never a DB column — skip
             continue;
         } else {
             $out[] = $node;
