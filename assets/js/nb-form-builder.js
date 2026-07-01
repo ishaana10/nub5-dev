@@ -155,23 +155,8 @@
   if (canvas) canvas.style.marginRight = '';
 }
 
-function _closePropsPanel() {
-  var panel = document.getElementById('nb-props-panel');
-  if (panel) panel.classList.remove('open');
-  if (_activeCard) _activeCard.classList.remove('nb-cfield-selected');
-  _activeCard = null;
-  var canvas = document.getElementById('formCanvas');
-  if (canvas) canvas.style.marginRight = '';
-}
 
-/* ─────────────────────────────────────────────────────────────────────
-   _renderSubformPanel
-   Builds a live subform config panel inside the side panel grid.
-   Reads truth from the hidden body DOM, builds fresh HTML (no clone),
-   populates async dropdowns, then wires all changes back to the body.
-───────────────────────────────────────────────────────────────────── */
 function _renderSubformPanel(card, grid) {
-  // 1. Read current values from hidden body DOM, fall back to dataset
   var origFormSel  = card.querySelector('.nb-cfield-body .nb-sf-form-code');
   var origFkSel    = card.querySelector('.nb-cfield-body .nb-sf-fk-field');
   var origViewSel  = card.querySelector('.nb-cfield-body .nb-sf-view');
@@ -186,7 +171,6 @@ function _renderSubformPanel(card, grid) {
   var liveHideGrid = origHideGrid ? origHideGrid.checked : (card.dataset.sfHideInGrid === '1');
   var liveSrvRo    = origSrvRo    ? origSrvRo.checked    : (card.dataset.sfServerReadonly === '1');
 
-  // 2. Snapshot back into dataset so _nbSfData.read() is always fresh
   if (liveFormCode) card.dataset.sfFormCode    = liveFormCode;
   if (liveFkField)  card.dataset.sfFkField     = liveFkField;
   card.dataset.sfSubformView    = liveView;
@@ -194,18 +178,16 @@ function _renderSubformPanel(card, grid) {
   card.dataset.sfHideInGrid     = liveHideGrid ? '1' : '0';
   card.dataset.sfServerReadonly = liveSrvRo    ? '1' : '0';
 
-  // 3. Build fresh panel HTML (never clone — cloneNode freezes async options)
   var sfWrap = document.createElement('div');
   sfWrap.style.cssText = 'grid-column:1/-1;';
   sfWrap.innerHTML = _subformPanelHTML({
-    form_code: '', fk_field: '', subform_view: liveView,
+    form_code: liveFormCode, fk_field: liveFkField, subform_view: liveView,
     help_text: card.dataset.sfHelpText || '',
     is_fk: liveIsFk, hide_in_grid: liveHideGrid, server_readonly: liveSrvRo
   });
   var livePanel = sfWrap.querySelector('.nb-sf-fk-panel') || sfWrap;
 
   var mirrorFormSel  = livePanel.querySelector('.nb-sf-form-code');
-  var mirrorFkSel    = livePanel.querySelector('.nb-sf-fk-field');  // eslint-disable-line no-unused-vars
   var mirrorView     = livePanel.querySelector('.nb-sf-view');
   var mirrorIsFk     = livePanel.querySelector('.nb-sf-is-fk');
   var mirrorHideGrid = livePanel.querySelector('.nb-sf-hide-in-grid');
@@ -216,26 +198,14 @@ function _renderSubformPanel(card, grid) {
   if (mirrorSrvRo)    mirrorSrvRo.checked    = liveSrvRo;
   if (mirrorView && liveView) mirrorView.value = liveView;
 
-  // 4. Must be in live DOM before populating <select> options
+  // Must be in the live DOM before fetch callbacks fire
   grid.appendChild(sfWrap);
 
-  // 5. Async-populate form dropdown, then FK dropdown
-  _populateFormDropdown(livePanel, '', function () {
-    if (mirrorFormSel && liveFormCode) {
-      mirrorFormSel.value = liveFormCode;
-      if (mirrorFormSel.value !== liveFormCode) {
-        // Value not yet in list — add temporary placeholder
-        var tmpOpt = document.createElement('option');
-        tmpOpt.value = liveFormCode;
-        tmpOpt.textContent = '(' + liveFormCode + ')';
-        mirrorFormSel.insertBefore(tmpOpt, mirrorFormSel.options[1] || null);
-        mirrorFormSel.value = liveFormCode;
-      }
-    }
+  // Pass liveFormCode so _populateFormDropdown marks the right option selected
+  _populateFormDropdown(livePanel, liveFormCode, function () {
     if (liveFormCode) _populateFkDropdown(livePanel, liveFormCode, liveFkField);
   });
 
-  // 6. Form dropdown change → repopulate FK + sync body
   if (mirrorFormSel) {
     mirrorFormSel.addEventListener('change', function () {
       card.dataset.sfFormCode = mirrorFormSel.value;
@@ -245,7 +215,6 @@ function _renderSubformPanel(card, grid) {
     });
   }
 
-  // 7. All other field changes → sync back to hidden body panel + dataset
   livePanel.addEventListener('change', function (e) {
     var tgt = e.target;
     var m = (tgt.className || '').match(/\bnb-sf-[\w-]+\b/);
@@ -265,11 +234,9 @@ function _renderSubformPanel(card, grid) {
     }
   });
 
-  // 8. Create FK Field button
   var createBtn = livePanel.querySelector('.nb-sf-create-fk');
   if (createBtn) createBtn.addEventListener('click', function () { _createFkField(livePanel); });
 }
-
 /* ─────────────────────────────────────────────────────────────────────
    _renderPropsInPanel
 ───────────────────────────────────────────────────────────────────── */
