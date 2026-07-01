@@ -155,6 +155,124 @@
   if (canvas) canvas.style.marginRight = '';
 }
 
+function _closePropsPanel() {
+  var panel = document.getElementById('nb-props-panel');
+  if (panel) panel.classList.remove('open');
+  if (_activeCard) _activeCard.classList.remove('nb-cfield-selected');
+  _activeCard = null;
+  var canvas = document.getElementById('formCanvas');
+  if (canvas) canvas.style.marginRight = '';
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   _renderSubformPanel
+   Builds a live subform config panel inside the side panel grid.
+   Reads truth from the hidden body DOM, builds fresh HTML (no clone),
+   populates async dropdowns, then wires all changes back to the body.
+───────────────────────────────────────────────────────────────────── */
+function _renderSubformPanel(card, grid) {
+  // 1. Read current values from hidden body DOM, fall back to dataset
+  var origFormSel  = card.querySelector('.nb-cfield-body .nb-sf-form-code');
+  var origFkSel    = card.querySelector('.nb-cfield-body .nb-sf-fk-field');
+  var origViewSel  = card.querySelector('.nb-cfield-body .nb-sf-view');
+  var origIsFk     = card.querySelector('.nb-cfield-body .nb-sf-is-fk');
+  var origHideGrid = card.querySelector('.nb-cfield-body .nb-sf-hide-in-grid');
+  var origSrvRo    = card.querySelector('.nb-cfield-body .nb-sf-server-readonly');
+
+  var liveFormCode = origFormSel  ? (origFormSel.value  || origFormSel.getAttribute('value')  || '') : (card.dataset.sfFormCode || '');
+  var liveFkField  = origFkSel    ? (origFkSel.value    || origFkSel.getAttribute('value')    || '') : (card.dataset.sfFkField  || '');
+  var liveView     = origViewSel  ? (origViewSel.value  || origViewSel.getAttribute('value')  || 'grid') : (card.dataset.sfSubformView || 'grid');
+  var liveIsFk     = origIsFk     ? origIsFk.checked     : (card.dataset.sfIsFk === '1');
+  var liveHideGrid = origHideGrid ? origHideGrid.checked : (card.dataset.sfHideInGrid === '1');
+  var liveSrvRo    = origSrvRo    ? origSrvRo.checked    : (card.dataset.sfServerReadonly === '1');
+
+  // 2. Snapshot back into dataset so _nbSfData.read() is always fresh
+  if (liveFormCode) card.dataset.sfFormCode    = liveFormCode;
+  if (liveFkField)  card.dataset.sfFkField     = liveFkField;
+  card.dataset.sfSubformView    = liveView;
+  card.dataset.sfIsFk           = liveIsFk     ? '1' : '0';
+  card.dataset.sfHideInGrid     = liveHideGrid ? '1' : '0';
+  card.dataset.sfServerReadonly = liveSrvRo    ? '1' : '0';
+
+  // 3. Build fresh panel HTML (never clone — cloneNode freezes async options)
+  var sfWrap = document.createElement('div');
+  sfWrap.style.cssText = 'grid-column:1/-1;';
+  sfWrap.innerHTML = _subformPanelHTML({
+    form_code: '', fk_field: '', subform_view: liveView,
+    help_text: card.dataset.sfHelpText || '',
+    is_fk: liveIsFk, hide_in_grid: liveHideGrid, server_readonly: liveSrvRo
+  });
+  var livePanel = sfWrap.querySelector('.nb-sf-fk-panel') || sfWrap;
+
+  var mirrorFormSel  = livePanel.querySelector('.nb-sf-form-code');
+  var mirrorFkSel    = livePanel.querySelector('.nb-sf-fk-field');  // eslint-disable-line no-unused-vars
+  var mirrorView     = livePanel.querySelector('.nb-sf-view');
+  var mirrorIsFk     = livePanel.querySelector('.nb-sf-is-fk');
+  var mirrorHideGrid = livePanel.querySelector('.nb-sf-hide-in-grid');
+  var mirrorSrvRo    = livePanel.querySelector('.nb-sf-server-readonly');
+
+  if (mirrorIsFk)     mirrorIsFk.checked     = liveIsFk;
+  if (mirrorHideGrid) mirrorHideGrid.checked = liveHideGrid;
+  if (mirrorSrvRo)    mirrorSrvRo.checked    = liveSrvRo;
+  if (mirrorView && liveView) mirrorView.value = liveView;
+
+  // 4. Must be in live DOM before populating <select> options
+  grid.appendChild(sfWrap);
+
+  // 5. Async-populate form dropdown, then FK dropdown
+  _populateFormDropdown(livePanel, '', function () {
+    if (mirrorFormSel && liveFormCode) {
+      mirrorFormSel.value = liveFormCode;
+      if (mirrorFormSel.value !== liveFormCode) {
+        // Value not yet in list — add temporary placeholder
+        var tmpOpt = document.createElement('option');
+        tmpOpt.value = liveFormCode;
+        tmpOpt.textContent = '(' + liveFormCode + ')';
+        mirrorFormSel.insertBefore(tmpOpt, mirrorFormSel.options[1] || null);
+        mirrorFormSel.value = liveFormCode;
+      }
+    }
+    if (liveFormCode) _populateFkDropdown(livePanel, liveFormCode, liveFkField);
+  });
+
+  // 6. Form dropdown change → repopulate FK + sync body
+  if (mirrorFormSel) {
+    mirrorFormSel.addEventListener('change', function () {
+      card.dataset.sfFormCode = mirrorFormSel.value;
+      if (origFormSel) { origFormSel.value = mirrorFormSel.value; origFormSel.setAttribute('value', mirrorFormSel.value); }
+      if (origFkSel)   { origFkSel.innerHTML = '<option value="">— select FK field —</option>'; origFkSel.value = ''; }
+      _populateFkDropdown(livePanel, mirrorFormSel.value, '');
+    });
+  }
+
+  // 7. All other field changes → sync back to hidden body panel + dataset
+  livePanel.addEventListener('change', function (e) {
+    var tgt = e.target;
+    var m = (tgt.className || '').match(/\bnb-sf-[\w-]+\b/);
+    if (!m) return;
+    var origEl = card.querySelector('.nb-cfield-body .' + m[0]);
+    if (!origEl) return;
+    if (tgt.type === 'checkbox') {
+      origEl.checked = tgt.checked;
+      if (m[0] === 'nb-sf-is-fk')          card.dataset.sfIsFk           = tgt.checked ? '1' : '0';
+      if (m[0] === 'nb-sf-hide-in-grid')    card.dataset.sfHideInGrid     = tgt.checked ? '1' : '0';
+      if (m[0] === 'nb-sf-server-readonly') card.dataset.sfServerReadonly = tgt.checked ? '1' : '0';
+    } else {
+      origEl.value = tgt.value;
+      origEl.setAttribute('value', tgt.value);
+      if (m[0] === 'nb-sf-fk-field') card.dataset.sfFkField     = tgt.value;
+      if (m[0] === 'nb-sf-view')     card.dataset.sfSubformView = tgt.value;
+    }
+  });
+
+  // 8. Create FK Field button
+  var createBtn = livePanel.querySelector('.nb-sf-create-fk');
+  if (createBtn) createBtn.addEventListener('click', function () { _createFkField(livePanel); });
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   _renderPropsInPanel
+───────────────────────────────────────────────────────────────────── */
 function _renderPropsInPanel(card, body) {
   var type = card.dataset.type || 'text';
   var col  = parseInt(card.dataset.col, 10) || 6;
@@ -190,6 +308,7 @@ function _renderPropsInPanel(card, body) {
     return '';
   }
 
+  // Width bar
   var spanBar = document.createElement('div');
   spanBar.className = 'nb-span-bar';
   var spanLabel = document.createElement('span');
@@ -215,13 +334,8 @@ function _renderPropsInPanel(card, body) {
   grid.className = 'nb-fp-grid';
   grid.appendChild(spanBar);
 
-  var labelVal = _fromCard('fieldLabel',   '.nu-field-label');
-  var nameVal  = _fromCard('fieldName',    '.nu-field-name');
-  var phVal    = _fromCard('fieldPh',      '.nu-field-placeholder');
-  var defVal   = _fromCard('fieldDefault', '.nu-field-default');
-  var helpVal  = _fromCard('fieldHelp',    '.nu-field-help');
-
-  var labelInput = _inp(labelVal, 'Field label');
+  // Common text fields
+  var labelInput = _inp(_fromCard('fieldLabel', '.nu-field-label'), 'Field label');
   labelInput.addEventListener('input', function () {
     card.dataset.fieldLabel = labelInput.value;
     var orig = card.querySelector('.nb-cfield-body .nu-field-label');
@@ -232,7 +346,7 @@ function _renderPropsInPanel(card, body) {
     if (titleEl) titleEl.textContent = labelInput.value || 'Properties';
   });
 
-  var nameInput = _inp(nameVal, 'field_name');
+  var nameInput = _inp(_fromCard('fieldName', '.nu-field-name'), 'field_name');
   nameInput.addEventListener('input', function () {
     card.dataset.fieldName = nameInput.value;
     var orig = card.querySelector('.nb-cfield-body .nu-field-name');
@@ -243,23 +357,25 @@ function _renderPropsInPanel(card, body) {
   grid.appendChild(_fp('Field Name', nameInput));
 
   if (type !== 'subform') {
-    var phInput = _inp(phVal, 'Placeholder text');
+    var phInput = _inp(_fromCard('fieldPh', '.nu-field-placeholder'), 'Placeholder text');
     phInput.addEventListener('input', function () {
       card.dataset.fieldPh = phInput.value;
       var orig = card.querySelector('.nb-cfield-body .nu-field-placeholder');
       if (orig) { orig.value = phInput.value; orig.setAttribute('value', phInput.value); }
     });
-    var defInput = _inp(defVal, 'Default value');
+
+    var defInput = _inp(_fromCard('fieldDefault', '.nu-field-default'), 'Default value');
     defInput.addEventListener('input', function () {
       card.dataset.fieldDefault = defInput.value;
       var orig = card.querySelector('.nb-cfield-body .nu-field-default');
       if (orig) { orig.value = defInput.value; orig.setAttribute('value', defInput.value); }
     });
+
     grid.appendChild(_fp('Placeholder', phInput));
     grid.appendChild(_fp('Default', defInput));
   }
 
-  var helpInput = _inp(helpVal, 'Help text shown to user');
+  var helpInput = _inp(_fromCard('fieldHelp', '.nu-field-help'), 'Help text shown to user');
   helpInput.addEventListener('input', function () {
     card.dataset.fieldHelp = helpInput.value;
     var orig = card.querySelector('.nb-cfield-body .nu-field-help');
@@ -267,11 +383,13 @@ function _renderPropsInPanel(card, body) {
   });
   grid.appendChild(_fp('Help Text', helpInput, true));
 
+  // Type-specific extras from body grid (skip standard fields already rendered above)
   var cardBody = card.querySelector('.nb-cfield-body');
   if (cardBody) {
     var bodyGrid = cardBody.querySelector('.nb-fp-grid');
     if (bodyGrid) {
       Array.prototype.forEach.call(bodyGrid.children, function (child) {
+        // Skip fields already mirrored above
         if (
           child.querySelector('.nu-field-label') ||
           child.querySelector('.nu-field-name') ||
@@ -281,113 +399,13 @@ function _renderPropsInPanel(card, body) {
           child.classList.contains('nb-vis-flags')
         ) return;
 
-/* ── FIX: Subform panel — re-render live instead of cloning ── */
-if (child.classList.contains('nb-sf-fk-panel')) {
+        // Subform panel: build live, never clone
+        if (child.classList.contains('nb-sf-fk-panel')) {
+          _renderSubformPanel(card, grid);
+          return;
+        }
 
-  /* Step 1: Read truth from body DOM */
-  var origFormSel  = card.querySelector('.nb-cfield-body .nb-sf-form-code');
-  var origFkSel    = card.querySelector('.nb-cfield-body .nb-sf-fk-field');
-  var origViewSel  = card.querySelector('.nb-cfield-body .nb-sf-view');
-  var origIsFk     = card.querySelector('.nb-cfield-body .nb-sf-is-fk');
-  var origHideGrid = card.querySelector('.nb-cfield-body .nb-sf-hide-in-grid');
-  var origSrvRo    = card.querySelector('.nb-cfield-body .nb-sf-server-readonly');
-
-  var liveFormCode = origFormSel  ? (origFormSel.value  || origFormSel.getAttribute('value')  || '') : (card.dataset.sfFormCode || '');
-  var liveFkField  = origFkSel    ? (origFkSel.value    || origFkSel.getAttribute('value')    || '') : (card.dataset.sfFkField  || '');
-  var liveView     = origViewSel  ? (origViewSel.value  || origViewSel.getAttribute('value')  || 'grid') : (card.dataset.sfSubformView || 'grid');
-  var liveIsFk     = origIsFk     ? origIsFk.checked     : (card.dataset.sfIsFk === '1');
-  var liveHideGrid = origHideGrid ? origHideGrid.checked : (card.dataset.sfHideInGrid === '1');
-  var liveSrvRo    = origSrvRo    ? origSrvRo.checked    : (card.dataset.sfServerReadonly === '1');
-
-  if (liveFormCode) card.dataset.sfFormCode    = liveFormCode;
-  if (liveFkField)  card.dataset.sfFkField     = liveFkField;
-  card.dataset.sfSubformView    = liveView;
-  card.dataset.sfIsFk           = liveIsFk     ? '1' : '0';
-  card.dataset.sfHideInGrid     = liveHideGrid ? '1' : '0';
-  card.dataset.sfServerReadonly = liveSrvRo    ? '1' : '0';
-
-  /* Step 2: Build fresh panel HTML */
-  var sfWrap = document.createElement('div');
-  sfWrap.style.cssText = 'grid-column:1/-1;';
-  sfWrap.innerHTML = _subformPanelHTML({
-    form_code: '', fk_field: '', subform_view: liveView,
-    help_text: card.dataset.sfHelpText || '',
-    is_fk: liveIsFk, hide_in_grid: liveHideGrid, server_readonly: liveSrvRo
-  });
-  var livePanel = sfWrap.querySelector('.nb-sf-fk-panel') || sfWrap;
-
-  var mirrorIsFk     = livePanel.querySelector('.nb-sf-is-fk');
-  var mirrorHideGrid = livePanel.querySelector('.nb-sf-hide-in-grid');
-  var mirrorSrvRo    = livePanel.querySelector('.nb-sf-server-readonly');
-  var mirrorView     = livePanel.querySelector('.nb-sf-view');
-  var mirrorFormSel  = livePanel.querySelector('.nb-sf-form-code');
-  var mirrorFkSel    = livePanel.querySelector('.nb-sf-fk-field');
-
-  if (mirrorIsFk)     mirrorIsFk.checked     = liveIsFk;
-  if (mirrorHideGrid) mirrorHideGrid.checked = liveHideGrid;
-  if (mirrorSrvRo)    mirrorSrvRo.checked    = liveSrvRo;
-  if (mirrorView && liveView) mirrorView.value = liveView;
-
-  /* ══ CRITICAL: append to DOM FIRST so select is live before populate ══ */
-  grid.appendChild(sfWrap);
-
-  /* Step 3: Populate form dropdown while select is live in DOM */
-  _populateFormDropdown(livePanel, '' /* don't pre-select inside the fn */, function () {
-    /* Set value AFTER options are loaded and select is in live DOM */
-    if (mirrorFormSel && liveFormCode) {
-      mirrorFormSel.value = liveFormCode;
-      if (mirrorFormSel.value !== liveFormCode) {
-        /* Value not in list — add a placeholder option */
-        var tmpOpt = document.createElement('option');
-        tmpOpt.value = liveFormCode;
-        tmpOpt.textContent = '(' + liveFormCode + ')';
-        mirrorFormSel.insertBefore(tmpOpt, mirrorFormSel.options[1] || null);
-        mirrorFormSel.value = liveFormCode;
-      }
-    }
-    if (liveFormCode) {
-      _populateFkDropdown(livePanel, liveFormCode, liveFkField);
-    }
-  });
-
-  /* Step 4: Wire form change → repopulate FK + sync back */
-  if (mirrorFormSel) {
-    mirrorFormSel.addEventListener('change', function () {
-      card.dataset.sfFormCode = mirrorFormSel.value;
-      if (origFormSel) { origFormSel.value = mirrorFormSel.value; origFormSel.setAttribute('value', mirrorFormSel.value); }
-      if (origFkSel) { origFkSel.innerHTML = '<option value="">— select FK field —</option>'; origFkSel.value = ''; }
-      _populateFkDropdown(livePanel, mirrorFormSel.value, '');
-    });
-  }
-
-  /* Step 5: Sync all changes back */
-  livePanel.addEventListener('change', function (e) {
-    var tgt = e.target;
-    var sfClass = (tgt.className || '').match(/\bnb-sf-[\w-]+\b/);
-    if (!sfClass) return;
-    var origEl = card.querySelector('.nb-cfield-body .' + sfClass[0]);
-    if (!origEl) return;
-    if (tgt.type === 'checkbox') {
-      origEl.checked = tgt.checked;
-      if (sfClass[0] === 'nb-sf-is-fk')          card.dataset.sfIsFk           = tgt.checked ? '1' : '0';
-      if (sfClass[0] === 'nb-sf-hide-in-grid')    card.dataset.sfHideInGrid     = tgt.checked ? '1' : '0';
-      if (sfClass[0] === 'nb-sf-server-readonly') card.dataset.sfServerReadonly = tgt.checked ? '1' : '0';
-    } else {
-      origEl.value = tgt.value;
-      origEl.setAttribute('value', tgt.value);
-      if (sfClass[0] === 'nb-sf-fk-field') card.dataset.sfFkField     = tgt.value;
-      if (sfClass[0] === 'nb-sf-view')      card.dataset.sfSubformView = tgt.value;
-    }
-  });
-
-  var createBtn = livePanel.querySelector('.nb-sf-create-fk');
-  if (createBtn) {
-    createBtn.addEventListener('click', function () { _createFkField(livePanel); });
-  }
-
-  return; /* ← no grid.appendChild here — already done above */
-}
-/* ── END FIX ── */
+        // Generic extras: clone + wire two-way sync
         var clone = child.cloneNode(true);
         child.querySelectorAll('input, select, textarea').forEach(function (origEl, idx) {
           var cloneEl = clone.querySelectorAll('input, select, textarea')[idx];
@@ -402,12 +420,17 @@ if (child.classList.contains('nb-sf-fk-panel')) {
           (function (o, c) {
             c.addEventListener('input', function () {
               if (o.type !== 'checkbox' && o.type !== 'radio') {
-                o.value = c.value; o.setAttribute('value', c.value);
+                o.value = c.value;
+                o.setAttribute('value', c.value);
               }
             });
             c.addEventListener('change', function () {
-              if (o.type === 'checkbox' || o.type === 'radio') o.checked = c.checked;
-              else { o.value = c.value; o.setAttribute('value', c.value); }
+              if (o.type === 'checkbox' || o.type === 'radio') {
+                o.checked = c.checked;
+              } else {
+                o.value = c.value;
+                o.setAttribute('value', c.value);
+              }
             });
           }(origEl, cloneEl));
         });
@@ -416,6 +439,7 @@ if (child.classList.contains('nb-sf-fk-panel')) {
     }
   }
 
+  // Visibility flags
   var visWrap = document.createElement('div');
   visWrap.className = 'nb-vis-flags nb-fp-full';
   var visTitle = document.createElement('label');
