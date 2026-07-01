@@ -179,37 +179,23 @@ function _renderPropsInPanel(card, body) {
     return i;
   }
 
-function _fromCard(dsKey, bodySelector) {
-  var dsVal   = card.dataset[dsKey];
-  var bodyEl  = card.querySelector('.nb-cfield-body ' + bodySelector);
-  var attrVal = bodyEl ? bodyEl.getAttribute('value') : null;
-  var propVal = bodyEl ? bodyEl.value : null;
+  function _fromCard(dsKey, bodySelector) {
+    var dsVal  = card.dataset[dsKey];
+    var bodyEl = card.querySelector('.nb-cfield-body ' + bodySelector);
+    var attrVal = bodyEl ? bodyEl.getAttribute('value') : null;
+    var propVal = bodyEl ? bodyEl.value : null;
+    if (dsVal !== undefined && dsVal !== null && dsVal !== '') return dsVal;
+    if (attrVal)  { card.dataset[dsKey] = attrVal; return attrVal; }
+    if (propVal)  { card.dataset[dsKey] = propVal; return propVal; }
+    return '';
+  }
 
-  console.group('[nb-props] _fromCard  dsKey=' + dsKey);
-  console.log('  dataset value   :', dsVal);
-  console.log('  body selector   :', bodySelector);
-  console.log('  body el found   :', !!bodyEl);
-  console.log('  getAttribute()  :', attrVal);
-  console.log('  .value          :', propVal);
-  console.log('  body display    :', bodyEl ? bodyEl.closest('.nb-cfield-body').style.display : 'N/A');
-  console.log('  card.id         :', card.id);
-  console.log('  full dataset    :', JSON.stringify(card.dataset));
-  console.groupEnd();
-
-  /* Priority: dataset → HTML attribute → .value property */
-  if (dsVal !== undefined && dsVal !== null && dsVal !== '') return dsVal;
-  if (attrVal)  { card.dataset[dsKey] = attrVal; return attrVal; }
-  if (propVal)  { card.dataset[dsKey] = propVal; return propVal; }
-  return '';
-}
   var spanBar = document.createElement('div');
   spanBar.className = 'nb-span-bar';
-
   var spanLabel = document.createElement('span');
   spanLabel.className = 'nb-span-bar-label';
   spanLabel.textContent = 'Width (cols)';
   spanBar.appendChild(spanLabel);
-
   [3, 4, 6, 8, 12].forEach(function (n) {
     var btn = document.createElement('button');
     btn.type = 'button';
@@ -239,10 +225,7 @@ function _fromCard(dsKey, bodySelector) {
   labelInput.addEventListener('input', function () {
     card.dataset.fieldLabel = labelInput.value;
     var orig = card.querySelector('.nb-cfield-body .nu-field-label');
-    if (orig) {
-      orig.value = labelInput.value;
-      orig.setAttribute('value', labelInput.value);
-    }
+    if (orig) { orig.value = labelInput.value; orig.setAttribute('value', labelInput.value); }
     var hdr = card.querySelector('.nb-cfield-label');
     if (hdr) hdr.textContent = labelInput.value || '(no label)';
     var titleEl = document.getElementById('nb-props-title');
@@ -253,10 +236,7 @@ function _fromCard(dsKey, bodySelector) {
   nameInput.addEventListener('input', function () {
     card.dataset.fieldName = nameInput.value;
     var orig = card.querySelector('.nb-cfield-body .nu-field-name');
-    if (orig) {
-      orig.value = nameInput.value;
-      orig.setAttribute('value', nameInput.value);
-    }
+    if (orig) { orig.value = nameInput.value; orig.setAttribute('value', nameInput.value); }
   });
 
   grid.appendChild(_fp('Label', labelInput));
@@ -267,22 +247,14 @@ function _fromCard(dsKey, bodySelector) {
     phInput.addEventListener('input', function () {
       card.dataset.fieldPh = phInput.value;
       var orig = card.querySelector('.nb-cfield-body .nu-field-placeholder');
-      if (orig) {
-        orig.value = phInput.value;
-        orig.setAttribute('value', phInput.value);
-      }
+      if (orig) { orig.value = phInput.value; orig.setAttribute('value', phInput.value); }
     });
-
     var defInput = _inp(defVal, 'Default value');
     defInput.addEventListener('input', function () {
       card.dataset.fieldDefault = defInput.value;
       var orig = card.querySelector('.nb-cfield-body .nu-field-default');
-      if (orig) {
-        orig.value = defInput.value;
-        orig.setAttribute('value', defInput.value);
-      }
+      if (orig) { orig.value = defInput.value; orig.setAttribute('value', defInput.value); }
     });
-
     grid.appendChild(_fp('Placeholder', phInput));
     grid.appendChild(_fp('Default', defInput));
   }
@@ -291,10 +263,7 @@ function _fromCard(dsKey, bodySelector) {
   helpInput.addEventListener('input', function () {
     card.dataset.fieldHelp = helpInput.value;
     var orig = card.querySelector('.nb-cfield-body .nu-field-help');
-    if (orig) {
-      orig.value = helpInput.value;
-      orig.setAttribute('value', helpInput.value);
-    }
+    if (orig) { orig.value = helpInput.value; orig.setAttribute('value', helpInput.value); }
   });
   grid.appendChild(_fp('Help Text', helpInput, true));
 
@@ -312,11 +281,117 @@ function _fromCard(dsKey, bodySelector) {
           child.classList.contains('nb-vis-flags')
         ) return;
 
+/* ── FIX: Subform panel — re-render live instead of cloning ── */
+if (child.classList.contains('nb-sf-fk-panel')) {
+
+  /* Step 1: Read truth from body DOM */
+  var origFormSel  = card.querySelector('.nb-cfield-body .nb-sf-form-code');
+  var origFkSel    = card.querySelector('.nb-cfield-body .nb-sf-fk-field');
+  var origViewSel  = card.querySelector('.nb-cfield-body .nb-sf-view');
+  var origIsFk     = card.querySelector('.nb-cfield-body .nb-sf-is-fk');
+  var origHideGrid = card.querySelector('.nb-cfield-body .nb-sf-hide-in-grid');
+  var origSrvRo    = card.querySelector('.nb-cfield-body .nb-sf-server-readonly');
+
+  var liveFormCode = origFormSel  ? (origFormSel.value  || origFormSel.getAttribute('value')  || '') : (card.dataset.sfFormCode || '');
+  var liveFkField  = origFkSel    ? (origFkSel.value    || origFkSel.getAttribute('value')    || '') : (card.dataset.sfFkField  || '');
+  var liveView     = origViewSel  ? (origViewSel.value  || origViewSel.getAttribute('value')  || 'grid') : (card.dataset.sfSubformView || 'grid');
+  var liveIsFk     = origIsFk     ? origIsFk.checked     : (card.dataset.sfIsFk === '1');
+  var liveHideGrid = origHideGrid ? origHideGrid.checked : (card.dataset.sfHideInGrid === '1');
+  var liveSrvRo    = origSrvRo    ? origSrvRo.checked    : (card.dataset.sfServerReadonly === '1');
+
+  if (liveFormCode) card.dataset.sfFormCode    = liveFormCode;
+  if (liveFkField)  card.dataset.sfFkField     = liveFkField;
+  card.dataset.sfSubformView    = liveView;
+  card.dataset.sfIsFk           = liveIsFk     ? '1' : '0';
+  card.dataset.sfHideInGrid     = liveHideGrid ? '1' : '0';
+  card.dataset.sfServerReadonly = liveSrvRo    ? '1' : '0';
+
+  /* Step 2: Build fresh panel HTML */
+  var sfWrap = document.createElement('div');
+  sfWrap.style.cssText = 'grid-column:1/-1;';
+  sfWrap.innerHTML = _subformPanelHTML({
+    form_code: '', fk_field: '', subform_view: liveView,
+    help_text: card.dataset.sfHelpText || '',
+    is_fk: liveIsFk, hide_in_grid: liveHideGrid, server_readonly: liveSrvRo
+  });
+  var livePanel = sfWrap.querySelector('.nb-sf-fk-panel') || sfWrap;
+
+  var mirrorIsFk     = livePanel.querySelector('.nb-sf-is-fk');
+  var mirrorHideGrid = livePanel.querySelector('.nb-sf-hide-in-grid');
+  var mirrorSrvRo    = livePanel.querySelector('.nb-sf-server-readonly');
+  var mirrorView     = livePanel.querySelector('.nb-sf-view');
+  var mirrorFormSel  = livePanel.querySelector('.nb-sf-form-code');
+  var mirrorFkSel    = livePanel.querySelector('.nb-sf-fk-field');
+
+  if (mirrorIsFk)     mirrorIsFk.checked     = liveIsFk;
+  if (mirrorHideGrid) mirrorHideGrid.checked = liveHideGrid;
+  if (mirrorSrvRo)    mirrorSrvRo.checked    = liveSrvRo;
+  if (mirrorView && liveView) mirrorView.value = liveView;
+
+  /* ══ CRITICAL: append to DOM FIRST so select is live before populate ══ */
+  grid.appendChild(sfWrap);
+
+  /* Step 3: Populate form dropdown while select is live in DOM */
+  _populateFormDropdown(livePanel, '' /* don't pre-select inside the fn */, function () {
+    /* Set value AFTER options are loaded and select is in live DOM */
+    if (mirrorFormSel && liveFormCode) {
+      mirrorFormSel.value = liveFormCode;
+      if (mirrorFormSel.value !== liveFormCode) {
+        /* Value not in list — add a placeholder option */
+        var tmpOpt = document.createElement('option');
+        tmpOpt.value = liveFormCode;
+        tmpOpt.textContent = '(' + liveFormCode + ')';
+        mirrorFormSel.insertBefore(tmpOpt, mirrorFormSel.options[1] || null);
+        mirrorFormSel.value = liveFormCode;
+      }
+    }
+    if (liveFormCode) {
+      _populateFkDropdown(livePanel, liveFormCode, liveFkField);
+    }
+  });
+
+  /* Step 4: Wire form change → repopulate FK + sync back */
+  if (mirrorFormSel) {
+    mirrorFormSel.addEventListener('change', function () {
+      card.dataset.sfFormCode = mirrorFormSel.value;
+      if (origFormSel) { origFormSel.value = mirrorFormSel.value; origFormSel.setAttribute('value', mirrorFormSel.value); }
+      if (origFkSel) { origFkSel.innerHTML = '<option value="">— select FK field —</option>'; origFkSel.value = ''; }
+      _populateFkDropdown(livePanel, mirrorFormSel.value, '');
+    });
+  }
+
+  /* Step 5: Sync all changes back */
+  livePanel.addEventListener('change', function (e) {
+    var tgt = e.target;
+    var sfClass = (tgt.className || '').match(/\bnb-sf-[\w-]+\b/);
+    if (!sfClass) return;
+    var origEl = card.querySelector('.nb-cfield-body .' + sfClass[0]);
+    if (!origEl) return;
+    if (tgt.type === 'checkbox') {
+      origEl.checked = tgt.checked;
+      if (sfClass[0] === 'nb-sf-is-fk')          card.dataset.sfIsFk           = tgt.checked ? '1' : '0';
+      if (sfClass[0] === 'nb-sf-hide-in-grid')    card.dataset.sfHideInGrid     = tgt.checked ? '1' : '0';
+      if (sfClass[0] === 'nb-sf-server-readonly') card.dataset.sfServerReadonly = tgt.checked ? '1' : '0';
+    } else {
+      origEl.value = tgt.value;
+      origEl.setAttribute('value', tgt.value);
+      if (sfClass[0] === 'nb-sf-fk-field') card.dataset.sfFkField     = tgt.value;
+      if (sfClass[0] === 'nb-sf-view')      card.dataset.sfSubformView = tgt.value;
+    }
+  });
+
+  var createBtn = livePanel.querySelector('.nb-sf-create-fk');
+  if (createBtn) {
+    createBtn.addEventListener('click', function () { _createFkField(livePanel); });
+  }
+
+  return; /* ← no grid.appendChild here — already done above */
+}
+/* ── END FIX ── */
         var clone = child.cloneNode(true);
         child.querySelectorAll('input, select, textarea').forEach(function (origEl, idx) {
           var cloneEl = clone.querySelectorAll('input, select, textarea')[idx];
           if (!cloneEl) return;
-
           if (origEl.type === 'checkbox' || origEl.type === 'radio') {
             cloneEl.checked = origEl.checked;
           } else {
@@ -324,25 +399,18 @@ function _fromCard(dsKey, bodySelector) {
             cloneEl.setAttribute('value', attrVal);
             cloneEl.value = attrVal;
           }
-
           (function (o, c) {
             c.addEventListener('input', function () {
               if (o.type !== 'checkbox' && o.type !== 'radio') {
-                o.value = c.value;
-                o.setAttribute('value', c.value);
+                o.value = c.value; o.setAttribute('value', c.value);
               }
             });
             c.addEventListener('change', function () {
-              if (o.type === 'checkbox' || o.type === 'radio') {
-                o.checked = c.checked;
-              } else {
-                o.value = c.value;
-                o.setAttribute('value', c.value);
-              }
+              if (o.type === 'checkbox' || o.type === 'radio') o.checked = c.checked;
+              else { o.value = c.value; o.setAttribute('value', c.value); }
             });
           }(origEl, cloneEl));
         });
-
         grid.appendChild(clone);
       });
     }
@@ -350,12 +418,10 @@ function _fromCard(dsKey, bodySelector) {
 
   var visWrap = document.createElement('div');
   visWrap.className = 'nb-vis-flags nb-fp-full';
-
   var visTitle = document.createElement('label');
   visTitle.style.cssText = 'font-size:11px;font-weight:700;color:var(--text-muted,#888);text-transform:uppercase;letter-spacing:.5px;flex-basis:100%;margin-bottom:2px;';
   visTitle.textContent = 'Field Options';
   visWrap.appendChild(visTitle);
-
   [
     { cls: 'nu-field-required',      label: 'Required' },
     { cls: 'nu-field-no-duplicate',  label: 'No Duplicate' },
@@ -368,9 +434,7 @@ function _fromCard(dsKey, bodySelector) {
     var chk = document.createElement('input');
     chk.type = 'checkbox';
     chk.checked = !!(origChk && origChk.checked);
-    chk.addEventListener('change', function () {
-      if (origChk) origChk.checked = chk.checked;
-    });
+    chk.addEventListener('change', function () { if (origChk) origChk.checked = chk.checked; });
     lbl.appendChild(chk);
     lbl.appendChild(document.createTextNode(' ' + flag.label));
     visWrap.appendChild(lbl);
